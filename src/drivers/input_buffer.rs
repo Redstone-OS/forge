@@ -5,7 +5,6 @@
 use spin::Mutex;
 
 extern crate alloc;
-use alloc::string::String;
 
 /// Buffer circular para input
 pub struct InputBuffer {

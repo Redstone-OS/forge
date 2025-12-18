@@ -41,7 +41,7 @@ pub mod core;
 pub mod drivers;
 pub mod fs;
 pub mod hal;
-pub mod lib;
+
 pub mod mm;
 pub mod net;
 pub mod panic;
@@ -59,7 +59,7 @@ static mut INITFS: Option<fs::fat32::Fat32> = None;
 
 /// Ponto de entrada do kernel
 #[unsafe(no_mangle)]
-pub extern "sysv64" fn _start(_args: *const u8, _stack_end: usize) -> ! {
+pub extern "sysv64" fn _start(boot_info_addr: u64, _stack_end: usize) -> ! {
     use drivers::video::framebuffer::{COLOR_BLACK, COLOR_LIGHT_GREEN};
     use drivers::video::{Console, Framebuffer};
 
@@ -68,8 +68,8 @@ pub extern "sysv64" fn _start(_args: *const u8, _stack_end: usize) -> ! {
     drivers::legacy::serial::println("[OK] Serial inicializado");
     drivers::legacy::serial::println("[OK] Kernel _start executando!");
 
-    // 2. Ler BootInfo
-    let boot_info = unsafe { boot_info::BootInfo::read() };
+    // 2. Ler BootInfo do endereço passado pelo bootloader
+    let boot_info = unsafe { &*(boot_info_addr as *const boot_info::BootInfo) };
 
     // 3. Criar framebuffer
     let fb = Framebuffer::new(
@@ -128,14 +128,7 @@ pub extern "sysv64" fn _start(_args: *const u8, _stack_end: usize) -> ! {
     // NOTA: VMM causa page fault porque tenta escrever em endereços físicos
     // sem identity mapping. Por enquanto, usamos a paginação do bootloader.
     // TODO: Implementar VMM corretamente na Fase 3 com identity mapping inicial
-    dp(
-        &mut console,
-        "[2/3] VMM desabilitado (usando paginacao do bootloader)...\n",
-    );
-    dp(&mut console, "[OK] Paginacao ativa (bootloader)\n\n");
-
-    /*
-    // Código VMM comentado temporariamente
+    // 6. VMM - Habilitado
     dp(&mut console, "[2/3] Inicializando VMM...\n");
     let mut vmm = mm::VirtualMemoryManager::init(&mut pmm);
 
@@ -143,31 +136,42 @@ pub extern "sysv64" fn _start(_args: *const u8, _stack_end: usize) -> ! {
     vmm.identity_map(0x400000, 0x700000, mm::vmm::flags::WRITABLE, &mut pmm)
         .expect("Falha ao mapear kernel");
 
-    // Mapear framebuffer identicamente
-    let fb_tamanho = (boot_info.fb_stride * boot_info.fb_height) as u64 * 4;
+    // Mapear framebuffer com tamanho completo (page‑aligned)
+    let fb_bytes = (boot_info.fb_stride as u64) * (boot_info.fb_height as u64) * 4;
+    let fb_size = (fb_bytes + 0xFFF) & !0xFFF; // round up to 4 KiB page
     vmm.identity_map(
         boot_info.fb_addr,
-        boot_info.fb_addr + fb_tamanho,
+        boot_info.fb_addr + fb_size,
         mm::vmm::flags::WRITABLE | mm::vmm::flags::NO_CACHE,
         &mut pmm,
     )
     .expect("Falha ao mapear framebuffer");
 
+    // Mapear heap
+    const HEAP_START: usize = 0x_0000_0000_0080_0000; // 8 MB (após kernel)
+    const HEAP_SIZE: usize = 4 * 1024 * 1024; // 4 MB
+
+    vmm.identity_map(
+        HEAP_START as u64,
+        (HEAP_START + HEAP_SIZE) as u64,
+        mm::vmm::flags::WRITABLE,
+        &mut pmm,
+    )
+    .expect("Falha ao mapear heap");
+
     // Ativar VMM
     vmm.activate();
-
     dp(&mut console, "[OK] VMM inicializado!\n");
     dp(&mut console, "  Kernel mapeado: 0x400000-0x700000\n");
     dp(&mut console, "  Framebuffer mapeado: 0x");
     dh(&mut console, boot_info.fb_addr as usize);
+    dp(&mut console, "\n");
+    dp(&mut console, "  Heap mapeado: 0x");
+    dh(&mut console, HEAP_START);
     dp(&mut console, "\n\n");
-    */
 
     // 7. Inicializar Heap
     dp(&mut console, "[3/3] Inicializando Heap...\n");
-
-    const HEAP_START: usize = 0x_0000_0000_0080_0000; // 8 MB (após kernel)
-    const HEAP_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
     // Inicializar alocador global (sem mapear, usa região já mapeada)
     mm::heap::ALLOCATOR.init(HEAP_START, HEAP_SIZE);

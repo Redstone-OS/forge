@@ -94,9 +94,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-[profile.dev]
-panic = "abort"
-
-# TODO(prioridade=média, versão=v1.0): Adicionar testes
-# [dev-dependencies]
-# ...
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+test = false

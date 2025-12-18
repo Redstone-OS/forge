@@ -1,0 +1,20 @@
+{
+  "llvm-target": "x86_64-unknown-none",
+  "data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
+  "arch": "x86_64",
+  "os": "none",
+  "vendor": "unknown",
+  "linker": "rust-lld",
+  "panic-strategy": "abort",
+  "disable-redzone": true,
+  "features": "-mmx,-sse,+soft-float",
+  "executables": true,
+  "relocation-model": "static",
+  "code-model": "kernel",
+  "target-c-int-width": "64",
+  "no-compiler-rt": true,
+  "default-hidden-visibility": true,
+  "pre-link-args": {
+    "rust-lld": ["-z", "stack-size=0x8000"]
+  }
+}

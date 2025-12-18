@@ -1,7 +1,5 @@
 //! Device Operations - Operações em dispositivos
 
-use core::fmt;
-
 /// Flags para abertura de dispositivos
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenFlags {
