@@ -73,6 +73,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "indexmap",
  "lazy_static",
+ "limine",
  "linked_list_allocator",
  "object",
  "pc-keyboard",
@@ -145,6 +146,12 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
  "spin",
 ]
+
+[[package]]
+name = "limine"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02034f8f6b3e7bf050f310fbaf6db0018b8e54b75598d0a4c97172054752fede"
 
 [[package]]
 name = "linked_list_allocator"

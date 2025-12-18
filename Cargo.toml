@@ -56,6 +56,9 @@ uart_16550 = "0.2.18"
 # Sincronização
 spin = "0.9.8"
 
+# Bootloader protocol
+limine = "0.1"
+
 # Async
 futures-util = { version = "0.3.30", default-features = false, features = [
     "alloc",

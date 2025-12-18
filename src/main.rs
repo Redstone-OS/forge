@@ -59,13 +59,14 @@ static mut INITFS: Option<fs::fat32::Fat32> = None;
 
 /// Ponto de entrada do kernel
 #[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+pub extern "sysv64" fn _start(_args: *const u8, _stack_end: usize) -> ! {
     use drivers::video::framebuffer::{COLOR_BLACK, COLOR_LIGHT_GREEN};
     use drivers::video::{Console, Framebuffer};
 
     // 1. Inicializar serial
     drivers::legacy::serial::init();
     drivers::legacy::serial::println("[OK] Serial inicializado");
+    drivers::legacy::serial::println("[OK] Kernel _start executando!");
 
     // 2. Ler BootInfo
     let boot_info = unsafe { boot_info::BootInfo::read() };
