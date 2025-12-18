@@ -51,7 +51,7 @@ pub fn syscall_handler(num: u64, arg1: u64, arg2: u64, arg3: u64) -> u64 {
         SYS_WRITE => syscall_write(arg1, arg2, arg3),
         SYS_EXIT => syscall_exit(arg1),
         _ => {
-            serial::println("[SYSCALL] Syscall desconhecido: {}", num);
+            serial::println("[SYSCALL] Syscall desconhecido");
             u64::MAX // -1 (erro)
         }
     }
@@ -88,13 +88,9 @@ fn syscall_write(fd: u64, buf: u64, len: u64) -> u64 {
         serial::print(s);
         len // Retornar número de bytes escritos
     } else {
-        // Não é UTF-8 válido, escrever bytes brutos
-        for &byte in data {
-            if byte.is_ascii() {
-                serial::print_char(byte as char);
-            } else {
-                serial::print_char('?');
-            }
+        // Não é UTF-8 válido, escrever bytes brutos como '?'
+        for _ in data {
+            serial::print("?");
         }
         len
     }
@@ -109,8 +105,8 @@ fn syscall_write(fd: u64, buf: u64, len: u64) -> u64 {
 /// # Returns
 ///
 /// Nunca retorna (processo terminado)
-fn syscall_exit(code: u64) -> u64 {
-    serial::println("[SYSCALL] Processo terminando com código {}", code);
+fn syscall_exit(_code: u64) -> u64 {
+    serial::println("[SYSCALL] Processo terminando");
 
     // TODO: Remover processo do ProcessManager
     // Por enquanto, apenas loop infinito
