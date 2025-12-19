@@ -108,15 +108,24 @@ pub struct VirtualMemoryManager {
 impl VirtualMemoryManager {
     /// Inicializa o VMM criando PML4
     pub fn init(pmm: &mut PhysicalMemoryManager) -> Self {
+        crate::drivers::legacy::serial::println("[VMM] Allocating PML4...");
         // Alocar frame para PML4
         let pml4_frame = pmm.allocate().expect("Sem memória para PML4");
-        let pml4_ptr = pml4_frame.start_address() as *mut PageTable;
+
+        let pml4_addr = pml4_frame.start_address();
+        crate::drivers::legacy::serial::print("[VMM] PML4 allocated at 0x");
+        crate::drivers::legacy::serial::print_hex(pml4_addr);
+        crate::drivers::legacy::serial::println("");
+
+        let pml4_ptr = pml4_addr as *mut PageTable;
 
         // Zerar PML4
+        crate::drivers::legacy::serial::println("[VMM] Zeroing PML4...");
         let pml4 = unsafe {
             pml4_ptr.write(PageTable::new());
             &mut *pml4_ptr
         };
+        crate::drivers::legacy::serial::println("[VMM] PML4 zeroed.");
 
         Self { pml4 }
     }

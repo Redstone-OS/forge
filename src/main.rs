@@ -83,6 +83,17 @@ pub extern "sysv64" fn _start(boot_info_addr: u64) -> ! {
         // 3. Restaurar boot_info_addr para RDI antes de chamar kernel_main
         "mov rdi, r15",
 
+        // 3.5. Habilitar SSE (Essencial para Rust, pois memcpy/memset usam SSE)
+        // CR0: Clear EM (bit 2), Set MP (bit 1)
+        "mov rax, cr0",
+        "and ax, 0xFFFB",
+        "or ax, 0x2",
+        "mov cr0, rax",
+        // CR4: Set OSFXSR (bit 9) and OSXMMEXCPT (bit 10)
+        "mov rax, cr4",
+        "or ax, 0x600",
+        "mov cr4, rax",
+
         // DEBUG: Enviar 'S' (Start) para serial para confirmar que kernel iniciou
         "mov dx, 0x3F8",
         "mov al, 0x53", // 'S'
@@ -121,7 +132,9 @@ pub extern "sysv64" fn kernel_main(boot_info_addr: u64) -> ! {
     drivers::legacy::serial::println("[OK] Kernel _start executando!");
 
     // 2. Ler BootInfo do endereço passado pelo bootloader
-    let boot_info = unsafe { &*(boot_info_addr as *const boot_info::BootInfo) };
+    // NOTA: Desreferenciamos para copiar para a stack (que está mapeada),
+    // pois o endereço original pode não estar mapeado após ativar VMM.
+    let boot_info = unsafe { *(boot_info_addr as *const boot_info::BootInfo) };
 
     // 3. Criar framebuffer
     let fb = Framebuffer::new(
@@ -218,9 +231,9 @@ pub extern "sysv64" fn kernel_main(boot_info_addr: u64) -> ! {
     )
     .expect("Falha ao mapear framebuffer");
 
-    // 4. Mapear heap
+    // 4. Mapear heap (MOVED TO 32MB TO AVOID PMM BITMAP AT 8MB)
     dp(&mut console, "  Mapeando heap...\n");
-    const HEAP_START: usize = 0x_0000_0000_0080_0000;
+    const HEAP_START: usize = 0x0200_0000; // 32 MB
     const HEAP_SIZE: usize = 4 * 1024 * 1024;
     vmm.identity_map(
         HEAP_START as u64,
@@ -248,7 +261,7 @@ pub extern "sysv64" fn kernel_main(boot_info_addr: u64) -> ! {
 
     dp(&mut console, "[OK] VMM inicializado e ativo!\n");
     dp(&mut console, "  Memoria baixa: 0x0-0x100000\n");
-    dp(&mut console, "  Kernel: 0x400000-0x1000000\n");
+    dp(&mut console, "  Kernel: [Dinamico]\n");
     dp(&mut console, "  Framebuffer: 0x");
     dh(&mut console, boot_info.fb_addr as usize);
     dp(&mut console, "\n");

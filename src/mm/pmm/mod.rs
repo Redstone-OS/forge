@@ -79,6 +79,11 @@ impl PhysicalMemoryManager {
                 let end_frame = ((region.base + region.length) as usize) / FRAME_SIZE;
 
                 for frame in start_frame..end_frame {
+                    // Reserve low memory (0-1MB) for safety (Video RAM, BIOS, etc)
+                    if frame < 256 {
+                        continue;
+                    }
+
                     if frame < total_frames {
                         Self::mark_free_in_bitmap(bitmap, frame);
                         free_frames += 1;

@@ -125,3 +125,30 @@ pub fn println(s: &str) {
     write_str(s);
     write_str("\n");
 }
+
+/// Imprime um número em hexadecimal
+pub fn print_hex(mut n: usize) {
+    if n == 0 {
+        write_str("0");
+        return;
+    }
+
+    let mut buf = [0u8; 16];
+    let mut i = 0;
+
+    while n > 0 {
+        let d = n % 16;
+        buf[i] = if d < 10 {
+            b'0' + d as u8
+        } else {
+            b'a' + (d - 10) as u8
+        };
+        n /= 16;
+        i += 1;
+    }
+
+    while i > 0 {
+        i -= 1;
+        write_byte(buf[i]);
+    }
+}
