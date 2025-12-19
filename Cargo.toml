@@ -87,6 +87,11 @@ rustc-demangle = "0.1"
 # redstone_path = { path = "../redstone/core/path" }
 # redstone_syscall = { path = "../redstone/core/syscall" }
 
+[profile.dev]
+opt-level = "z"
+lto = "thin"
+panic = "abort"
+
 [profile.release]
 # Otimização balanceada (-O2)
 opt-level = 2

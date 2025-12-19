@@ -138,6 +138,7 @@ impl VirtualMemoryManager {
             *entry = PageTableEntry::new(phys_addr as u64, flags::PRESENT | flags::WRITABLE);
 
             // Zerar nova tabela
+            // TODO: Adicionar testes de mapeamento após resolver linking
             let new_table = unsafe { &mut *(phys_addr as *mut PageTable) };
             new_table.zero();
         }
@@ -237,6 +238,9 @@ impl VirtualMemoryManager {
 
         Ok(())
     }
+
+    // TODO: Reativar após resolver problema de linking
+    // Funções de debug removidas temporariamente para reduzir tamanho do binário
 
     /// Ativa o VMM carregando PML4 no CR3
     pub fn activate(&self) {

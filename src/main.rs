@@ -33,7 +33,6 @@
 
 #![no_std]
 #![no_main]
-
 // Módulos principais
 pub mod arch;
 pub mod boot_info;
@@ -57,9 +56,62 @@ pub mod syscall;
 // ============================================================================
 static mut INITFS: Option<fs::fat32::Fat32> = None;
 
-/// Ponto de entrada do kernel
+// Stack do kernel (16 KB)
+// Usa #[repr(align(16))] para garantir alinhamento de 16 bytes exigido pela ABI x86_64
+#[repr(align(16))]
+struct KernelStack([u8; 16 * 1024]);
+
+static KERNEL_STACK: KernelStack = KernelStack([0; 16 * 1024]);
+
+/// Ponto de entrada naked - Configura stack antes do Rust
 #[unsafe(no_mangle)]
-pub extern "sysv64" fn _start(boot_info_addr: u64, _stack_end: usize) -> ! {
+#[unsafe(naked)]
+pub extern "sysv64" fn _start(boot_info_addr: u64) -> ! {
+    ::core::arch::naked_asm!(
+        // 0. Salvar boot_info_addr (RDI) em R15 antes de modificar stack
+        "mov r15, rdi",
+
+        // 1. Configurar Stack Pointer (RSP)
+        // Carregar endereço do símbolo do stack (RIP-relative funciona porque o kernel é contíguo)
+        "lea rax, [rip + {stack}]",
+        // Adicionar tamanho do stack para apontar para o topo (stack cresce para baixo)
+        "lea rsp, [rax + {stack_size}]",
+
+        // 2. Zerar RBP (para backtrace)
+        "xor rbp, rbp",
+
+        // 3. Restaurar boot_info_addr para RDI antes de chamar kernel_main
+        "mov rdi, r15",
+
+        // DEBUG: Enviar 'S' (Start) para serial para confirmar que kernel iniciou
+        "mov dx, 0x3F8",
+        "mov al, 0x53", // 'S'
+        "out dx, al",
+
+        // 4. Chamar função principal do kernel
+        "call {kernel_main}",
+
+        // 5. Halt loop (usando labels numéricas para compatibilidade)
+        "2:",
+        "cli",
+        "hlt",
+        "jmp 2b",
+
+        stack = sym KERNEL_STACK,
+        stack_size = const 16 * 1024,
+        kernel_main = sym kernel_main,
+    );
+}
+
+// Marcador para o fim do stack (topo, pois cresce para baixo)
+// Endereço calculado: endereço base do stack + tamanho
+// Mas em asm! sym, precisamos de um símbolo exportado.
+// Truque: usar offset no LEA acima.
+// Alternativa Simples: Carregar endereço base e somar tamanho.
+// Vamos ajustar o assembly acima para ser mais robusto.
+
+#[unsafe(no_mangle)]
+pub extern "sysv64" fn kernel_main(boot_info_addr: u64) -> ! {
     use drivers::video::framebuffer::{COLOR_BLACK, COLOR_LIGHT_GREEN};
     use drivers::video::{Console, Framebuffer};
 
@@ -88,7 +140,7 @@ pub extern "sysv64" fn _start(boot_info_addr: u64, _stack_end: usize) -> ! {
         &mut console,
         "===================================================\n",
     );
-    dp(&mut console, "  Redstone OS Kernel v0.3.5\n");
+    dp(&mut console, "  Forge Kernel v0.3.5\n");
     dp(
         &mut console,
         "===================================================\n\n",
@@ -124,21 +176,40 @@ pub extern "sysv64" fn _start(boot_info_addr: u64, _stack_end: usize) -> ! {
     dn(&mut console, (free * 4096) / (1024 * 1024));
     dp(&mut console, " MB)\n\n");
 
-    // 6. VMM - TEMPORARIAMENTE DESABILITADO
-    // NOTA: VMM causa page fault porque tenta escrever em endereços físicos
-    // sem identity mapping. Por enquanto, usamos a paginação do bootloader.
-    // TODO: Implementar VMM corretamente na Fase 3 com identity mapping inicial
     // 6. VMM - Habilitado
     dp(&mut console, "[2/3] Inicializando VMM...\n");
     let mut vmm = mm::VirtualMemoryManager::init(&mut pmm);
 
-    // Mapear kernel identicamente (0x400000 - 0x700000 = 3 MB)
-    vmm.identity_map(0x400000, 0x700000, mm::vmm::flags::WRITABLE, &mut pmm)
-        .expect("Falha ao mapear kernel");
+    // 1. Mapear memória baixa (0-1MB) para BIOS/hardware
+    dp(&mut console, "  Mapeando memoria baixa (0-1MB)...\n");
+    vmm.identity_map(0x0, 0x100000, mm::vmm::flags::WRITABLE, &mut pmm)
+        .expect("Falha ao mapear memoria baixa");
 
-    // Mapear framebuffer com tamanho completo (page‑aligned)
+    // 2. Mapear kernel completo (usando informações reais do bootloader)
+    dp(&mut console, "  Mapeando kernel...\n");
+
+    // Alinhar tamanho para próximas 4KB
+    let kernel_end = (boot_info.kernel_base + boot_info.kernel_size + 0xFFF) & !0xFFF;
+
+    vmm.identity_map(
+        boot_info.kernel_base,
+        kernel_end,
+        mm::vmm::flags::WRITABLE, // Kernel code + data + stack
+        &mut pmm,
+    )
+    .expect("Falha ao mapear kernel");
+
+    // DEBUG: Mostrar onde estamos mapeando
+    dp(&mut console, "  -> Kernel: 0x");
+    dh(&mut console, boot_info.kernel_base as usize);
+    dp(&mut console, " - 0x");
+    dh(&mut console, kernel_end as usize);
+    dp(&mut console, "\n");
+
+    // 3. Mapear framebuffer
+    dp(&mut console, "  Mapeando framebuffer...\n");
     let fb_bytes = (boot_info.fb_stride as u64) * (boot_info.fb_height as u64) * 4;
-    let fb_size = (fb_bytes + 0xFFF) & !0xFFF; // round up to 4 KiB page
+    let fb_size = (fb_bytes + 0xFFF) & !0xFFF;
     vmm.identity_map(
         boot_info.fb_addr,
         boot_info.fb_addr + fb_size,
@@ -147,10 +218,10 @@ pub extern "sysv64" fn _start(boot_info_addr: u64, _stack_end: usize) -> ! {
     )
     .expect("Falha ao mapear framebuffer");
 
-    // Mapear heap
-    const HEAP_START: usize = 0x_0000_0000_0080_0000; // 8 MB (após kernel)
-    const HEAP_SIZE: usize = 4 * 1024 * 1024; // 4 MB
-
+    // 4. Mapear heap
+    dp(&mut console, "  Mapeando heap...\n");
+    const HEAP_START: usize = 0x_0000_0000_0080_0000;
+    const HEAP_SIZE: usize = 4 * 1024 * 1024;
     vmm.identity_map(
         HEAP_START as u64,
         (HEAP_START + HEAP_SIZE) as u64,
@@ -159,16 +230,32 @@ pub extern "sysv64" fn _start(boot_info_addr: u64, _stack_end: usize) -> ! {
     )
     .expect("Falha ao mapear heap");
 
-    // Ativar VMM
+    // 5. Stack já foi mapeado junto com o kernel (pois é static dentro do .bss/.data)
+    dp(&mut console, "  Stack: OK (dentro do kernel)\n");
+
+    // 6. Mapear InitFS se presente
+    if boot_info.initfs_size > 0 {
+        dp(&mut console, "  Mapeando InitFS...\n");
+        let initfs_start = boot_info.initfs_addr & !0xFFF;
+        let initfs_end = (boot_info.initfs_addr + boot_info.initfs_size + 0xFFF) & !0xFFF;
+        vmm.identity_map(initfs_start, initfs_end, mm::vmm::flags::WRITABLE, &mut pmm)
+            .expect("Falha ao mapear InitFS");
+    }
+
+    // 7. Ativar VMM
+    dp(&mut console, "  Ativando VMM...\n");
     vmm.activate();
-    dp(&mut console, "[OK] VMM inicializado!\n");
-    dp(&mut console, "  Kernel mapeado: 0x400000-0x700000\n");
-    dp(&mut console, "  Framebuffer mapeado: 0x");
+
+    dp(&mut console, "[OK] VMM inicializado e ativo!\n");
+    dp(&mut console, "  Memoria baixa: 0x0-0x100000\n");
+    dp(&mut console, "  Kernel: 0x400000-0x1000000\n");
+    dp(&mut console, "  Framebuffer: 0x");
     dh(&mut console, boot_info.fb_addr as usize);
     dp(&mut console, "\n");
-    dp(&mut console, "  Heap mapeado: 0x");
+    dp(&mut console, "  Heap: 0x");
     dh(&mut console, HEAP_START);
-    dp(&mut console, "\n\n");
+    dp(&mut console, "\n");
+    dp(&mut console, "  Stack: 0x1000000-0x1400000\n\n");
 
     // 7. Inicializar Heap
     dp(&mut console, "[3/3] Inicializando Heap...\n");

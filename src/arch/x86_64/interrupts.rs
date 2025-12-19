@@ -173,11 +173,61 @@ unsafe extern "C" {
 
 /// Handler Rust para exceções
 #[unsafe(no_mangle)]
-extern "C" fn exception_handler_rust(_stack_ptr: u64) {
+extern "C" fn exception_handler_rust(stack_ptr: u64) {
     use crate::drivers::legacy::serial;
 
+    // Stack frame contém: r15, r14, ..., rax, error_code, exception_num
+    let exception_num = unsafe { *((stack_ptr + 15 * 8) as *const u64) };
+    let error_code = unsafe { *((stack_ptr + 15 * 8 + 8) as *const u64) };
+
     serial::println("\n=== EXCEPTION ===");
-    serial::println("Kernel panic!");
+
+    match exception_num {
+        0 => serial::println("Tipo: Division by Zero (#DE)"),
+        6 => serial::println("Tipo: Invalid Opcode (#UD)"),
+        13 => {
+            serial::println("Tipo: General Protection Fault (#GP)");
+            serial::print("Error Code: 0x");
+            print_hex(error_code as usize);
+            serial::println("");
+        }
+        14 => {
+            serial::println("Tipo: Page Fault (#PF)");
+
+            // Ler CR2 (endereço que causou o fault)
+            let cr2: u64;
+            unsafe {
+                core::arch::asm!("mov {}, cr2", out(reg) cr2);
+            }
+
+            serial::print("Endereco: 0x");
+            print_hex(cr2 as usize);
+            serial::println("");
+
+            serial::print("Erro: ");
+            if error_code & 0x1 != 0 {
+                serial::print("Protecao ");
+            } else {
+                serial::print("Nao-presente ");
+            }
+            if error_code & 0x2 != 0 {
+                serial::print("Escrita ");
+            } else {
+                serial::print("Leitura ");
+            }
+            if error_code & 0x4 != 0 {
+                serial::println("Usuario");
+            } else {
+                serial::println("Kernel");
+            }
+        }
+        _ => {
+            serial::print("Tipo: Desconhecida (");
+            print_hex(exception_num as usize);
+            serial::println(")");
+        }
+    }
+
     serial::println("=================\n");
 
     // Halt
@@ -185,6 +235,34 @@ extern "C" fn exception_handler_rust(_stack_ptr: u64) {
         unsafe {
             core::arch::asm!("hlt");
         }
+    }
+}
+
+/// Imprime número em hexadecimal
+fn print_hex(mut n: usize) {
+    use crate::drivers::legacy::serial;
+
+    if n == 0 {
+        serial::print("0");
+        return;
+    }
+
+    let mut buf = [0u8; 16];
+    let mut i = 0;
+    while n > 0 {
+        let d = n % 16;
+        buf[i] = if d < 10 {
+            b'0' + d as u8
+        } else {
+            b'a' + (d - 10) as u8
+        };
+        n /= 16;
+        i += 1;
+    }
+
+    while i > 0 {
+        i -= 1;
+        serial::write_byte(buf[i]);
     }
 }
 

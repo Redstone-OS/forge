@@ -1,8 +1,9 @@
 ENTRY(_start)
 
 SECTIONS {
-    /* Não definir endereço base fixo - deixar bootloader decidir */
-    . = 0x0;
+    /* Endereço base inicial - não zero para evitar entry point inválido */
+    /* O bootloader vai realocar de qualquer forma */
+    . = 0x1000;
 
     /* TODO: Revisar alinhamento de 1MB futuramente (sugerido para evitar colisão/NOT_FOUND em alocação UEFI) */
     .text : ALIGN(0x1000) {
