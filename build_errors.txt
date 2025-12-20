@@ -1,0 +1,251 @@
+   Compiling forge v0.3.5 (D:\Github\Redstone OS\forge)
+warning: unused import: `Device`
+ --> src\fs\devfs\registry.rs:3:21
+  |
+3 | use super::device::{Device, DeviceNumber};
+  |                     ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `TarEntry`
+ --> src\fs\tarfs\mod.rs:9:30
+  |
+9 | use super::tar::{TarArchive, TarEntry};
+  |                              ^^^^^^^^
+
+warning: unused import: `timer::*`
+  --> src\hal\traits\mod.rs:11:9
+   |
+11 | pub use timer::*;
+   |         ^^^^^^^^
+
+warning: unused import: `irq::*`
+  --> src\hal\traits\mod.rs:12:9
+   |
+12 | pub use irq::*;
+   |         ^^^^^^
+
+warning: unused import: `mmu::*`
+  --> src\hal\traits\mod.rs:13:9
+   |
+13 | pub use mmu::*;
+   |         ^^^^^^
+
+warning: unused import: `Frame`
+ --> src\mm\vmm.rs:6:22
+  |
+6 | use crate::mm::pmm::{Frame, PhysicalMemoryManager};
+  |                      ^^^^^
+
+warning: the `#![no_std]` attribute can only be used at the crate root
+ --> src\boot_info.rs:6:1
+  |
+6 | #![no_std]
+  | ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_attributes)]` (part of `#[warn(unused)]`) on by default
+
+error[E0599]: no method named `to_string` found for enum `Cow<'_, str>` in the current scope
+    --> src\fs\tar\mod.rs:169:44
+     |
+ 169 |     String::from_utf8_lossy(&bytes[..end]).to_string()
+     |                                            ^^^^^^^^^ method not found in `Cow<'_, str>`
+     |
+    ::: C:\Users\joaon\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library/alloc/src/string.rs:2850:8
+     |
+2850 |     fn to_string(&self) -> String;
+     |        --------- the method is available for `Cow<'_, str>` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `ToString` which provides `to_string` is implemented but not in scope; perhaps you want to import it
+     |
+   8 + use crate::kernel_main::alloc::string::ToString;
+     |
+
+warning[E0133]: use of inline assembly is unsafe and requires unsafe block
+   --> src\arch\x86_64\gdt.rs:133:5
+    |
+133 | /     core::arch::asm!(
+134 | |         "mov ax, 0x10",
+135 | |         "mov ds, ax",
+136 | |         "mov es, ax",
+...   |
+140 | |         out("ax") _,
+141 | |     );
+    | |_____^ use of inline assembly
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: inline assembly is entirely unchecked and can cause undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src\arch\x86_64\gdt.rs:131:1
+    |
+131 | unsafe fn load_segments() {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(unsafe_op_in_unsafe_fn)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning[E0133]: use of inline assembly is unsafe and requires unsafe block
+   --> src\arch\x86_64\gdt.rs:144:5
+    |
+144 | /     core::arch::asm!(
+145 | |         "push 0x08",
+146 | |         "lea {tmp}, [rip + 2f]",
+147 | |         "push {tmp}",
+...   |
+150 | |         tmp = lateout(reg) _,
+151 | |     );
+    | |_____^ use of inline assembly
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: inline assembly is entirely unchecked and can cause undefined behavior
+
+warning: unused variable: `old_pid`
+   --> src\arch\x86_64\interrupts.rs:303:21
+    |
+303 |                 let old_pid = pm.current_pid;
+    |                     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_old_pid`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning[E0133]: dereference of raw pointer is unsafe and requires unsafe block
+   --> src\core\elf.rs:112:19
+    |
+112 |     let header = &*(data.as_ptr() as *const ElfHeader);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ dereference of raw pointer
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: raw pointers may be null, dangling or unaligned; they can violate aliasing rules and cause data races: all of these are undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src\core\elf.rs:105:1
+    |
+105 | pub unsafe fn load_elf(data: &[u8]) -> Result<u64, ElfError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[E0133]: dereference of raw pointer is unsafe and requires unsafe block
+   --> src\core\elf.rs:147:21
+    |
+147 |         let phdr = &*(data.as_ptr().add(phdr_offset) as *const ProgramHeader);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ dereference of raw pointer
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: raw pointers may be null, dangling or unaligned; they can violate aliasing rules and cause data races: all of these are undefined behavior
+
+warning[E0133]: call to unsafe function `core::ptr::const_ptr::<impl *const T>::add` is unsafe and requires unsafe block
+   --> src\core\elf.rs:147:23
+    |
+147 |         let phdr = &*(data.as_ptr().add(phdr_offset) as *const ProgramHeader);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+
+warning[E0133]: call to unsafe function `core::slice::from_raw_parts_mut` is unsafe and requires unsafe block
+   --> src\core\elf.rs:158:23
+    |
+158 |             let dst = core::slice::from_raw_parts_mut(phdr.vaddr as *mut u8, phdr.memsz as usize);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+
+warning[E0133]: call to unsafe function `core::process::switch::switch_context` is unsafe and requires unsafe block
+   --> src\core\process\mod.rs:234:13
+    |
+234 |             switch::switch_context(&mut *from, &*to);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src\core\process\mod.rs:217:5
+    |
+217 |     pub unsafe fn switch_context(&mut self, from_pid: Pid, to_pid: Pid) {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[E0133]: dereference of raw pointer is unsafe and requires unsafe block
+   --> src\core\process\mod.rs:234:41
+    |
+234 |             switch::switch_context(&mut *from, &*to);
+    |                                         ^^^^^ dereference of raw pointer
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: raw pointers may be null, dangling or unaligned; they can violate aliasing rules and cause data races: all of these are undefined behavior
+
+warning[E0133]: dereference of raw pointer is unsafe and requires unsafe block
+   --> src\core\process\mod.rs:234:49
+    |
+234 |             switch::switch_context(&mut *from, &*to);
+    |                                                 ^^^ dereference of raw pointer
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: raw pointers may be null, dangling or unaligned; they can violate aliasing rules and cause data races: all of these are undefined behavior
+
+warning[E0133]: use of inline assembly is unsafe and requires unsafe block
+  --> src\drivers\pic.rs:19:5
+   |
+19 |     asm!("out dx, al", in("dx") port, in("al") value, options(nostack, preserves_flags));
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of inline assembly
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: inline assembly is entirely unchecked and can cause undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+  --> src\drivers\pic.rs:18:1
+   |
+18 | unsafe fn outb(port: u16, value: u8) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[E0133]: use of inline assembly is unsafe and requires unsafe block
+  --> src\drivers\pic.rs:26:5
+   |
+26 |     asm!("in al, dx", in("dx") port, out("al") value, options(nostack, preserves_flags));
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of inline assembly
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: inline assembly is entirely unchecked and can cause undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+  --> src\drivers\pic.rs:24:1
+   |
+24 | unsafe fn inb(port: u16) -> u8 {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `mask1`
+  --> src\drivers\pic.rs:34:13
+   |
+34 |         let mask1 = inb(PIC1_DATA);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_mask1`
+
+warning: unused variable: `mask2`
+  --> src\drivers\pic.rs:35:13
+   |
+35 |         let mask2 = inb(PIC2_DATA);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_mask2`
+
+warning[E0133]: use of inline assembly is unsafe and requires unsafe block
+  --> src\drivers\timer\pit.rs:19:5
+   |
+19 |     asm!("out dx, al", in("dx") port, in("al") value, options(nostack, preserves_flags));
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of inline assembly
+   |
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+   = note: inline assembly is entirely unchecked and can cause undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+  --> src\drivers\timer\pit.rs:18:1
+   |
+18 | unsafe fn outb(port: u16, value: u8) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `info`
+  --> src\panic.rs:18:10
+   |
+18 | fn panic(info: &PanicInfo) -> ! {
+   |          ^^^^ help: if this is intentional, prefix it with an underscore: `_info`
+
+warning: unused variable: `tar`
+   --> src\main.rs:346:16
+    |
+346 |             Ok(tar) => {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_tar`
+
+Some errors have detailed explanations: E0133, E0599.
+For more information about an error, try `rustc --explain E0133`.
+warning: `forge` (bin "forge") generated 24 warnings
+error: could not compile `forge` (bin "forge") due to 1 previous error; 24 warnings emitted

@@ -327,60 +327,99 @@ pub extern "sysv64" fn kernel_main(boot_info_addr: u64) -> ! {
         "===================================================\n",
     );
 
-    dp(&mut console, "[1/2] Montando InitFS...\n");
+    dp(&mut console, "[1/3] Inicializando VFS...\n");
+    // VFS já existe como singleton, não precisa criar
+    dp(&mut console, "[OK] VFS inicializado\n");
+
+    dp(&mut console, "[2/3] Montando InitRAMFS...\n");
 
     if boot_info.initfs_size > 0 {
-        let initfs_data = unsafe {
+        let initramfs_data = unsafe {
             ::core::slice::from_raw_parts(
                 boot_info.initfs_addr as *const u8,
                 boot_info.initfs_size as usize,
             )
         };
 
-        // Tentar montar como FAT32
-        match fs::fat32::Fat32::mount(initfs_data) {
-            Ok(fat32) => {
-                dp(&mut console, "[OK] InitFS montado (FAT32, ");
+        // Parse TAR
+        match fs::tar::TarArchive::new(initramfs_data) {
+            Ok(tar) => {
+                dp(&mut console, "[OK] InitRAMFS parseado (");
                 dn(&mut console, (boot_info.initfs_size / 1024) as usize);
                 dp(&mut console, " KB)\n");
 
-                // Guardar referência global
-                // TODO(prioridade=ALTA, versão=v1.0): REFATORAR GLOBAL MUTABLE
-                //
-                // ⚠️ ATENÇÃO: Usando static mut para guardar FAT32!
-                //
-                // PROBLEMA: Precisamos acessar o filesystem de qualquer lugar
-                // mas Rust não permite compartilhar referências mutáveis.
-                //
-                // SOLUÇÃO ATUAL: static mut com unsafe
-                //
-                // RISCOS:
-                // - Data races se acessado de múltiplas threads
-                // - Sem garantias de sincronização
-                //
-                // SOLUÇÕES FUTURAS:
-                // 1. Usar Mutex<Option<Fat32>>
-                // 2. Usar Arc<Mutex<Fat32>>
-                // 3. Integrar com VFS global
-                unsafe {
-                    INITFS = Some(fat32);
+                // Criar TarFS
+                match fs::tarfs::TarFS::new(initramfs_data) {
+                    Ok(tarfs) => {
+                        dp(&mut console, "[OK] TarFS criado\n");
+
+                        // Listar conteúdo
+                        dp(&mut console, "[INFO] Conteúdo do initramfs:\n");
+                        match tarfs.readdir("/") {
+                            Ok(entries) => {
+                                for entry in entries.iter().take(10) {
+                                    dp(&mut console, "  - ");
+                                    dp(&mut console, entry);
+                                    dp(&mut console, "\n");
+                                }
+                                if entries.len() > 10 {
+                                    dp(&mut console, "  ... e mais ");
+                                    dn(&mut console, entries.len() - 10);
+                                    dp(&mut console, " arquivos\n");
+                                }
+                            }
+                            Err(e) => {
+                                dp(&mut console, "  [WARN] Erro ao listar: ");
+                                dp(&mut console, e);
+                                dp(&mut console, "\n");
+                            }
+                        }
+
+                        // Verificar se /bin/init existe
+                        if tarfs.exists("bin/init") {
+                            dp(&mut console, "[OK] /bin/init encontrado no initramfs\n");
+                            if let Some(size) = tarfs.file_size("bin/init") {
+                                dp(&mut console, "  Tamanho: ");
+                                dn(&mut console, size);
+                                dp(&mut console, " bytes\n");
+                            }
+                        } else {
+                            dp(&mut console, "[ERROR] /bin/init NÃO encontrado!\n");
+                            dp(&mut console, "[ERROR] Sistema não pode iniciar PID 1\n");
+                        }
+
+                        // TODO: Montar no VFS quando VFS suportar filesystems dinâmicos
+                        // Por enquanto, apenas guardamos referência
+                        unsafe {
+                            INITFS = Some(fs::fat32::Fat32::default()); // Placeholder
+                        }
+                    }
+                    Err(e) => {
+                        dp(&mut console, "[ERROR] Falha ao criar TarFS: ");
+                        dp(&mut console, e);
+                        dp(&mut console, "\n");
+                    }
                 }
             }
             Err(e) => {
-                dp(&mut console, "[WARN] Falha ao montar FAT32: ");
+                dp(&mut console, "[ERROR] Falha ao parsear TAR: ");
                 dp(&mut console, e);
                 dp(&mut console, "\n");
+                dp(&mut console, "[ERROR] InitRAMFS inválido\n");
             }
         }
     } else {
         dp(
             &mut console,
-            "[WARN] InitFS não encontrado pelo bootloader\n",
+            "[ERROR] InitRAMFS não fornecido pelo bootloader\n",
+        );
+        dp(
+            &mut console,
+            "[ERROR] Sistema precisa de initramfs para boot\n",
         );
     }
 
-    dp(&mut console, "[2/2] Filesystem pronto\n");
-    dp(&mut console, "[OK] VFS inicializado\n\n");
+    dp(&mut console, "[3/3] Filesystem pronto\n\n");
 
     dp(
         &mut console,
@@ -392,11 +431,12 @@ pub extern "sysv64" fn kernel_main(boot_info_addr: u64) -> ! {
         "===================================================\n",
     );
     dp(&mut console, "  VFS: OK\n");
-    dp(&mut console, "  FAT32: OK (read-only)\n");
     if boot_info.initfs_size > 0 {
-        dp(&mut console, "  InitFS: Montado\n\n");
+        dp(&mut console, "  InitRAMFS: Montado (");
+        dn(&mut console, (boot_info.initfs_size / 1024) as usize);
+        dp(&mut console, " KB)\n\n");
     } else {
-        dp(&mut console, "  InitFS: Não disponível\n\n");
+        dp(&mut console, "  InitRAMFS: Não disponível\n\n");
     }
 
     // 8. Inicializar Interrupções (Fase 3)

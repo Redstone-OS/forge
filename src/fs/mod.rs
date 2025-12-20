@@ -15,6 +15,7 @@
 //! - SysFS: System info (/sys)
 //! - TmpFS: Temporary files (RAM)
 //! - FAT32: Compatibilidade
+//! - TAR: InitRAMFS (read-only)
 //!
 //! # TODOs
 //! - TODO(prioridade=alta, versão=v1.0): Implementar VFS completo
@@ -26,12 +27,14 @@
 //! - TODO(prioridade=baixa, versão=v3.0): Adicionar Network FS
 //! - TODO(prioridade=baixa, versão=v3.0): Adicionar NTFS
 
-pub mod vfs;
 pub mod devfs;
+pub mod fat32;
 pub mod procfs;
 pub mod sysfs;
+pub mod tar;
+pub mod tarfs;
 pub mod tmpfs;
-pub mod fat32;
+pub mod vfs;
 
 #[cfg(test)]
 pub mod tests;
