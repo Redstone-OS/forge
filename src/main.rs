@@ -126,10 +126,41 @@ pub extern "sysv64" fn kernel_main(boot_info_addr: u64) -> ! {
     use drivers::video::framebuffer::{COLOR_BLACK, COLOR_LIGHT_GREEN};
     use drivers::video::{Console, Framebuffer};
 
+    // IMMEDIATO: Debug antes de qualquer coisa
+    unsafe {
+        let port: u16 = 0x3F8;
+        let mut msg = b"[KERNEL_MAIN ENTRY]\r\n";
+        for &byte in msg.iter() {
+            ::core::arch::asm!(
+                "out dx, al",
+                in("dx") port,
+                in("al") byte,
+            );
+        }
+    }
+
     // 1. Inicializar serial
     drivers::legacy::serial::init();
     drivers::legacy::serial::println("[OK] Serial inicializado");
     drivers::legacy::serial::println("[OK] Kernel _start executando!");
+
+    // DEBUG: Mostrar boot_info_addr recebido
+    drivers::legacy::serial::print("[DEBUG] boot_info_addr = 0x");
+    unsafe {
+        let mut val = boot_info_addr;
+        for _ in 0..16 {
+            let nibble = ((val >> 60) & 0xF) as u8;
+            let ch = if nibble < 10 {
+                b'0' + nibble
+            } else {
+                b'a' + nibble - 10
+            };
+            ::core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") ch);
+            val <<= 4;
+        }
+        ::core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'\r');
+        ::core::arch::asm!("out dx, al", in("dx") 0x3F8u16, in("al") b'\n');
+    }
 
     // 2. Ler BootInfo do endereço passado pelo bootloader
     // NOTA: Desreferenciamos para copiar para a stack (que está mapeada),
