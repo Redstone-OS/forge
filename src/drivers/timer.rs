@@ -23,7 +23,7 @@ const BASE_FREQUENCY: u32 = 1_193_182;
 
 // Portas de I/O do PIT
 const PORT_CHANNEL0: u16 = 0x40; // Canal 0 (System Timer)
-const PORT_COMMAND: u16  = 0x43; // Registrador de Comando
+const PORT_COMMAND: u16 = 0x43; // Registrador de Comando
 
 /// Contador global de ticks do sistema (Monotonic Clock).
 /// Incrementado a cada interrupção do timer.
@@ -65,7 +65,7 @@ impl Pit {
 
         // Divisor = Base / Freq
         let divisor = BASE_FREQUENCY / freq;
-        
+
         // O divisor deve caber em 16 bits (exceto 0 que significa 65536)
         if divisor > 65535 {
             return Err(Errno::EINVAL); // Frequência muito baixa (< 18.2 Hz)
@@ -133,7 +133,7 @@ pub fn handle_timer_interrupt() {
     // no contexto da tarefa antiga imediatamente.
     if let Some((old_ptr, new_ptr)) = switch_info {
         unsafe {
-            crate::sched::context_switch(old_ptr, new_ptr);
+            crate::sched::context_switch(old_ptr as *mut u64, new_ptr);
         }
     }
 }

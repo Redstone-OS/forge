@@ -41,7 +41,7 @@ pub fn sys_yield() -> isize {
     if let Some((old_sp, new_sp)) = switch {
         unsafe {
             // Reutiliza o assembly de switch
-            crate::sched::context_switch(old_sp, new_sp);
+            crate::sched::context_switch(old_sp as *mut u64, new_sp);
         }
     }
 

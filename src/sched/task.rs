@@ -13,10 +13,10 @@ use crate::sched::context::Context;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-// Símbolo definido em src/sched/mod.rs (global_asm!)
-extern "C" {
-    fn user_entry_trampoline();
-}
+// REMOVIDO: extern "C" { fn user_entry_trampoline(); }
+// A solução profissional usa o caminho do módulo Rust para garantir que o compilador
+// resolva o endereço corretamente, sem depender de strings de símbolos no Linker.
+use crate::sched::user_entry_trampoline;
 
 /// ID único de tarefa (PID/TID).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -61,8 +61,7 @@ impl Task {
     /// Cria uma nova tarefa de Kernel (Ring 0).
     pub fn new_kernel(entry: extern "C" fn()) -> Self {
         let mut task = Self::create_base();
-        // Kernel roda com CS=0x08, SS=0x10, RFLAGS=0x202
-        // entry é o endereço onde a execução começa
+        // Configura stack para execução direta no Kernel
         task.setup_stack(entry as u64, KERNEL_CODE_SEL, KERNEL_DATA_SEL, 0);
         task
     }
@@ -113,51 +112,50 @@ impl Task {
     /// Constrói um stack frame artificial que simula uma tarefa interrompida.
     fn setup_stack(&mut self, rip: u64, cs: u16, ss: u16, user_rsp: u64) {
         unsafe {
-            let mut sp = self.kstack_top as *mut u64;
+            let mut ptr = self.kstack_top as *mut u64;
 
             // 1. Se for tarefa de usuário, empilhar frame IRETQ
             if cs == USER_CODE_SEL {
                 // Layout: [SS, RSP, RFLAGS, CS, RIP]
-                sp = sp.sub(1);
-                *sp = ss as u64; // SS
-                sp = sp.sub(1);
-                *sp = user_rsp; // RSP (User)
-                sp = sp.sub(1);
-                *sp = 0x202; // RFLAGS (Interrupts Enabled)
-                sp = sp.sub(1);
-                *sp = cs as u64; // CS
-                sp = sp.sub(1);
-                *sp = rip; // RIP (User Entry)
+                ptr = ptr.sub(1);
+                *ptr = ss as u64; // SS
+                ptr = ptr.sub(1);
+                *ptr = user_rsp; // RSP (User)
+                ptr = ptr.sub(1);
+                *ptr = 0x202; // RFLAGS (Interrupts Enabled)
+                ptr = ptr.sub(1);
+                *ptr = cs as u64; // CS
+                ptr = ptr.sub(1);
+                *ptr = rip; // RIP (User Entry)
 
                 // Endereço de retorno do 'ret' no switch.s: Trampolim
-                sp = sp.sub(1);
-                *sp = user_entry_trampoline as u64;
+                // CORREÇÃO: Usamos o símbolo importado do módulo Rust diretamente.
+                ptr = ptr.sub(1);
+                *ptr = user_entry_trampoline as usize as u64;
             } else {
                 // Tarefa de Kernel: Endereço de retorno direto
-                sp = sp.sub(1);
-                *sp = rip;
+                ptr = ptr.sub(1);
+                *ptr = rip;
             }
 
             // 2. Empilhar registradores Callee-Saved (RBX, RBP, R12-R15)
             // O switch.s vai dar 'pop' nestes valores.
             // Inicializamos com 0 para evitar lixo.
-            sp = sp.sub(1);
-            *sp = 0; // RBP
-            sp = sp.sub(1);
-            *sp = 0; // RBX
-            sp = sp.sub(1);
-            *sp = 0; // R12
-            sp = sp.sub(1);
-            *sp = 0; // R13
-            sp = sp.sub(1);
-            *sp = 0; // R14
-            sp = sp.sub(1);
-            *sp = 0; // R15
+            ptr = ptr.sub(1);
+            *ptr = 0; // RBP
+            ptr = ptr.sub(1);
+            *ptr = 0; // RBX
+            ptr = ptr.sub(1);
+            *ptr = 0; // R12
+            ptr = ptr.sub(1);
+            *ptr = 0; // R13
+            ptr = ptr.sub(1);
+            *ptr = 0; // R14
+            ptr = ptr.sub(1);
+            *ptr = 0; // R15
 
-            // --- 3. Finalização ---
-            // O valor final de SP é onde a stack "termina" (topo lógico atual).
-            // O Scheduler salvará este valor para restaurar depois.
-            self.kstack_top = sp as u64;
+            // 3. Salvar o novo topo da stack
+            self.kstack_top = ptr as u64;
         }
     }
 }
