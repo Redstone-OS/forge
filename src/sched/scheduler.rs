@@ -1,6 +1,11 @@
 //! Scheduler Round-Robin (Cooperativo/Preemptivo).
 //!
 //! Gerencia a fila de tarefas e decide quem roda a seguir.
+//!
+//! # Mecânica
+//! O scheduler seleciona a próxima tarefa `Ready` e realiza a troca de contexto.
+//! O estado da CPU (registradores) é salvo no `Context` da tarefa antiga e
+//! restaurado do `Context` da nova.
 
 use super::task::{Task, TaskId, TaskState};
 use crate::sync::Mutex;
@@ -30,6 +35,10 @@ impl Scheduler {
 
     /// Chamado pelo Timer Interrupt para trocar tarefas.
     /// Retorna (ponteiro para stack antiga, ponteiro para stack nova) se houver troca.
+    ///
+    /// # Safety
+    /// Retorna ponteiros brutos que serão usados em assembly. O caller deve garantir
+    /// que os locks sejam tratados corretamente (embora aqui retornemos cópias/endereços).
     pub fn schedule(&mut self) -> Option<(u64, u64)> {
         // Se não há tarefas, nada a fazer
         if self.tasks.is_empty() {
@@ -53,31 +62,24 @@ impl Scheduler {
             let mut t = next.lock();
             t.state = TaskState::Running;
 
-            let next_stack_top = t.stack_top;
+            // O novo RSP é o que foi salvo no contexto da tarefa
+            let next_rsp = t.context.rsp;
             drop(t); // Liberar lock
 
             self.current_task = Some(next.clone());
 
-            // Se tínhamos uma tarefa antiga, precisamos salvar o contexto dela
             if let Some(old) = old_task_ref {
-                // Precisamos retornar endereços de memória onde o assembly
-                // vai salvar/ler o RSP (Stack Pointer).
-                // Como Task é protegida por Mutex, e o assembly precisa de ponteiros crus,
-                // a estratégia segura é:
-                // O assembly recebe `&mut old_stack_top` e `new_stack_top`.
-
-                // Hack: Vamos usar unsafe para pegar o ponteiro interno do campo stack_top
-                // Isso é perigoso, mas padrão em schedulers.
-                let old_ptr = unsafe {
-                    let ptr = &mut old.lock().stack_top as *mut u64;
+                // Precisamos do endereço de memória onde o assembly deve salvar o RSP antigo.
+                // &mut old.context.rsp
+                let old_rsp_ptr = unsafe {
+                    let ptr = &mut old.lock().context.rsp as *mut u64;
                     ptr as u64
                 };
 
-                return Some((old_ptr, next_stack_top));
+                return Some((old_rsp_ptr, next_rsp));
             } else {
-                // Primeira tarefa (boot -> task 1). Não salvamos o contexto do boot.
-                // Apenas carregamos o novo.
-                return Some((0, next_stack_top));
+                // Primeira tarefa (boot -> task 1). Não salvamos o contexto do boot (0).
+                return Some((0, next_rsp));
             }
         }
 
@@ -86,25 +88,28 @@ impl Scheduler {
 }
 
 /// Função auxiliar para inicializar multitarefa.
-/// Cria a tarefa Idle ou Init.
+/// Cria as tarefas iniciais (Init/Idle).
 pub fn init() {
     let mut sched = SCHEDULER.lock();
-    // Exemplo: Criar tarefa de teste
-    sched.add_task(Task::new(example_task));
-    sched.add_task(Task::new(example_task_2));
+
+    // Criar tarefas de kernel para teste
+    sched.add_task(Task::new_kernel(example_task_a));
+    sched.add_task(Task::new_kernel(example_task_b));
+
+    crate::kinfo!("[Scheduler] Tasks initialized.");
 }
 
-extern "C" fn example_task() {
+extern "C" fn example_task_a() {
     loop {
         crate::kprint!("A");
-        // Loop de delay burro
+        // Loop de delay (spin loop)
         for _ in 0..1000000 {
             core::hint::spin_loop();
         }
     }
 }
 
-extern "C" fn example_task_2() {
+extern "C" fn example_task_b() {
     loop {
         crate::kprint!("B");
         for _ in 0..1000000 {

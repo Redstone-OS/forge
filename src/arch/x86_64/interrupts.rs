@@ -1,29 +1,24 @@
-//! Stubs de Interrupção em Assembly (Naked Functions).
-//!
-//! Rust não consegue salvar todos os registradores automaticamente na entrada
-//! de uma interrupção. Precisamos de assembly puro para criar o `InterruptStackFrame`
-//! e chamar o handler Rust seguro.
+//! Stubs de Interrupção em Assembly.
 
-use core::arch::naked_asm;
+use crate::arch::traits::CpuOps;
+use crate::arch::x86_64::idt::ContextFrame;
+use core::arch::naked_asm; // CORREÇÃO: Import necessário // CORREÇÃO: Trait para .hang()
 
-// Macro para criar stubs de exceção sem código de erro
+// Macros de handler (mantidas idênticas para economizar espaço visual, mas funcionais)
 macro_rules! handler_no_err {
     ($name:ident, $handler_fn:ident) => {
         #[naked]
         pub extern "C" fn $name() {
             unsafe {
                 naked_asm!(
-                    "push 0", // Fake error code para alinhar stack
-                    "push rbp",
+                    "push 0", "push rbp",
                     "push r15", "push r14", "push r13", "push r12", "push r11", "push r10", "push r9", "push r8",
                     "push rdi", "push rsi", "push rdx", "push rcx", "push rbx", "push rax",
-                    "mov rdi, rsp", // Passar ponteiro da stack como argumento para o Rust
-                    "call {}",      // Chamar handler Rust
+                    "mov rdi, rsp",
+                    "call {}",
                     "pop rax", "pop rbx", "pop rcx", "pop rdx", "pop rsi", "pop rdi",
                     "pop r8", "pop r9", "pop r10", "pop r11", "pop r12", "pop r13", "pop r14", "pop r15",
-                    "pop rbp",
-                    "add rsp, 8", // Remover error code
-                    "iretq",
+                    "pop rbp", "add rsp, 8", "iretq",
                     sym $handler_fn
                 );
             }
@@ -31,14 +26,12 @@ macro_rules! handler_no_err {
     };
 }
 
-// Macro para exceções que JÁ empilham erro (ex: Page Fault)
 macro_rules! handler_with_err {
     ($name:ident, $handler_fn:ident) => {
         #[naked]
         pub extern "C" fn $name() {
             unsafe {
                 naked_asm!(
-                    // Error code já está na stack
                     "push rbp",
                     "push r15", "push r14", "push r13", "push r12", "push r11", "push r10", "push r9", "push r8",
                     "push rdi", "push rsi", "push rdx", "push rcx", "push rbx", "push rax",
@@ -46,9 +39,7 @@ macro_rules! handler_with_err {
                     "call {}",
                     "pop rax", "pop rbx", "pop rcx", "pop rdx", "pop rsi", "pop rdi",
                     "pop r8", "pop r9", "pop r10", "pop r11", "pop r12", "pop r13", "pop r14", "pop r15",
-                    "pop rbp",
-                    "add rsp, 8", // Remover error code
-                    "iretq",
+                    "pop rbp", "add rsp, 8", "iretq",
                     sym $handler_fn
                 );
             }
@@ -56,16 +47,14 @@ macro_rules! handler_with_err {
     };
 }
 
-// Handlers Rust (Seguros)
-use crate::arch::x86_64::idt::ContextFrame;
-
 extern "C" fn breakpoint_handler_impl(frame: &ContextFrame) {
     crate::kinfo!("EXCEPTION: BREAKPOINT at {:#x}", frame.rip);
 }
 
 extern "C" fn double_fault_handler_impl(frame: &ContextFrame) {
-    crate::kerror!("EXCEPTION: DOUBLE FAULT at {:#x}\n{:#?}", frame.rip, frame);
-    crate::arch::platform::cpu::X64Cpu::hang();
+    crate::kerror!("EXCEPTION: DOUBLE FAULT\n{:#?}", frame);
+    // CORREÇÃO: Usar o wrapper da plataforma ou trait
+    crate::arch::platform::Cpu::hang();
 }
 
 extern "C" fn page_fault_handler_impl(frame: &ContextFrame) {
@@ -76,7 +65,7 @@ extern "C" fn page_fault_handler_impl(frame: &ContextFrame) {
         frame.rip,
         cr2
     );
-    crate::arch::platform::cpu::X64Cpu::hang();
+    crate::arch::platform::Cpu::hang();
 }
 
 extern "C" fn general_protection_fault_handler_impl(frame: &ContextFrame) {
@@ -85,10 +74,13 @@ extern "C" fn general_protection_fault_handler_impl(frame: &ContextFrame) {
         frame.rip,
         frame.error_code
     );
-    crate::arch::platform::cpu::X64Cpu::hang();
+    crate::arch::platform::Cpu::hang();
 }
 
-// Stubs exportados
+extern "C" fn timer_handler_impl(_frame: &ContextFrame) {
+    crate::drivers::timer::handle_timer_interrupt();
+}
+
 handler_no_err!(breakpoint_handler, breakpoint_handler_impl);
 handler_with_err!(double_fault_handler, double_fault_handler_impl);
 handler_with_err!(page_fault_handler, page_fault_handler_impl);
@@ -96,3 +88,4 @@ handler_with_err!(
     general_protection_fault_handler,
     general_protection_fault_handler_impl
 );
+handler_no_err!(timer_handler, timer_handler_impl);

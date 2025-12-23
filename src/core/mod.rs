@@ -3,8 +3,8 @@
 //! Contém a lógica central do kernel, independente de arquitetura,
 //! mas fundamental para o funcionamento do sistema.
 
+pub mod elf;
+pub mod entry;
 pub mod handoff;
-
-// Futuro:
-// pub mod panic;
-// pub mod logging;
+pub mod logging;
+pub mod panic;
