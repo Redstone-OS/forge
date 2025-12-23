@@ -1,26 +1,30 @@
 //! Driver de Console de Vídeo.
 //!
 //! Gerencia a escrita de texto na tela gráfica (Framebuffer).
-//! Suporta cores, quebras de linha e rolagem simples.
+//! Suporta cores, quebras de linha e rolagem de tela (Scroll).
 
 use crate::core::handoff::FramebufferInfo;
 use core::fmt;
-// O PixelFormat pode ser útil se precisarmos converter cores, mas por enquanto usamos u32 direto ou Color.
-// Se Color estiver em framebuffer.rs, precisamos importá-lo ou redefini-lo.
-// Assumindo que definiremos cores simples aqui para evitar dependência circular complexa ou re-exportaremos.
-
+// Importação corrigida: depende de src/drivers/video/mod.rs exportar 'pub mod font;'
 use crate::drivers::video::font;
 
-// Definição local de cores para o console (ou importar de framebuffer se lá estiver público)
+/// Definição de cores (32-bit ARGB/BGRA).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color(u32);
 
+impl Color {
+    pub const fn new(val: u32) -> Self {
+        Self(val)
+    }
+}
+
+// Cores padrão para uso no kernel (Restauradas para o main.rs funcionar)
 pub const COLOR_BLACK: Color = Color(0x000000);
 pub const COLOR_WHITE: Color = Color(0xFFFFFF);
 pub const COLOR_RED: Color = Color(0xFF0000);
 pub const COLOR_GREEN: Color = Color(0x00FF00);
 pub const COLOR_BLUE: Color = Color(0x0000FF);
-pub const COLOR_LIGHT_GREEN: Color = Color(0x00FF00); // Simplificação
+pub const COLOR_LIGHT_GREEN: Color = Color(0x00FF00);
 
 pub struct Console {
     info: FramebufferInfo,
@@ -28,36 +32,29 @@ pub struct Console {
     y_pos: usize,
     fg_color: u32,
     bg_color: u32,
-    cols: usize,
-    rows: usize,
 }
 
 impl Console {
+    /// Cria uma nova instância do Console.
     pub fn new(info: FramebufferInfo) -> Self {
-        // Assumindo fonte 8x16
-        let cols = info.width as usize / 8;
-        let rows = info.height as usize / 16;
-
         Self {
             info,
             x_pos: 0,
             y_pos: 0,
             fg_color: 0xFFFFFF, // Branco padrão
             bg_color: 0x000000, // Preto padrão
-            cols,
-            rows,
         }
     }
 
+    /// Define as cores de frente e fundo.
     pub fn set_colors(&mut self, fg: Color, bg: Color) {
         self.fg_color = fg.0;
         self.bg_color = bg.0;
     }
 
+    /// Limpa a tela preenchendo com a cor de fundo.
     pub fn clear(&mut self) {
-        // Preencher a tela com a cor de fundo
-        // Nota: Assumimos 32bpp (4 bytes por pixel) para simplificar a escrita direta
-        // Em um driver real, verificaríamos info.bytes_per_pixel
+        // Assume 32bpp (4 bytes por pixel)
         let size_u32 = self.info.size as usize / 4;
         let buffer =
             unsafe { core::slice::from_raw_parts_mut(self.info.addr as *mut u32, size_u32) };
@@ -66,27 +63,30 @@ impl Console {
         self.y_pos = 0;
     }
 
+    /// Avança para a próxima linha, rolando a tela se necessário.
     fn newline(&mut self) {
         self.x_pos = 0;
-        self.y_pos += 16; // Altura da fonte
+        self.y_pos += 16; // Altura da fonte (8x16)
 
-        // Scroll simples se atingir o fim da tela
+        // Se passarmos da altura da tela, rolar o conteúdo para cima
         if self.y_pos + 16 > self.info.height as usize {
             self.scroll();
             self.y_pos -= 16;
         }
     }
 
+    /// Rola a tela para cima (Move memória de vídeo).
     fn scroll(&mut self) {
-        // Mover memória para cima
         let stride = self.info.stride as usize;
         let height = self.info.height as usize;
-        let width = self.info.width as usize;
 
         // Copiar linhas de baixo para cima
         // Fonte 8x16: copiar (height - 16) linhas
-        let lines_to_copy = height - 16;
-        let dwords_to_copy = lines_to_copy * stride;
+        // Multiplica por 4 bytes (u32) implicitamente ao trabalhar com slice u32
+        let u32_stride = stride;
+        let font_height = 16;
+        let lines_to_copy = height - font_height;
+        let u32s_to_copy = lines_to_copy * u32_stride;
 
         let buffer = unsafe {
             core::slice::from_raw_parts_mut(
@@ -95,19 +95,26 @@ impl Console {
             )
         };
 
-        // Memmove manual ou copy_within se disponível
-        // copy_within é seguro para sobreposição
-        buffer.copy_within(stride * 16..(stride * 16) + dwords_to_copy, 0);
+        // Mover o conteúdo da tela para cima.
+        // copy_within é seguro para sobreposição (memmove).
+        // Copia do início da segunda linha (stride * 16) até o final desejado, para o início (0).
+        let start_src = u32_stride * font_height;
+        let end_src = start_src + u32s_to_copy;
 
-        // Limpar a última linha (área nova)
-        let last_line_start = dwords_to_copy;
-        let last_line_end = height * stride;
-        // Preencher com bg_color, cuidado com limites
-        if last_line_end <= buffer.len() {
-            buffer[last_line_start..last_line_end].fill(self.bg_color);
+        if end_src <= buffer.len() {
+            buffer.copy_within(start_src..end_src, 0);
+        }
+
+        // Limpar a última linha (área nova em baixo)
+        let start_clear = u32s_to_copy;
+        let end_clear = height * u32_stride;
+
+        if end_clear <= buffer.len() {
+            buffer[start_clear..end_clear].fill(self.bg_color);
         }
     }
 
+    /// Escreve um caractere na posição atual.
     fn write_char(&mut self, c: char) {
         if c == '\n' {
             self.newline();
@@ -119,7 +126,7 @@ impl Console {
             self.newline();
         }
 
-        // Desenhar caractere usando a função de fonte corrigida
+        // Desenhar caractere usando o módulo de fonte
         font::draw_char_raw(
             self.info.addr,
             self.info.stride,
