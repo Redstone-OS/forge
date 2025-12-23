@@ -1,85 +1,97 @@
-//! PIC (Programmable Interrupt Controller)
+//! Driver do 8259 PIC (Programmable Interrupt Controller).
 //!
-//! Driver para o 8259 PIC (controlador de interrupções programável).
-//! Gerencia IRQs de hardware.
+//! Gerencia as interrupções de hardware (IRQs) antes de chegarem à CPU.
+//! Em x86_64 moderno, o APIC é preferido, mas o PIC é necessário para o boot
+//! ou como fallback.
+//!
+//! # Remapeamento
+//! Por padrão, o PIC usa vetores 0-15, que conflitam com exceções da CPU.
+//! Remapeamos para 32-47.
 
-use core::arch::asm;
+use crate::arch::x86_64::ports::Port;
+use crate::sync::Mutex;
 
-const PIC1_COMMAND: u16 = 0x20;
+const PIC1_CMD: u16 = 0x20;
 const PIC1_DATA: u16 = 0x21;
-const PIC2_COMMAND: u16 = 0xA0;
+const PIC2_CMD: u16 = 0xA0;
 const PIC2_DATA: u16 = 0xA1;
 
-const ICW1_INIT: u8 = 0x11;
-const ICW4_8086: u8 = 0x01;
+const PIC_EOI: u8 = 0x20;
 
-/// Escreve byte em porta I/O
-#[inline]
-unsafe fn outb(port: u16, value: u8) {
-    asm!("out dx, al", in("dx") port, in("al") value, options(nostack, preserves_flags));
+/// Cadeia de PICs (Master + Slave).
+pub struct ChainedPics {
+    pics: [Pic; 2],
 }
 
-/// Lê byte de porta I/O
-#[inline]
-unsafe fn inb(port: u16) -> u8 {
-    let value: u8;
-    asm!("in al, dx", in("dx") port, out("al") value, options(nostack, preserves_flags));
-    value
+struct Pic {
+    offset: u8,
+    command: Port<u8>,
+    data: Port<u8>,
 }
 
-/// Inicializa o PIC
-pub fn init() {
-    unsafe {
+impl ChainedPics {
+    pub const unsafe fn new(offset1: u8, offset2: u8) -> Self {
+        Self {
+            pics: [
+                Pic {
+                    offset: offset1,
+                    command: Port::new(PIC1_CMD),
+                    data: Port::new(PIC1_DATA),
+                },
+                Pic {
+                    offset: offset2,
+                    command: Port::new(PIC2_CMD),
+                    data: Port::new(PIC2_DATA),
+                },
+            ],
+        }
+    }
+
+    /// Inicializa e remapeia o PIC.
+    pub unsafe fn init(&mut self) {
         // Salvar máscaras
-        let mask1 = inb(PIC1_DATA);
-        let mask2 = inb(PIC2_DATA);
+        let mask1 = self.pics[0].data.read();
+        let mask2 = self.pics[1].data.read();
 
-        // Iniciar sequência de inicialização
-        outb(PIC1_COMMAND, ICW1_INIT);
-        outb(PIC2_COMMAND, ICW1_INIT);
+        // Sequência de inicialização (ICW1)
+        self.pics[0].command.write(0x11);
+        self.pics[1].command.write(0x11);
 
-        // ICW2: Offset dos vetores (32 para PIC1, 40 para PIC2)
-        outb(PIC1_DATA, 32);
-        outb(PIC2_DATA, 40);
+        // ICW2: Offsets dos vetores
+        self.pics[0].data.write(self.pics[0].offset);
+        self.pics[1].data.write(self.pics[1].offset);
 
-        // ICW3: Configurar cascata (PIC2 no IRQ2 do PIC1)
-        outb(PIC1_DATA, 4); // IRQ2 tem slave
-        outb(PIC2_DATA, 2); // Cascade identity
+        // ICW3: Cascata
+        self.pics[0].data.write(4); // IRQ2 tem slave
+        self.pics[1].data.write(2); // Identidade cascade
 
         // ICW4: Modo 8086
-        outb(PIC1_DATA, ICW4_8086);
-        outb(PIC2_DATA, ICW4_8086);
+        self.pics[0].data.write(0x01);
+        self.pics[1].data.write(0x01);
 
-        // Restaurar máscaras (todos desabilitados)
-        outb(PIC1_DATA, 0xFF);
-        outb(PIC2_DATA, 0xFF);
+        // Restaurar máscaras
+        self.pics[0].data.write(mask1);
+        self.pics[1].data.write(mask2);
     }
-}
 
-/// Desmascara (habilita) um IRQ
-pub fn unmask_irq(irq: u8) {
-    unsafe {
-        let port = if irq < 8 { PIC1_DATA } else { PIC2_DATA };
-        let value = inb(port) & !(1 << (irq % 8));
-        outb(port, value);
-    }
-}
-
-/// Mascara (desabilita) um IRQ
-pub fn mask_irq(irq: u8) {
-    unsafe {
-        let port = if irq < 8 { PIC1_DATA } else { PIC2_DATA };
-        let value = inb(port) | (1 << (irq % 8));
-        outb(port, value);
-    }
-}
-
-/// Envia EOI (End of Interrupt) ao PIC
-pub fn send_eoi(irq: u8) {
-    unsafe {
-        if irq >= 8 {
-            outb(PIC2_COMMAND, 0x20);
+    /// Envia "End of Interrupt" (EOI).
+    /// Deve ser chamado ao final de todo handler de IRQ.
+    pub unsafe fn notify_eoi(&mut self, interrupt_id: u8) {
+        if interrupt_id >= self.pics[1].offset {
+            self.pics[1].command.write(PIC_EOI);
         }
-        outb(PIC1_COMMAND, 0x20);
+        self.pics[0].command.write(PIC_EOI);
+    }
+
+    /// Habilita (unmask) uma IRQ específica (0-15).
+    pub unsafe fn unmask(&mut self, irq: u8) {
+        let pic_idx = if irq < 8 { 0 } else { 1 };
+        let port = &mut self.pics[pic_idx].data;
+        let value = port.read();
+        // Clear bit to enable
+        port.write(value & !(1 << (irq % 8)));
     }
 }
+
+// Instância global protegida (Remapeando para 32 e 40)
+pub static PICS: Mutex<ChainedPics> = Mutex::new(unsafe { ChainedPics::new(32, 40) });

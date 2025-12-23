@@ -3,11 +3,12 @@
   "data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
   "arch": "x86_64",
   "os": "none",
-  "vendor": "unknown",
+  "vendor": "redstone",
   "linker": "rust-lld",
+  "linker-flavor": "ld.lld",
   "panic-strategy": "abort",
   "disable-redzone": true,
-  "features": "-mmx,-sse,+soft-float",
+  "features": "-mmx,+sse,+sse2,+soft-float",
   "executables": true,
   "relocation-model": "static",
   "code-model": "kernel",
@@ -15,6 +16,9 @@
   "no-compiler-rt": true,
   "default-hidden-visibility": true,
   "pre-link-args": {
-    "rust-lld": ["-z", "stack-size=0x8000"]
+    "ld.lld": [
+      "-z", "max-page-size=0x1000", 
+      "--gc-sections"
+    ]
   }
 }

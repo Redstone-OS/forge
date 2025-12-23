@@ -1,50 +1,50 @@
-//! GDT (Global Descriptor Table)
+//! Global Descriptor Table (GDT).
 //!
-//! Implementa a GDT para x86_64 long mode.
-//! Em long mode, segmentação é praticamente desabilitada, mas GDT ainda é necessária.
+//! Mesmo em 64-bit (Long Mode), a GDT é necessária para:
+//! 1. Definir segmentos de Código/Dados (Kernel vs User).
+//! 2. Carregar o TSS (Task State Segment) para troca de stacks em interrupções.
 
+use core::arch::asm;
 use core::mem::size_of;
 
-/// Entrada da GDT
+/// Estrutura de entrada da GDT (64-bit friendly).
 #[repr(C, packed)]
-#[derive(Clone, Copy)]
 struct GdtEntry {
     limit_low: u16,
     base_low: u16,
-    base_middle: u8,
+    base_mid: u8,
     access: u8,
     granularity: u8,
     base_high: u8,
 }
 
 impl GdtEntry {
-    /// Cria nova entrada da GDT
-    const fn new(base: u32, limit: u32, access: u8, flags: u8) -> Self {
-        Self {
-            limit_low: (limit & 0xFFFF) as u16,
-            base_low: (base & 0xFFFF) as u16,
-            base_middle: ((base >> 16) & 0xFF) as u8,
-            access,
-            granularity: ((limit >> 16) & 0x0F) as u8 | (flags & 0xF0),
-            base_high: ((base >> 24) & 0xFF) as u8,
-        }
-    }
-
-    /// Entrada nula (obrigatória na posição 0)
+    /// Cria uma entrada nula (obrigatória).
     const fn null() -> Self {
         Self {
             limit_low: 0,
             base_low: 0,
-            base_middle: 0,
+            base_mid: 0,
             access: 0,
             granularity: 0,
             base_high: 0,
         }
     }
+
+    /// Cria um segmento de código/dados padrão para 64-bit.
+    const fn new(access: u8, flags: u8) -> Self {
+        Self {
+            limit_low: 0,
+            base_low: 0,
+            base_mid: 0,
+            access,
+            granularity: flags, // Em 64-bit, limites são ignorados para a maioria dos segmentos
+            base_high: 0,
+        }
+    }
 }
 
-/// Tabela GDT
-#[repr(C, packed)]
+#[repr(C, align(4096))] // Alinhamento de página é boa prática
 struct Gdt {
     null: GdtEntry,
     kernel_code: GdtEntry,
@@ -53,100 +53,74 @@ struct Gdt {
     user_data: GdtEntry,
 }
 
-impl Gdt {
-    /// Cria nova GDT com segmentos padrão
-    const fn new() -> Self {
-        // Flags de acesso
-        const PRESENT: u8 = 1 << 7;
-        const RING_0: u8 = 0 << 5;
-        const RING_3: u8 = 3 << 5;
-        const SYSTEM: u8 = 1 << 4;
-        const EXECUTABLE: u8 = 1 << 3;
-        const READWRITE: u8 = 1 << 1;
+// Flags de Acesso
+const ACCESS_PRESENT: u8 = 0x80;
+const ACCESS_DESCRIPTOR: u8 = 0x10; // 1 = Código/Dados, 0 = Sistema
+const ACCESS_EXECUTABLE: u8 = 0x08;
+const ACCESS_RW: u8 = 0x02; // Leitura para código, Escrita para dados
+const ACCESS_PRIV_KERNEL: u8 = 0x00;
+const ACCESS_PRIV_USER: u8 = 0x60;
 
-        // Flags de granularidade
-        const LONG_MODE: u8 = 1 << 5;
-        const SIZE_32: u8 = 1 << 6;
-        const PAGE_GRANULAR: u8 = 1 << 7;
+// Flags de Granularidade
+const FLAG_LONG_MODE: u8 = 0x20;
 
-        Self {
-            null: GdtEntry::null(),
+static mut GDT: Gdt = Gdt {
+    null: GdtEntry::null(),
+    // Offset 0x08: Kernel Code
+    kernel_code: GdtEntry::new(
+        ACCESS_PRESENT | ACCESS_DESCRIPTOR | ACCESS_EXECUTABLE | ACCESS_RW | ACCESS_PRIV_KERNEL,
+        FLAG_LONG_MODE,
+    ),
+    // Offset 0x10: Kernel Data
+    kernel_data: GdtEntry::new(
+        ACCESS_PRESENT | ACCESS_DESCRIPTOR | ACCESS_RW | ACCESS_PRIV_KERNEL,
+        0,
+    ),
+    // Offset 0x18: User Code
+    user_code: GdtEntry::new(
+        ACCESS_PRESENT | ACCESS_DESCRIPTOR | ACCESS_EXECUTABLE | ACCESS_RW | ACCESS_PRIV_USER,
+        FLAG_LONG_MODE,
+    ),
+    // Offset 0x20: User Data
+    user_data: GdtEntry::new(
+        ACCESS_PRESENT | ACCESS_DESCRIPTOR | ACCESS_RW | ACCESS_PRIV_USER,
+        0,
+    ),
+};
 
-            // Kernel code segment (0x08)
-            kernel_code: GdtEntry::new(
-                0,
-                0,
-                PRESENT | RING_0 | SYSTEM | EXECUTABLE | READWRITE,
-                LONG_MODE,
-            ),
-
-            // Kernel data segment (0x10)
-            kernel_data: GdtEntry::new(0, 0, PRESENT | RING_0 | SYSTEM | READWRITE, 0),
-
-            // User code segment (0x18)
-            user_code: GdtEntry::new(
-                0,
-                0,
-                PRESENT | RING_3 | SYSTEM | EXECUTABLE | READWRITE,
-                LONG_MODE,
-            ),
-
-            // User data segment (0x20)
-            user_data: GdtEntry::new(0, 0, PRESENT | RING_3 | SYSTEM | READWRITE, 0),
-        }
-    }
-}
-
-/// Ponteiro para GDT (usado pelo LGDT)
 #[repr(C, packed)]
-struct GdtPointer {
+struct GdtDescriptor {
     limit: u16,
     base: u64,
 }
 
-/// GDT global
-static mut GDT: Gdt = Gdt::new();
+/// Carrega a GDT e recarrega os registradores de segmento.
+///
+/// # Safety
+/// Mexe com estado global da CPU. Deve ser chamado apenas uma vez no boot.
+pub unsafe fn init() {
+    let gdt_ptr = GdtDescriptor {
+        limit: (size_of::<Gdt>() - 1) as u16,
+        base: core::ptr::addr_of!(GDT) as u64,
+    };
 
-/// Inicializa a GDT
-pub fn init() {
-    unsafe {
-        let gdt_ptr = GdtPointer {
-            limit: (size_of::<Gdt>() - 1) as u16,
-            base: core::ptr::addr_of!(GDT) as u64,
-        };
+    asm!("lgdt [{}]", in(reg) &gdt_ptr, options(readonly, nostack, preserves_flags));
 
-        // Carregar GDT
-        core::arch::asm!(
-            "lgdt [{}]",
-            in(reg) &gdt_ptr,
-            options(nostack, preserves_flags)
-        );
-
-        // Recarregar segmentos
-        load_segments();
-    }
-}
-
-/// Recarrega os registradores de segmento
-unsafe fn load_segments() {
-    // Recarregar segmentos de dados
-    core::arch::asm!(
+    // Recarregar Segmentos
+    // CS (Code Segment) precisa de um 'far jump' ou 'retfq'.
+    // DS, ES, FS, GS, SS recebem o seletor de dados do Kernel (0x10).
+    asm!(
         "mov ax, 0x10",
         "mov ds, ax",
         "mov es, ax",
         "mov fs, ax",
         "mov gs, ax",
         "mov ss, ax",
-        out("ax") _,
-    );
-
-    // Recarregar CS com far return
-    core::arch::asm!(
-        "push 0x08",
-        "lea {tmp}, [rip + 2f]",
+        "push 0x08",        // Novo CS
+        "lea {tmp}, [1f]",  // Endereço de retorno
         "push {tmp}",
-        "retfq",
-        "2:",
+        "retfq",            // Far return (simula far jump)
+        "1:",
         tmp = lateout(reg) _,
     );
 }

@@ -1,6 +1,16 @@
 [build]
-target = "x86_64-unknown-none"
+target = "x86_64-redstone.json"
 
-[target.x86_64-unknown-none]
-linker = "rust-lld"
-rustflags = ["-C", "link-arg=-Tlinker.ld"]
+[unstable]
+# Recompilar a biblioteca core/alloc para o nosso target customizado
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
+
+[target.'cfg(target_os = "none")']
+runner = "qemu-system-x86_64 -kernel"
+rustflags = [
+    "-C",
+    "link-arg=-Tlinker.ld",
+    "-C",
+    "force-frame-pointers=yes", # Bom para stack trace
+]

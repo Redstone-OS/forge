@@ -1,24 +1,16 @@
-//! IPC - Inter-Process Communication
+//! Subsistema de Inter-Process Communication (IPC).
 //!
-//! Mecanismos de comunicação entre processos.
-//!
-//! # Mecanismos Suportados
-//! - Pipes: Comunicação unidirecional
-//! - Shared Memory: Memória compartilhada
-//! - Futex: Fast userspace mutex
-//! - Unix Sockets: Sockets locais
-//! - Signals: Sinais (já existe)
-//!
-//! # TODOs
-//! - TODO(prioridade=alta, versão=v1.0): Implementar pipes
-//! - TODO(prioridade=alta, versão=v1.0): Implementar shared memory
-//! - TODO(prioridade=alta, versão=v1.0): Implementar futex
-//! - TODO(prioridade=média, versão=v1.0): Implementar unix sockets
-//! - TODO(prioridade=baixa, versão=v2.0): Implementar message queues
-//! - TODO(prioridade=baixa, versão=v2.0): Implementar semaphores
+//! O IPC do Redstone é baseado em troca de mensagens assíncronas através de Portas.
+//! É o mecanismo fundamental para comunicação entre serviços, drivers e apps.
 
-pub mod pipe;
-pub mod shm;
-pub mod futex;
-pub mod unix_socket;
-pub mod signal;
+pub mod message;
+pub mod port;
+
+pub use message::Message;
+pub use port::{Port, PortHandle, PortStatus};
+
+/// Inicializa o subsistema de IPC.
+pub fn init() {
+    crate::kinfo!("[Init] IPC: System initialized.");
+    // Futuro: Criar portas globais do sistema (ex: NameService)
+}

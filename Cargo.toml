@@ -1,105 +1,42 @@
 [package]
 name = "forge"
-version = "0.3.5"
-edition = "2024"
+version = "0.4.0"                                            # Bump para Refatoração Fase 2
+edition = "2021"
 authors = ["Redstone OS Team"]
-description = "Kernel do Redstone OS - Microkernel Híbrido em Rust"
-
-[features]
-default = ["x86_64"]
-
-# Arquiteturas
-x86_64 = []
-# TODO(prioridade=baixa, versão=v2.0): Implementar aarch64
-aarch64 = []
-# TODO(prioridade=baixa, versão=v2.0): Implementar riscv64
-riscv64 = []
-
-# Subsistemas
-acpi = []
-vfs = []
-# TODO(prioridade=baixa, versão=v2.0): Implementar subsistema de rede
-net = []
-
-# Multicore
-# TODO(prioridade=média, versão=v1.0): Implementar SMP completo
-multi_core = []
-
-# Debug
-serial_debug = []
-qemu_debug = []
-syscall_debug = []
-
-# Profiling
-profiling = []
+description = "Industrial-Grade Microkernel for Redstone OS"
+license = "MIT"
 
 [dependencies]
-# Fontes
-font8x8 = { version = "0.3.1", default-features = false, features = [
-    "unicode",
-] }
-
-# Alocadores
-# TODO(prioridade=alta, versão=v1.0): Substituir por SLUB customizado
-linked_list_allocator = "0.10.5"
-
-# Arquitetura x86_64
-x86_64 = "0.14.10"
-x86 = "0.52"
-raw-cpuid = "10.7.0"
-
-# Dispositivos
-pc-keyboard = "0.7.0"
-pic8259 = "0.10.1"
-uart_16550 = "0.2.18"
-
-# Sincronização
+# Sincronização e Concorrência (Essencial para Mutex/Spinlocks)
 spin = "0.9.8"
 
-# Bootloader protocol
-limine = "0.1"
+# Manipulação de bits segura (Essencial para Flags de GDT/Paging)
+bitflags = "2.4.2"
 
-# Async
-futures-util = { version = "0.3.30", default-features = false, features = [
-    "alloc",
-] }
+# Acesso à memória volátil (Essencial para MMIO/Framebuffer)
+volatile = "0.5.1"
 
-# Utilitários
-bitflags = "2.4.1"
-lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
-volatile = "0.4.6"
-indexmap = { version = "2.7.0", default-features = false }
-hashbrown = "0.14"
-arrayvec = { version = "0.7", default-features = false }
-slab = { version = "0.4", default-features = false }
+# Alocador de Lista Encadeada (Para o Heap futuro - Upgrade do Bump)
+linked_list_allocator = "0.10.5"
 
-# Parsing
-object = { version = "0.36", default-features = false, features = [
-    "elf",
-    "read_core",
-    "unaligned",
-    "archive",
-] }
-rustc-demangle = "0.1"
+# NÃO INCLUIR:
+# - uart_16550 (Usamos src/drivers/serial.rs)
+# - pic8259    (Usamos src/drivers/pic.rs)
+# - pc-keyboard (Vamos implementar driver nativo PS/2)
 
-# Redstone
-# TODO: Reativar quando estrutura estiver pronta
-# redstone_path = { path = "../redstone/core/path" }
-# redstone_syscall = { path = "../redstone/core/syscall" }
+[features]
+default = ["serial_debug"]
+serial_debug = []          # Habilita logs na porta serial
 
 [profile.dev]
-opt-level = "z"
-lto = "thin"
 panic = "abort"
+opt-level = 0
+debug = true
 
 [profile.release]
-# Otimização balanceada (-O2)
-opt-level = 2
+panic = "abort"
+opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
-
-[[bin]]
-name = "forge"
-path = "src/main.rs"
-test = false
+debug = false
+strip = true      # Remove símbolos para binário menor

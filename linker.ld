@@ -1,43 +1,45 @@
+/* Redstone OS Kernel Linker Script */
+
 ENTRY(_start)
 
 SECTIONS {
-    /* Endereço base inicial - não zero para evitar entry point inválido */
-    /* O bootloader vai realocar de qualquer forma */
-    . = 0x1000;
+/* Carregar em 1MiB (Convencional para Kernels).
+Evita a BIOS Data Area (0x400-0x500) e o Bootloader (geralmente < 1MB).
+*/
+. = 0x100000;
 
-    /* TODO: Revisar alinhamento de 1MB futuramente (sugerido para evitar colisão/NOT_FOUND em alocação UEFI) */
-    .text : ALIGN(0x1000) {
-        __text_start = .;
-        /* Garante que _start (header) fique no começo */
-        *(.text._start)
-        *(.text*)
-        __text_end = .;
-    }
+.text : ALIGN(4K) {
+    __text_start = .;
+    /* Garante que o Header Multiboot/Entry Point fique no início */
+    KEEP(*(.text._start))
+    *(.text .text.*)
+    __text_end = .;
+}
 
-    .rodata : ALIGN(0x1000) {
-        __rodata_start = .;
-        *(.rodata*)
-        __rodata_end = .;
-    }
+.rodata : ALIGN(4K) {
+    __rodata_start = .;
+    *(.rodata .rodata.*)
+    __rodata_end = .;
+}
 
-    .data : ALIGN(0x1000) {
-        *(.data*)
-    }
+.data : ALIGN(4K) {
+    __data_start = .;
+    *(.data .data.*)
+    __data_end = .;
+}
 
-    .bss : ALIGN(0x1000) {
-        *(.bss*)
-        *(COMMON)
-    }
+.bss : ALIGN(4K) {
+    __bss_start = .;
+    *(.bss .bss.*)
+    *(COMMON)
+    __bss_end = .;
+}
 
-    .alt : ALIGN(0x1000) {
-        __altrelocs_start = .;
-        *(.alt.reloc*)
-        __altrelocs_end = .;
-    }
+/* Stack Guard ou seções descartáveis */
+/DISCARD/ : {
+    *(.eh_frame)
+    *(.note .note.*)
+}
 
-    /DISCARD/ : {
-        *(.eh_frame)
-        *(.note*)
-        *(.comment*)
-    }
+
 }

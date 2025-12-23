@@ -1,107 +1,123 @@
-//! IDT (Interrupt Descriptor Table)
+//! Interrupt Descriptor Table (IDT).
 //!
-//! Implementa a IDT para x86_64.
-//! Mapeia vetores de interrupção (0-255) para handlers.
+//! Gerencia a tabela de interrupções.
 
+use super::interrupts;
+use core::arch::asm;
 use core::mem::size_of;
 
-/// Entrada da IDT
+/// Contexto salvo na stack durante uma interrupção.
+#[repr(C)]
+#[derive(Debug)]
+pub struct ContextFrame {
+    // Registradores salvos manualmente (pushall)
+    pub rax: u64,
+    pub rbx: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
+    pub rbp: u64,
+
+    // Empilhado pela CPU ou pelo stub
+    pub error_code: u64,
+
+    // Empilhado pela CPU (Hardware Frame)
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
+
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 struct IdtEntry {
-    offset_low: u16,  // Handler address bits 0-15
-    selector: u16,    // Code segment selector (0x08 = kernel code)
-    ist: u8,          // Interrupt Stack Table (0 = não usa)
-    type_attr: u8,    // Type and attributes
-    offset_mid: u16,  // Handler address bits 16-31
-    offset_high: u32, // Handler address bits 32-63
-    reserved: u32,
+    offset_low: u16,
+    selector: u16,
+    ist: u8,
+    type_attr: u8,
+    offset_mid: u16,
+    offset_high: u32,
+    zero: u32,
 }
 
 impl IdtEntry {
-    /// Cria nova entrada da IDT
-    const fn new(handler: usize, selector: u16, ist: u8, type_attr: u8) -> Self {
+    fn new(handler: usize) -> Self {
         Self {
             offset_low: handler as u16,
-            selector,
-            ist,
-            type_attr,
+            selector: 0x08, // Kernel Code Segment
+            ist: 0,
+            type_attr: 0x8E, // Present | Ring0 | Interrupt Gate
             offset_mid: (handler >> 16) as u16,
             offset_high: (handler >> 32) as u32,
-            reserved: 0,
+            zero: 0,
         }
     }
 
-    /// Entrada vazia (não presente)
-    const fn missing() -> Self {
-        Self::new(0, 0, 0, 0)
+    fn missing() -> Self {
+        Self {
+            offset_low: 0,
+            selector: 0,
+            ist: 0,
+            type_attr: 0,
+            offset_mid: 0,
+            offset_high: 0,
+            zero: 0,
+        }
     }
 }
 
-/// Tabela IDT (256 entradas)
-#[repr(C, align(16))]
+#[repr(C, align(4096))]
 struct Idt {
     entries: [IdtEntry; 256],
 }
 
-impl Idt {
-    /// Cria nova IDT vazia
-    const fn new() -> Self {
-        Self {
-            entries: [IdtEntry::missing(); 256],
-        }
-    }
-}
+static mut IDT: Idt = Idt {
+    entries: [IdtEntry {
+        offset_low: 0,
+        selector: 0,
+        ist: 0,
+        type_attr: 0,
+        offset_mid: 0,
+        offset_high: 0,
+        zero: 0,
+    }; 256],
+};
 
-/// Ponteiro para IDT (usado pelo LIDT)
 #[repr(C, packed)]
-struct IdtPointer {
+struct IdtDescriptor {
     limit: u16,
     base: u64,
 }
 
-/// IDT global
-static mut IDT: Idt = Idt::new();
+/// Inicializa a IDT e registra os handlers básicos.
+pub unsafe fn init() {
+    // Limpar IDT (segurança)
+    IDT.entries = [IdtEntry::missing(); 256];
 
-/// Inicializa a IDT
-pub fn init() {
-    use super::interrupts::*;
+    // Registrar Handlers Críticos
+    IDT.entries[3] = IdtEntry::new(interrupts::breakpoint_handler as usize);
+    IDT.entries[8] = IdtEntry::new(interrupts::double_fault_handler as usize);
+    IDT.entries[13] = IdtEntry::new(interrupts::general_protection_fault_handler as usize);
+    IDT.entries[14] = IdtEntry::new(interrupts::page_fault_handler as usize);
 
-    // Flags
-    const PRESENT: u8 = 1 << 7;
-    const RING_0: u8 = 0 << 5;
-    const INTERRUPT_GATE: u8 = 0xE;
-    const TYPE_ATTR: u8 = PRESENT | RING_0 | INTERRUPT_GATE;
+    // Carregar IDT
+    let idt_ptr = IdtDescriptor {
+        limit: (size_of::<Idt>() - 1) as u16,
+        base: core::ptr::addr_of!(IDT) as u64,
+    };
 
-    unsafe {
-        // Registrar exception handlers (0-31)
-        IDT.entries[0] = IdtEntry::new(divide_by_zero_handler as usize, 0x08, 0, TYPE_ATTR);
-        IDT.entries[6] = IdtEntry::new(invalid_opcode_handler as usize, 0x08, 0, TYPE_ATTR);
-        IDT.entries[13] = IdtEntry::new(
-            general_protection_fault_handler as usize,
-            0x08,
-            0,
-            TYPE_ATTR,
-        );
-        IDT.entries[14] = IdtEntry::new(page_fault_handler as usize, 0x08, 0, TYPE_ATTR);
+    asm!("lidt [{}]", in(reg) &idt_ptr, options(readonly, nostack, preserves_flags));
 
-        // Registrar IRQ handlers (32-47)
-        IDT.entries[32] = IdtEntry::new(timer_interrupt_handler as usize, 0x08, 0, TYPE_ATTR);
-        IDT.entries[33] = IdtEntry::new(keyboard_interrupt_handler as usize, 0x08, 0, TYPE_ATTR);
-
-        // Registrar syscall handler (int 0x80 = 128)
-        IDT.entries[0x80] = IdtEntry::new(syscall_interrupt_handler as usize, 0x08, 0, TYPE_ATTR);
-
-        let idt_ptr = IdtPointer {
-            limit: (size_of::<Idt>() - 1) as u16,
-            base: core::ptr::addr_of!(IDT) as u64,
-        };
-
-        // Carregar IDT
-        core::arch::asm!(
-            "lidt [{}]",
-            in(reg) &idt_ptr,
-            options(nostack, preserves_flags)
-        );
-    }
+    // Interrupções ainda estão desabilitadas (CLI).
+    // Só devem ser habilitadas (STI) após configurar o PIC/APIC.
 }

@@ -1,40 +1,42 @@
-//! Virtual Filesystem (VFS)
+//! Sistema de Arquivos Virtual (VFS).
 //!
-//! Abstração de filesystem estilo Linux.
-//!
-//! # Arquitetura
-//! - Inodes: Representam arquivos/diretórios
-//! - Dentries: Entradas de diretório (cache)
-//! - Files: Arquivos abertos
-//! - Superblocks: Informações de filesystem
-//! - Mount points: Pontos de montagem
-//!
-//! # Filesystems Suportados
-//! - DevFS: Device files (/dev)
-//! - ProcFS: Process info (/proc)
-//! - SysFS: System info (/sys)
-//! - TmpFS: Temporary files (RAM)
-//! - FAT32: Compatibilidade
-//! - TAR: InitRAMFS (read-only)
-//!
-//! # TODOs
-//! - TODO(prioridade=alta, versão=v1.0): Implementar VFS completo
-//! - TODO(prioridade=alta, versão=v1.0): Migrar código de scheme/
-//! - TODO(prioridade=média, versão=v2.0): Adicionar Ext4
-//! - TODO(prioridade=baixa, versão=v2.0): Adicionar ISO9660
-//! - TODO(prioridade=baixa, versão=v2.0): Adicionar XFS
-//! - TODO(prioridade=baixa, versão=v2.0): Adicionar F2FS
-//! - TODO(prioridade=baixa, versão=v3.0): Adicionar Network FS
-//! - TODO(prioridade=baixa, versão=v3.0): Adicionar NTFS
+//! Submódulos:
+//! - `vfs`: Traits e estrutura central.
+//! - `initramfs`: Parser TAR para o disco inicial.
+//! - `devfs`: Dispositivos virtuais (/dev).
 
 pub mod devfs;
-pub mod fat32;
-pub mod procfs;
-pub mod sysfs;
-pub mod tar;
-pub mod tarfs;
-pub mod tmpfs;
+pub mod initramfs;
 pub mod vfs;
 
-#[cfg(test)]
-pub mod tests;
+use alloc::sync::Arc;
+
+/// Inicializa o subsistema de arquivos.
+pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
+    crate::kinfo!("[Init] FS: Initializing VFS...");
+
+    // 1. Procurar Initramfs no BootInfo
+    if boot_info.initramfs_addr != 0 && boot_info.initramfs_size > 0 {
+        crate::kinfo!(
+            "[Init] FS: Found Initramfs at {:#x} ({} bytes)",
+            boot_info.initramfs_addr,
+            boot_info.initramfs_size
+        );
+
+        // Criar slice unsafe para a memória do initramfs
+        let data = unsafe {
+            core::slice::from_raw_parts(
+                boot_info.initramfs_addr as *const u8,
+                boot_info.initramfs_size as usize,
+            )
+        };
+
+        // Montar Initramfs como raiz
+        let initfs = Arc::new(initramfs::Initramfs::new(data));
+        vfs::ROOT_VFS.lock().mount_root(initfs);
+
+        crate::kinfo!("[Init] FS: Root filesystem mounted.");
+    } else {
+        crate::kwarn!("[Init] FS: No Initramfs found! System will halt shortly.");
+    }
+}
