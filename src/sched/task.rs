@@ -8,6 +8,8 @@
 //! - Tasks de Kernel rodam inteiramente nesta stack.
 //! - Tasks de Usuário usam esta stack apenas durante Syscalls/Interrupções (via TSS RSP0).
 
+// Importação direta da arquitetura específica se o alias 'platform' falhar na resolução,
+// mas mantendo a intenção de usar a abstração.
 use crate::arch::platform::gdt::{KERNEL_CODE_SEL, KERNEL_DATA_SEL, USER_CODE_SEL, USER_DATA_SEL};
 use crate::sched::context::Context;
 use alloc::vec::Vec;
@@ -40,12 +42,13 @@ pub struct Task {
     pub state: TaskState,
     pub context: Context,
 
-    // Stack do Kernel (usada durante syscalls/interrupts e tasks ring0)
+    // Stack do Kernel (usada durante syscalls/interrupts e tasks ring0).
     // O Vec garante a posse da memória.
     pub kstack: Vec<u8>,
 
     // Topo da stack (endereço virtual).
     // É atualizado durante o context switch para salvar onde a execução parou.
+    // O Scheduler usa este campo para salvar/restaurar o RSP.
     pub kstack_top: u64,
 
     // Endereço Físico da Tabela de Páginas (PML4).
@@ -111,14 +114,13 @@ impl Task {
     }
 
     /// Prepara a stack do kernel para o primeiro Context Switch.
-    /// Simula que a tarefa foi "interrompida" anteriormente.
+    /// Simula que a tarefa foi "interrompida" anteriormente, empilhando o contexto inicial.
     fn setup_stack(&mut self, rip: u64, cs: u16, ss: u16, user_rsp: u64) {
         unsafe {
             let mut ptr = self.kstack_top as *mut u64;
 
             // --- Parte 1: Frame de Interrupção (Apenas se for para Userspace) ---
             // Se formos para Ring 3, precisamos forjar o frame que 'iretq' espera desempilhar.
-            // Se for Ring 0, o 'ret' do switch vai direto para a função.
 
             if cs == USER_CODE_SEL {
                 // Layout IRETQ:
@@ -163,9 +165,9 @@ impl Task {
             *ptr = 0; // R15
 
             // --- Finalização ---
-            // Atualizar o ponteiro de stack no contexto salvo.
-            // Quando o scheduler trocar para esta task, ele carregará este RSP em `context.rsp`.
-            self.context.rsp = ptr as u64;
+            // Atualizar o ponteiro de stack da tarefa.
+            // Quando o scheduler trocar para esta task, ele usará este valor como o novo RSP.
+            self.kstack_top = ptr as u64;
         }
     }
 }

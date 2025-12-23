@@ -7,7 +7,7 @@
 use core::arch::asm;
 use core::mem::size_of;
 
-/// Estrutura de entrada da GDT (64-bit friendly).
+// Estrutura de entrada da GDT (64-bit friendly).
 #[repr(C, packed)]
 struct GdtEntry {
     limit_low: u16,
@@ -64,6 +64,12 @@ const ACCESS_PRIV_USER: u8 = 0x60;
 // Flags de Granularidade
 const FLAG_LONG_MODE: u8 = 0x20;
 
+// Seletores de Segmento (Exportados para uso no Task e Interrupts)
+pub const KERNEL_CODE_SEL: u16 = 0x08;
+pub const KERNEL_DATA_SEL: u16 = 0x10;
+pub const USER_CODE_SEL: u16 = 0x18 | 3; // RPL 3
+pub const USER_DATA_SEL: u16 = 0x20 | 3; // RPL 3
+
 static mut GDT: Gdt = Gdt {
     null: GdtEntry::null(),
     // Offset 0x08: Kernel Code
@@ -110,17 +116,19 @@ pub unsafe fn init() {
     // CS (Code Segment) precisa de um 'far jump' ou 'retfq'.
     // DS, ES, FS, GS, SS recebem o seletor de dados do Kernel (0x10).
     asm!(
-        "mov ax, 0x10",
+        "mov ax, {dsel}",
         "mov ds, ax",
         "mov es, ax",
         "mov fs, ax",
         "mov gs, ax",
         "mov ss, ax",
-        "push 0x08",        // Novo CS
+        "push {ksel}",      // Novo CS
         "lea {tmp}, [1f]",  // Endereço de retorno
         "push {tmp}",
         "retfq",            // Far return (simula far jump)
         "1:",
+        ksel = const KERNEL_CODE_SEL,
+        dsel = const KERNEL_DATA_SEL,
         tmp = lateout(reg) _,
     );
 }
