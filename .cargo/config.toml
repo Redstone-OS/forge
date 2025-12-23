@@ -10,7 +10,5 @@ build-std-features = ["compiler-builtins-mem"]
 runner = "qemu-system-x86_64 -kernel"
 rustflags = [
     "-C",
-    "link-arg=-Tlinker.ld",
-    "-C",
-    "force-frame-pointers=yes", # Bom para stack trace
+    "force-frame-pointers=yes", # Stack traces melhores
 ]
