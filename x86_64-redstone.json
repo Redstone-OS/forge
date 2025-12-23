@@ -12,7 +12,8 @@
   "executables": true,
   "relocation-model": "static",
   "code-model": "kernel",
-  "target-c-int-width": "64",
+  "target-c-int-width": "32",
+  "target-pointer-width": "64",
   "no-compiler-rt": true,
   "default-hidden-visibility": true,
   "pre-link-args": {
