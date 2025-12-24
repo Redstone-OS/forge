@@ -56,11 +56,20 @@ impl BitmapFrameAllocator {
     /// # Safety
     /// O BootInfo deve conter um mapa de memória válido e não sobreposto.
     pub unsafe fn init(&mut self, boot_info: &'static BootInfo) {
+        // Validação crítica: Memory map deve existir
+        if boot_info.memory_map_len == 0 {
+            panic!("BootInfo não contém mapa de memória válido!");
+        }
+
+        crate::kinfo!("PMM: Validando memory map...");
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
         let map_len = boot_info.memory_map_len as usize;
+
+        crate::kinfo!("PMM: Criando slice ({} entradas)...", map_len);
         let regions = core::slice::from_raw_parts(map_ptr, map_len);
 
         // 1. Calcular memória total e encontrar o maior endereço físico usável
+        crate::kinfo!("PMM: Calculando memória total...");
         let mut max_phys_addr = 0;
         for region in regions {
             let end = region.base + region.len;
@@ -68,50 +77,51 @@ impl BitmapFrameAllocator {
                 max_phys_addr = end;
             }
         }
+        crate::kinfo!("PMM: Memória máxima: {:#x}", max_phys_addr);
 
         // 2. Definir onde o bitmap vai ficar.
-        // Estratégia simples: colocar o bitmap logo após o Kernel na memória física.
-        // O Kernel termina em `kernel_phys_start + kernel_size`.
+        crate::kinfo!("PMM: Alocando bitmap...");
         let kernel_end = boot_info.kernel_phys_addr + boot_info.kernel_size;
         let bitmap_phys_addr = (kernel_end + FRAME_SIZE as u64 - 1) & !(FRAME_SIZE as u64 - 1);
 
-        // Tamanho do bitmap: 1 bit por 4KB.
-        // Ex: 4GB RAM = 1.048.576 frames = 128KB bitmap.
+        // Tamanho do bitmap
         let total_frames = (max_phys_addr as usize) / FRAME_SIZE;
         let bitmap_size_bytes = (total_frames + 7) / 8;
         let bitmap_size_u64 = (bitmap_size_bytes + 7) / 8;
 
-        // Mapear o slice do bitmap (assumindo identity mapping inicial ou acesso físico direto)
-        // ATENÇÃO: Aqui assumimos que temos acesso de escrita a esse endereço físico.
-        // Em higher-half kernel, precisaríamos do offset virtual.
-        // Por hora, usamos o endereço físico + offset se mapeado, ou direto se identity.
-        // Assumiremos identity map nas regiões baixas por enquanto ou offset fixo.
+        crate::kinfo!(
+            "PMM: Bitmap em {:#x}, {} frames",
+            bitmap_phys_addr,
+            total_frames
+        );
+
+        // CRÍTICO: Mapear bitmap antes de usar!
         let bitmap_ptr = bitmap_phys_addr as *mut u64;
         self.bitmap = core::slice::from_raw_parts_mut(bitmap_ptr, bitmap_size_u64);
-        self.bitmap.fill(u64::MAX); // Marcar tudo como ocupado inicialmente (segurança)
+
+        crate::kinfo!("PMM: Zerando bitmap...");
+        self.bitmap.fill(u64::MAX); // Marcar tudo como ocupado
 
         self.memory_base = 0;
         self.total_frames = total_frames;
-        self.used_frames = total_frames; // Decrementa conforme liberamos
+        self.used_frames = total_frames;
 
-        // 3. Liberar as regiões marcadas como USABLE no BootInfo
-        // CUIDADO: Não liberar a região onde pusemos o próprio bitmap!
+        // 3. Liberar regiões usáveis
+        crate::kinfo!("PMM: Liberando regiões usáveis...");
         let bitmap_end = bitmap_phys_addr + (bitmap_size_u64 * 8) as u64;
 
         for region in regions {
-            if region.typ == MemoryType::Usable {
+            if region.typ == crate::core::handoff::MemoryType::Usable {
                 let start_frame = region.base / FRAME_SIZE as u64;
                 let end_frame = (region.base + region.len) / FRAME_SIZE as u64;
 
                 for frame_idx in start_frame..end_frame {
                     let addr = frame_idx * FRAME_SIZE as u64;
 
-                    // Proteção: Não liberar memória do Kernel nem do Bitmap
                     if addr >= boot_info.kernel_phys_addr && addr < bitmap_end {
                         continue;
                     }
 
-                    // Proteção: Não liberar página 0 (NULL pointer trap)
                     if addr == 0 {
                         continue;
                     }
