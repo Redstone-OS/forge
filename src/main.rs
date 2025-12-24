@@ -37,6 +37,11 @@ pub unsafe extern "C" fn _start(boot_info_addr: u64) -> ! {
         // 1. Salvar argumento (boot_info) em R15 (Callee-saved)
         "mov r15, rdi",
 
+        // DEBUG: Escrever 'K' na serial sem depender de stack/data
+        "mov dx, 0x3f8",
+        "mov al, 0x4b", // 'K'
+        "out dx, al",
+
         // 2. Configurar Stack Pointer (RSP)
         "lea rax, [rip + {stack}]",
         "lea rsp, [rax + {stack_size}]",
