@@ -13,12 +13,12 @@ use alloc::sync::Arc;
 
 /// Inicializa o subsistema de arquivos.
 pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
-    crate::kinfo!("[Init] FS: Initializing VFS...");
+    crate::kinfo!("Inicializando VFS...");
 
     // 1. Procurar Initramfs no BootInfo
     if boot_info.initramfs_addr != 0 && boot_info.initramfs_size > 0 {
         crate::kinfo!(
-            "[Init] FS: Found Initramfs at {:#x} ({} bytes)",
+            "Encontrado \"initfs\" em {:#x} ({} bytes)",
             boot_info.initramfs_addr,
             boot_info.initramfs_size
         );
@@ -35,8 +35,8 @@ pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
         let initfs = Arc::new(initramfs::Initramfs::new(data));
         vfs::ROOT_VFS.lock().mount_root(initfs);
 
-        crate::kinfo!("[Init] FS: Root filesystem mounted.");
+        crate::kinfo!("Sistema de arquivos raiz montado.");
     } else {
-        crate::kwarn!("[Init] FS: No Initramfs found! System will halt shortly.");
+        crate::kwarn!("Initramfs não encontrado! Sistema irá parar em breve.");
     }
 }

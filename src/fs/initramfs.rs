@@ -69,7 +69,10 @@ impl Initramfs {
             offset = next_header;
         }
 
-        crate::kinfo!("Initramfs parsed: {} files found.", self.files.len());
+        crate::kinfo!(
+            "initfs analisado: {} arquivos encontrados.",
+            self.files.len()
+        );
     }
 }
 
