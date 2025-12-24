@@ -155,7 +155,6 @@
 //! ----------------------------------------------------------------------
 //! Abaixo deste ponto: implementação.
 //! Comentários locais explicam decisões específicas.
-//!
 use crate::mm::pmm::{BitmapFrameAllocator, FRAME_ALLOCATOR, FRAME_SIZE};
 use core::arch::asm;
 
