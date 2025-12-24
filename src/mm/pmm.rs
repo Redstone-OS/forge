@@ -112,7 +112,7 @@ impl BitmapFrameAllocator {
         }
 
         crate::kinfo!(
-            "PMM: Memória máxima: {:#x} ({} MB)",
+            "Memória máxima: {:#x} ({} MB)",
             max_phys_addr,
             max_phys_addr / 1024 / 1024
         );
@@ -145,11 +145,7 @@ impl BitmapFrameAllocator {
             panic!("PMM: Não foi possível encontrar região Usable para o bitmap!");
         }
 
-        crate::kinfo!(
-            "PMM: Bitmap em {:#x}, {} frames",
-            bitmap_phys_addr,
-            total_frames
-        );
+        crate::kinfo!("Bitmap em {:#x}, {} frames", bitmap_phys_addr, total_frames);
 
         let bitmap_ptr = bitmap_phys_addr as *mut u64;
         self.bitmap = core::slice::from_raw_parts_mut(bitmap_ptr, bitmap_size_u64);
@@ -193,7 +189,7 @@ impl BitmapFrameAllocator {
         }
 
         crate::kinfo!(
-            "PMM: Inicializado. Total Frames: {}, Free: {}",
+            "Inicializado. Total Frames: {}, Free: {}",
             self.total_frames,
             self.total_frames - self.used_frames
         );
