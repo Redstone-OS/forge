@@ -1,7 +1,28 @@
-//! Physical Memory Manager (PMM).
+//! Physical Memory Manager (PMM) — Bitmap Frame Allocator
+//! -----------------------------------------------------
+//! Gerencia a alocação de frames físicos (4 KiB) através de um bitmap.
+//! Projetado para ser simples, determinístico e adequado ao early-kernel do
+//! Redstone OS. O bitmap é armazenado em memória física (colocado em uma região
+//! "usable" grande no boot) e cada bit representa um frame: 0 = livre, 1 = usado.
 //!
-//! Gerencia a alocação de frames físicos (páginas de 4KiB) usando um Bitmap.
-//! Simples, eficiente e suficiente para o Kernel.
+//! ### Contratos / Invariantes
+//! - `BitmapFrameAllocator::init()` **deve** ser chamado cedo, com um `BootInfo` válido.
+//! - O bitmap é colocado numa região Usable do mapa de memória; o init garante que
+//!   a região escolhida não conflita com o kernel ou com o próprio bitmap.
+//! - `FRAME_SIZE` é 4 KiB (constante); todas as contas de frames e alinhamentos usam esse valor.
+//! - A estrutura é normalmente protegida por `FRAME_ALLOCATOR: Mutex<...>` para uso concorrente.
+//!
+//! ### Segurança / notas de `unsafe`
+//! - `init()` faz conversões de ponteiro físico -> slice mutável; isso é `unsafe`.
+//!   Garantimos que o endereço e tamanho escolhidos são válidos e alinhados a 8 bytes.
+//! - Operações de marcação/limpeza do bitmap manipulam bits diretamente; qualquer corrupção
+//!   do bitmap pode causar alocações inválidas. Teste em QEMU antes de rodar em hardware.
+//!
+//! ### Melhoria futura (TODO)
+//! - Detectar e reportar double-free com logging mais agressivo.
+//! - Suportar lock-free allocation fast-path para múltiplos CPUs.
+//! - Compactar / remover frames reservados por dispositivos (MMIO) ao construir mapa.
+//!
 
 use crate::core::handoff::{BootInfo, MemoryType};
 use crate::sync::Mutex;
@@ -11,10 +32,12 @@ pub const FRAME_SIZE: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysFrame {
+    /// Endereço físico do frame (alinhado a FRAME_SIZE).
     pub addr: u64,
 }
 
 impl PhysFrame {
+    /// Retorna o frame que contém o endereço físico fornecido (alinhamento por floor).
     pub fn containing_address(addr: u64) -> Self {
         Self {
             addr: addr - (addr % FRAME_SIZE as u64),
@@ -22,9 +45,16 @@ impl PhysFrame {
     }
 }
 
-/// O alocador global de frames físicos.
+/// Alocador global (embalado por Mutex para uso seguro entre contextos).
 pub static FRAME_ALLOCATOR: Mutex<BitmapFrameAllocator> = Mutex::new(BitmapFrameAllocator::empty());
 
+/// BitmapFrameAllocator
+///
+/// Layout interno:
+/// - `bitmap` é uma fatia de u64; cada bit (LSB = bit 0) representa um frame.
+/// - `total_frames` é o número total de frames representados no bitmap.
+/// - `memory_base` é o endereço físico base considerado para frame index 0.
+///   (por simplicidade aqui usamos base = 0; poderia ser ajustado para offsets)
 pub struct BitmapFrameAllocator {
     /// Início da região de memória gerenciada pelo bitmap.
     memory_base: u64,
@@ -40,6 +70,7 @@ pub struct BitmapFrameAllocator {
 }
 
 impl BitmapFrameAllocator {
+    /// Cria um alocador vazio — usado para inicialização estática.
     const fn empty() -> Self {
         Self {
             memory_base: 0,
@@ -50,11 +81,16 @@ impl BitmapFrameAllocator {
         }
     }
 
-    /// Inicializa o alocador usando o BootInfo.
-    /// O Kernel deve chamar isso bem cedo.
+    // -------------------------
+    // Inicialização
+    // -------------------------
+
+    /// Inicializa o alocador baseado no `BootInfo`.
     ///
     /// # Safety
-    /// O BootInfo deve conter um mapa de memória válido e não sobreposto.
+    /// - `boot_info` deve apontar para um memory_map válido com `memory_map_len` entradas.
+    /// - A função colocará o bitmap físico numa região Usable grande o suficiente.
+    /// - Assume que não há race com outras inicializações do PMM.
     pub unsafe fn init(&mut self, boot_info: &'static BootInfo) {
         if boot_info.memory_map_len == 0 {
             panic!("BootInfo não contém mapa de memória válido!");
@@ -81,8 +117,7 @@ impl BitmapFrameAllocator {
             max_phys_addr / 1024 / 1024
         );
 
-        // 2. Colocar bitmap no FINAL da maior região Usable
-        // (evita conflito com page tables do bootloader)
+        // 2) Calcular espaço do bitmap (em bytes -> em u64 entries)
         let total_frames = (max_phys_addr as usize) / FRAME_SIZE;
         let bitmap_size_bytes = (total_frames + 7) / 8;
         let bitmap_size_u64 = (bitmap_size_bytes + 7) / 8;
