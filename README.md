@@ -1,10 +1,10 @@
-# Kernel Forge - Reorganizado
+# Kernel Forge
 
-**Versão**: 0.3.0  
+**Versão**: 0.0.1  
 **Linguagem**: Rust 100%  
 **Arquitetura**: x86_64 (aarch64 e riscv64 planejados)  
 **Modelo**: Microkernel Híbrido  
-**Status**: Reorganização Completa ✅
+**Status**: Arrumando inicialização
 
 ---
 
@@ -12,24 +12,10 @@
 
 O Forge é o kernel do Redstone OS, completamente reorganizado seguindo padrões profissionais da indústria (estilo Linux). Esta reorganização torna o código mais limpo, escalável e fácil de manter.
 
-## 🎯 Mudanças Principais
-
-### Antes (v0.2.0)
-- 171 arquivos desorganizados
-- Módulos no mesmo nível hierárquico
-- Difícil navegar e manter
-- Sem padrões claros
-
-### Depois (v0.3.0)
-- **Hierarquia clara** (estilo Linux)
-- **Documentação completa** em PT-BR
-- **80+ TODOs estruturados**
-- **Preparado para crescer**
-
-## 📁 Nova Estrutura
+## 📁 Estrutura
 
 ```
-src_new/
+src/
 ├── core/          # Núcleo (scheduler CFS, processos, threads, init)
 ├── mm/            # Memória (VMM, PMM Buddy, SLUB, page cache)
 ├── fs/            # Filesystem (VFS completo + DevFS/ProcFS/SysFS/TmpFS/FAT32)
@@ -44,7 +30,7 @@ src_new/
 
 ## 🚀 Funcionalidades
 
-### ✅ Implementado (v0.2.0)
+### ✅ Implementado (v0.0.1)
 - Gerenciamento de memória (RMM)
 - Paginação de 4 níveis (x86_64)
 - Sistema de syscalls
@@ -53,7 +39,7 @@ src_new/
 - Suporte ACPI
 - Multitarefa preemptiva
 
-### 🔄 Reorganizado (v0.3.0)
+### 🔄 Reorganizado (v0.0.1)
 - **Core**: Scheduler CFS (140 níveis), processos pesados + threads leves
 - **MM**: VMM/PMM separados, Buddy + SLUB Allocators
 - **FS**: VFS completo estilo Linux
