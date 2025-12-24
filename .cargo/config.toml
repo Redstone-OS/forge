@@ -11,4 +11,6 @@ runner = "qemu-system-x86_64 -kernel"
 rustflags = [
     "-C",
     "force-frame-pointers=yes", # Stack traces melhores
+    "-C",
+    "link-arg=-Tlinker.ld",
 ]
