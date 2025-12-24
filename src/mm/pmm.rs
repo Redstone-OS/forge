@@ -68,16 +68,26 @@ impl BitmapFrameAllocator {
         crate::kinfo!("PMM: Criando slice ({} entradas)...", map_len);
         let regions = core::slice::from_raw_parts(map_ptr, map_len);
 
-        // 1. Calcular memória total e encontrar o maior endereço físico usável
+        // 1. Calcular memória total APENAS da RAM utilizável (ignora MMIO)
         crate::kinfo!("PMM: Calculando memória total...");
+
         let mut max_phys_addr = 0;
         for region in regions {
-            let end = region.base + region.len;
-            if end > max_phys_addr {
-                max_phys_addr = end;
+            // Usar APENAS ConventionalMemory para definir tamanho do bitmap
+            // Isso ignora MMIO (devices) que ficam em endereços altíssimos
+            if region.typ == crate::core::handoff::MemoryType::Usable {
+                let end = region.base + region.len;
+                if end > max_phys_addr {
+                    max_phys_addr = end;
+                }
             }
         }
-        crate::kinfo!("PMM: Memória máxima: {:#x}", max_phys_addr);
+
+        crate::kinfo!(
+            "PMM: Memória máxima: {:#x} ({} MB)",
+            max_phys_addr,
+            max_phys_addr / 1024 / 1024
+        );
 
         // 2. Definir onde o bitmap vai ficar.
         crate::kinfo!("PMM: Alocando bitmap...");
