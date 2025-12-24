@@ -130,7 +130,6 @@ impl CpuOps for X64Cpu {
         // Bit 9 é IF (Interrupt Flag)
         (rflags & (1 << 9)) != 0
     }
-
     // --- Suporte a SMP (Stub até driver APIC estar pronto) ---
 
     fn send_ipi(_target: CoreId, _vector: u8) -> Result<(), Errno> {

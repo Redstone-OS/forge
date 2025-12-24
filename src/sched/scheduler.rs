@@ -111,7 +111,7 @@ impl Scheduler {
 pub fn init() {
     let mut sched = SCHEDULER.lock();
 
-    crate::kinfo!("[Scheduler] Creating kernel tasks...");
+    crate::kinfo!("[Teste] Criando tarefas do kernel...");
 
     // Criar Tasks de Kernel
     sched.add_task(Task::new_kernel(task_a));
