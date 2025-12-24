@@ -1,7 +1,7 @@
 //! Kernel Heap Allocator.
 //!
-//! Implementa `GlobalAlloc` usando um Bump Allocator simples.
-//! Permite usar `Box`, `Vec`, `String` no Kernel.
+//! Implementa GlobalAlloc usando um Bump Allocator simples.
+//! Permite usar Box, Vec, String no Kernel.
 
 use crate::sync::Mutex;
 use core::alloc::{GlobalAlloc, Layout};
@@ -94,25 +94,45 @@ fn align_up(addr: usize, align: usize) -> usize {
 }
 
 /// Inicializa o Heap.
-/// Precisa ser chamado APÓS o VMM estar mapeando a região do Heap.
-pub fn init_heap(
-    mapper: &mut impl FnMut(u64, u64, u64) -> bool,
-    pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
-) {
+///
+/// # Mudança Importante
+///
+/// Esta função agora recebe o PMM diretamente como parâmetro ao invés de
+/// receber uma closure de mapeamento. Isso é necessário porque:
+///
+/// 1. O VMM precisa alocar frames para criar page tables
+/// 2. Se o VMM tentar adquirir o lock do PMM enquanto o heap já tem o lock,
+///    ocorre DEADLOCK
+/// 3. Passando o PMM diretamente, evitamos a necessidade de lock duplo
+///
+/// # Pré-requisitos
+/// - PMM deve estar inicializado
+/// - VMM deve estar inicializado (scratch slot pronto)
+///
+/// # Safety
+/// Deve ser chamada apenas uma vez durante a inicialização do kernel
+pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) {
     let page_range = HEAP_START..(HEAP_START + HEAP_SIZE);
 
     for page_addr in (page_range).step_by(crate::mm::pmm::FRAME_SIZE) {
+        // Alocar frame físico para esta página do heap
         let frame = pmm.allocate_frame().expect("No frames for heap");
+
         let flags = crate::mm::vmm::PAGE_PRESENT | crate::mm::vmm::PAGE_WRITABLE;
-        mapper(page_addr as u64, frame.addr, flags);
+
+        // Usar map_page_with_pmm para evitar deadlock
+        // (já temos o lock do PMM, então passamos ele diretamente)
+        let success =
+            unsafe { crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr, flags, pmm) };
+
+        if !success {
+            panic!("Heap: Falha ao mapear página {:#x}", page_addr);
+        }
     }
 
     unsafe {
         ALLOCATOR.init(HEAP_START, HEAP_SIZE);
     }
-    crate::kinfo!(
-        "Heap Initialized at {:#x} ({} MiB)",
-        HEAP_START,
-        HEAP_SIZE / 1024 / 1024
-    );
+
+    crate::kinfo!("Heap: {} KiB em {:#x}", HEAP_SIZE / 1024, HEAP_START);
 }

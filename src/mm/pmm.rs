@@ -56,25 +56,17 @@ impl BitmapFrameAllocator {
     /// # Safety
     /// O BootInfo deve conter um mapa de memória válido e não sobreposto.
     pub unsafe fn init(&mut self, boot_info: &'static BootInfo) {
-        // Validação crítica: Memory map deve existir
         if boot_info.memory_map_len == 0 {
             panic!("BootInfo não contém mapa de memória válido!");
         }
 
-        crate::kinfo!("PMM: Validando memory map...");
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
         let map_len = boot_info.memory_map_len as usize;
-
-        crate::kinfo!("PMM: Criando slice ({} entradas)...", map_len);
         let regions = core::slice::from_raw_parts(map_ptr, map_len);
 
-        // 1. Calcular memória total APENAS da RAM utilizável (ignora MMIO)
-        crate::kinfo!("PMM: Calculando memória total...");
-
+        // 1. Calcular memória total (apenas RAM utilizável, ignora MMIO)
         let mut max_phys_addr = 0;
         for region in regions {
-            // Usar APENAS ConventionalMemory para definir tamanho do bitmap
-            // Isso ignora MMIO (devices) que ficam em endereços altíssimos
             if region.typ == crate::core::handoff::MemoryType::Usable {
                 let end = region.base + region.len;
                 if end > max_phys_addr {
@@ -89,15 +81,34 @@ impl BitmapFrameAllocator {
             max_phys_addr / 1024 / 1024
         );
 
-        // 2. Definir onde o bitmap vai ficar.
-        crate::kinfo!("PMM: Alocando bitmap...");
-        let kernel_end = boot_info.kernel_phys_addr + boot_info.kernel_size;
-        let bitmap_phys_addr = (kernel_end + FRAME_SIZE as u64 - 1) & !(FRAME_SIZE as u64 - 1);
-
-        // Tamanho do bitmap
+        // 2. Colocar bitmap no FINAL da maior região Usable
+        // (evita conflito com page tables do bootloader)
         let total_frames = (max_phys_addr as usize) / FRAME_SIZE;
         let bitmap_size_bytes = (total_frames + 7) / 8;
         let bitmap_size_u64 = (bitmap_size_bytes + 7) / 8;
+        let bitmap_total_size = bitmap_size_u64 * 8;
+
+        let mut bitmap_phys_addr: u64 = 0;
+        let mut best_region_size: u64 = 0;
+
+        for region in regions.iter() {
+            if region.typ == crate::core::handoff::MemoryType::Usable {
+                if region.len >= bitmap_total_size as u64 && region.len > best_region_size {
+                    let region_end = region.base + region.len;
+                    let aligned_start =
+                        (region_end - bitmap_total_size as u64) & !(FRAME_SIZE as u64 - 1);
+
+                    if aligned_start >= region.base {
+                        bitmap_phys_addr = aligned_start;
+                        best_region_size = region.len;
+                    }
+                }
+            }
+        }
+
+        if bitmap_phys_addr == 0 {
+            panic!("PMM: Não foi possível encontrar região Usable para o bitmap!");
+        }
 
         crate::kinfo!(
             "PMM: Bitmap em {:#x}, {} frames",
@@ -105,20 +116,18 @@ impl BitmapFrameAllocator {
             total_frames
         );
 
-        // CRÍTICO: Mapear bitmap antes de usar!
         let bitmap_ptr = bitmap_phys_addr as *mut u64;
         self.bitmap = core::slice::from_raw_parts_mut(bitmap_ptr, bitmap_size_u64);
-
-        crate::kinfo!("PMM: Zerando bitmap...");
         self.bitmap.fill(u64::MAX); // Marcar tudo como ocupado
 
         self.memory_base = 0;
         self.total_frames = total_frames;
         self.used_frames = total_frames;
 
-        // 3. Liberar regiões usáveis
-        crate::kinfo!("PMM: Liberando regiões usáveis...");
+        // 3. Liberar regiões usáveis (protegendo kernel, bitmap e primeiros 16MB)
+        let kernel_end = boot_info.kernel_phys_addr + boot_info.kernel_size;
         let bitmap_end = bitmap_phys_addr + (bitmap_size_u64 * 8) as u64;
+        const MIN_USABLE_ADDR: u64 = 0x1000000; // 16 MB
 
         for region in regions {
             if region.typ == crate::core::handoff::MemoryType::Usable {
@@ -128,11 +137,16 @@ impl BitmapFrameAllocator {
                 for frame_idx in start_frame..end_frame {
                     let addr = frame_idx * FRAME_SIZE as u64;
 
-                    if addr >= boot_info.kernel_phys_addr && addr < bitmap_end {
+                    if addr == 0 {
                         continue;
                     }
-
-                    if addr == 0 {
+                    if addr < MIN_USABLE_ADDR {
+                        continue;
+                    }
+                    if addr >= boot_info.kernel_phys_addr && addr < kernel_end {
+                        continue;
+                    }
+                    if addr >= bitmap_phys_addr && addr < bitmap_end {
                         continue;
                     }
 
@@ -144,7 +158,7 @@ impl BitmapFrameAllocator {
         }
 
         crate::kinfo!(
-            "PMM Initialized. Total Frames: {}, Free: {}",
+            "PMM: Inicializado. Total Frames: {}, Free: {}",
             self.total_frames,
             self.total_frames - self.used_frames
         );
