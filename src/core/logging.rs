@@ -75,15 +75,15 @@ macro_rules! kprintln {
 // Log Levels com formatação visual consistente
 #[macro_export]
 macro_rules! kinfo {
-    ($($arg:tt)*) => ($crate::kprintln!("\x1b[32m[INFO]\x1b[0m  {}", format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::kprintln!("\x1b[32m[INFO]\x1b[0m {}", format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! kwarn {
-    ($($arg:tt)*) => ($crate::kprintln!("\x1b[33m[WARN]\x1b[0m  {}", format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::kprintln!("\x1b[33m[WARN]\x1b[0m {}", format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! kerror {
-    ($($arg:tt)*) => ($crate::kprintln!("\x1b[31m[ERROR]\x1b[0m {}", format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::kprintln!("\x1b[31m[ERRO]\x1b[0m {}", format_args!($($arg)*)));
 }

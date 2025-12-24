@@ -29,14 +29,13 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 2. Inicializar Sistema de Logs
     // A partir daqui, podemos usar kinfo!, kwarn!, kerror!.
     // O driver serial é inicializado implicitamente na primeira chamada.
-    crate::kinfo!("==========================================");
-    crate::kinfo!("Redstone OS Kernel (Forge) - Initializing");
-    crate::kinfo!("Bootloader Protocol v{}", boot_info.version);
+    crate::kinfo!("Redstone OS Kernel (Forge) - Iniciando");
+    crate::kinfo!("Protocolo de Boot v{}", boot_info.version);
 
     // 3. Inicializar Arquitetura (HAL)
     // Configura GDT (segmentação) e IDT (tratamento de interrupções/exceções).
     // Crítico fazer isso antes de qualquer operação que possa gerar falhas (ex: acesso a memória inválida).
-    crate::kinfo!("[Init] Arch: Setting up GDT/IDT/TSS...");
+    crate::kinfo!("Inicializando Arquitetura (GDT/IDT/TSS)...");
     unsafe {
         crate::arch::platform::gdt::init();
         crate::arch::platform::idt::init();
@@ -45,13 +44,13 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 4. Gerenciamento de Memória (PMM, VMM, Heap)
     // Inicializa o alocador de frames físicos, paginação e o Heap do kernel.
     // Habilita o uso de `Box`, `Vec`, `Arc`, etc.
-    crate::kinfo!("[Init] Memory: Initializing Subsystems...");
+    crate::kinfo!("Inicializando Memória (PMM/VMM/Heap)...");
     crate::mm::init(boot_info);
 
     // 5. Drivers Básicos (Hardware Timer & Interrupt Controller)
     // Configura o PIC (Programmable Interrupt Controller) para não conflitar com exceções da CPU
     // e o PIT (Programmable Interval Timer) para gerar o "heartbeat" do scheduler.
-    crate::kinfo!("[Init] Drivers: Configuring PIC and PIT...");
+    crate::kinfo!("Configurando Drivers (PIC/PIT)...");
     unsafe {
         let mut pic = crate::drivers::pic::PICS.lock();
         pic.init();
@@ -66,7 +65,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         let freq = pit
             .set_frequency(100)
             .expect("Failed to set timer frequency");
-        crate::kinfo!("[Init] Timer frequency set to {}Hz", freq);
+        crate::kinfo!("Timer configurado para {}Hz", freq);
     }
 
     // 6. Subsistemas Lógicos
@@ -76,7 +75,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 7. Scheduler (Multitarefa)
     // Inicializa a fila de processos e cria as tarefas iniciais (Kernel Tasks).
-    crate::kinfo!("[Init] Scheduler: Spawning init tasks...");
+    crate::kinfo!("Inicializando Scheduler...");
     crate::sched::scheduler::init();
 
     // Tenta carregar o processo de usuário (/init)
@@ -85,7 +84,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 8. O Grande Salto (Enable Interrupts)
     // Habilita interrupções (STI). A partir deste ponto, o Timer vai disparar
     // e o Scheduler assumirá o controle da CPU periodicamente.
-    crate::kinfo!("[Init] Enabling Interrupts (STI) - System Live");
+    crate::kinfo!("Habilitando Interrupções - Sistema Ativo");
 
     // SAFETY: Tudo está configurado. Habilitar interrupções é seguro e necessário.
     unsafe {
@@ -125,7 +124,7 @@ fn spawn_init_process() {
                 // Tenta parsear e carregar o ELF na memória
                 match unsafe { crate::core::elf::load(&buffer[..bytes_read]) } {
                     Ok(entry_point) => {
-                        crate::kinfo!("[Init] ELF loaded. Entry point: {:#x}", entry_point);
+                        crate::kinfo!("[Init] ELF carregado. Ponto de entrada: {:#x}", entry_point);
 
                         // Define onde será o topo da stack do usuário (arbitrário por enquanto)
                         let user_stack_top = 0x8000_0000;
@@ -139,15 +138,15 @@ fn spawn_init_process() {
 
                         // Adiciona ao Scheduler
                         crate::sched::scheduler::SCHEDULER.lock().add_task(task);
-                        crate::kinfo!("[Init] Process PID 1 spawned!");
+                        crate::kinfo!("[Init] Processo PID 1 iniciado!");
                     }
-                    Err(e) => crate::kerror!("[Init] Failed to load ELF: {:?}", e),
+                    Err(e) => crate::kerror!("[Init] Falha ao carregar ELF: {:?}", e),
                 }
             }
         }
     } else {
         // Fallback: Se não houver disco ou /init, roda uma tarefa de teste interna.
-        crate::kwarn!("[Init] /init not found via VFS lookup. Creating dummy kernel task.");
+        crate::kwarn!("[Init] /init não encontrado via VFS. Criando tarefa dummy de kernel.");
         crate::sched::scheduler::SCHEDULER
             .lock()
             .add_task(crate::sched::task::Task::new_kernel(dummy_init));

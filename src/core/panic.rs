@@ -23,29 +23,26 @@ fn panic(info: &PanicInfo) -> ! {
     }
 
     // 2. Report: Tentar extrair informações úteis
-    crate::kerror!("\n=======================================================");
-    crate::kerror!("                  KERNEL PANIC (CRITICAL)              ");
-    crate::kerror!("=======================================================");
+    crate::kerror!("=====   PÂNICO DO KERNEL (CRÍTICO)   =====");
 
     if let Some(location) = info.location() {
         crate::kerror!(
-            "Location: {}:{}:{}",
+            "Localização: {}:{}:{}",
             location.file(),
             location.line(),
             location.column()
         );
     } else {
-        crate::kerror!("Location: Unknown (No debug info)");
+        crate::kerror!("Localização: Desconhecida (Sem debug info)");
     }
 
     if let Some(msg) = info.message() {
-        crate::kerror!("Reason:   {}", msg);
+        crate::kerror!("Razão:   {}", msg);
     } else {
-        crate::kerror!("Reason:   Unknown cause");
+        crate::kerror!("Razão:   Causa desconhecida");
     }
 
-    crate::kerror!("System Halted. Manual reset required.");
-    crate::kerror!("=======================================================");
+    crate::kerror!("Sistema congelado. Reset manual necessário.");
 
     // 3. Freeze: Entra em loop infinito de HLT.
     // O método hang() já garante o loop e desabilita interrupções novamente por segurança.
