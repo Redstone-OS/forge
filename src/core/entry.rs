@@ -62,9 +62,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         let mut pit = crate::drivers::timer::PIT.lock();
         // Configura frequência para 100Hz (10ms por tick).
         // Usamos expect pois sem timer o sistema não pode operar em multitarefa.
-        let freq = pit
-            .set_frequency(100)
-            .expect("Failed to set timer frequency");
+        let freq = pit.set_frequency(100).expect("Falha ao configurar timer");
         crate::kinfo!("Timer configurado para {}Hz", freq);
     }
 
