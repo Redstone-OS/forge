@@ -67,27 +67,25 @@ macro_rules! handler_with_err {
     };
 }
 
-// --- Implementações Rust Seguras ---
+// --- Implementações Rust Seguras (logs em PT-BR) ---
 
 extern "C" fn breakpoint_handler_impl(frame: &ContextFrame) {
-    crate::kinfo!("EXCEPTION: BREAKPOINT at {:#x}", frame.rip);
+    crate::kinfo!("FALHA DE CPU: BREAKPOINT em {:#x}", frame.rip);
 }
 
 extern "C" fn double_fault_handler_impl(frame: &ContextFrame) {
-    crate::kerror!("EXCEPTION: DOUBLE FAULT\n{:#?}", frame);
-    // Trava o sistema usando a abstração de CPU
+    crate::kerror!("FALHA DE CPU: FALHA DUPLA\n{:#?}", frame);
     crate::arch::platform::Cpu::hang();
 }
 
 extern "C" fn page_fault_handler_impl(frame: &ContextFrame) {
     let cr2: u64;
-    // Ler endereço que causou a falha (CR2)
     unsafe {
         asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
     };
 
     crate::kerror!(
-        "EXCEPTION: PAGE FAULT at {:#x} accessing {:#x}\nError Code: {:?}",
+        "FALHA DE CPU: FALHA DE PÁGINA em {:#x} acessando {:#x}\nCódigo de Erro: {:?}",
         frame.rip,
         cr2,
         frame.error_code
@@ -97,7 +95,7 @@ extern "C" fn page_fault_handler_impl(frame: &ContextFrame) {
 
 extern "C" fn general_protection_fault_handler_impl(frame: &ContextFrame) {
     crate::kerror!(
-        "EXCEPTION: GPF at {:#x} Code: {:#x}",
+        "FALHA DE CPU: FALHA DE PROTEÇÃO GERAL em {:#x} Código: {:#x}",
         frame.rip,
         frame.error_code
     );
