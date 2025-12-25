@@ -84,15 +84,26 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
         let ph = &*(data.as_ptr().add(offset) as *const ProgramHeader);
 
         if ph.typ == PT_LOAD {
+            crate::kinfo!(
+                "[ELF] PT_LOAD: vaddr={:#x} memsz={} filesz={}",
+                ph.vaddr,
+                ph.memsz,
+                ph.filesz
+            );
+
             if ph.memsz == 0 {
                 continue;
             }
 
-            // Calcular flags de página
-            let mut page_flags = PAGE_PRESENT | PAGE_USER;
-            if ph.flags & PF_W != 0 {
-                page_flags |= PAGE_WRITABLE;
+            // Verificar se vaddr é válido (não nulo para userspace)
+            if ph.vaddr == 0 {
+                crate::kwarn!("[ELF] Skipping segment with vaddr=0");
+                continue;
             }
+
+            // Calcular flags de página - durante carregamento SEMPRE writable
+            // TODO: depois ajustar permissões corretas (read-only para .text etc)
+            let page_flags = PAGE_PRESENT | PAGE_USER | PAGE_WRITABLE;
             // if ph.flags & PF_X == 0 { page_flags |= PAGE_NO_EXEC; } // Futuro
 
             // Alocar e Mapear memória
@@ -101,6 +112,8 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
 
             let start_page = start_addr & !0xFFF;
             let end_page = (end_addr + 0xFFF) & !0xFFF;
+
+            crate::kinfo!("[ELF] Mapeando páginas {:#x} - {:#x}", start_page, end_page);
 
             // TODO: VMM deveria ter função map_range
             let mut curr = start_page;
@@ -111,20 +124,41 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                     .lock()
                     .allocate_frame()
                     .ok_or(Errno::ENOMEM)?;
+
+                crate::kinfo!(
+                    "[ELF] map_page({:#x}, {:#x}, {:#x})",
+                    curr,
+                    frame.addr,
+                    page_flags
+                );
                 vmm::map_page(curr, frame.addr, page_flags);
 
-                // Zerar memória (BSS requirement)
+                // TLB flush para garantir que o mapeamento está visível
+                core::arch::asm!("invlpg [{0}]", in(reg) curr, options(nostack, preserves_flags));
+                crate::kinfo!("[ELF] map_page OK, zerando...");
+
+                // Zerar memória (BSS requirement) - loop manual para evitar write_bytes
                 let ptr = curr as *mut u8;
-                core::ptr::write_bytes(ptr, 0, 4096);
+                for j in 0..4096 {
+                    core::ptr::write_volatile(ptr.add(j), 0);
+                }
 
                 curr += 4096;
             }
+            crate::kinfo!("[ELF] Páginas mapeadas e zeradas");
 
-            // Copiar dados do arquivo
+            // Copiar dados do arquivo - loop manual para evitar copy_nonoverlapping
             if ph.filesz > 0 {
+                crate::kinfo!("[ELF] Copiando {} bytes para {:#x}", ph.filesz, start_addr);
                 let dest = start_addr as *mut u8;
-                let src = &data[ph.offset as usize..(ph.offset + ph.filesz) as usize];
-                core::ptr::copy_nonoverlapping(src.as_ptr(), dest, src.len());
+                let src_offset = ph.offset as usize;
+                let src_len = ph.filesz as usize;
+
+                for j in 0..src_len {
+                    let byte = data[src_offset + j];
+                    core::ptr::write_volatile(dest.add(j), byte);
+                }
+                crate::kinfo!("[ELF] Cópia OK");
             }
         }
     }

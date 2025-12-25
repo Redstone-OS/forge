@@ -175,7 +175,10 @@ impl VfsHandle for TarFileHandle {
         let available = self.data.len() - offset;
         let to_read = core::cmp::min(available, buf.len());
 
-        buf[..to_read].copy_from_slice(&self.data[offset..offset + to_read]);
+        // Cópia manual byte a byte (evitar copy_from_slice que usa memcpy e causa GPF)
+        for i in 0..to_read {
+            buf[i] = self.data[offset + i];
+        }
         Ok(to_read)
     }
 

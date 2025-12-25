@@ -115,15 +115,25 @@ fn spawn_init_process() {
     if let Ok(node) = vfs.lookup("/system/core/init") {
         crate::kinfo!("[Init] Found /system/core/init, loading ELF...");
 
+        crate::kinfo!("[Init] Chamando node.open()...");
         if let Ok(handle) = node.open() {
+            crate::kinfo!("[Init] node.open() OK");
+            crate::kinfo!("[Init] node.size()...");
             let size = node.size() as usize;
+            crate::kinfo!("[Init] size={}", size);
             // Aloca buffer para ler o executável inteiro
+            crate::kinfo!("[Init] Vec::with_capacity({})...", size);
             let mut buffer = Vec::with_capacity(size);
+            crate::kinfo!("[Init] Vec OK");
             unsafe {
+                crate::kinfo!("[Init] set_len...");
                 buffer.set_len(size);
+                crate::kinfo!("[Init] set_len OK");
             }
 
+            crate::kinfo!("[Init] handle.read...");
             if let Ok(bytes_read) = handle.read(&mut buffer, 0) {
+                crate::kinfo!("[Init] read OK, {} bytes", bytes_read);
                 // Tenta parsear e carregar o ELF na memória
                 match unsafe { crate::core::elf::load(&buffer[..bytes_read]) } {
                     Ok(entry_point) => {
