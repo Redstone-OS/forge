@@ -73,51 +73,60 @@ impl Vfs {
 
     /// Resolve um caminho absoluto (ex: "/bin/init").
     pub fn lookup(&self, path: &str) -> Result<Arc<dyn VfsNode>, VfsError> {
-        crate::kinfo!("[VFS] lookup: path={}", path);
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: path={}", path);
         let root = self.root.as_ref().ok_or(VfsError::NotFound)?;
-        crate::kinfo!("[VFS] lookup: root OK");
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: root OK");
 
         if path == "/" {
-            crate::kinfo!("[VFS] lookup: returning root");
+            crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: returning root");
             return Ok(root.clone());
         }
 
-        crate::kinfo!("[VFS] lookup: cloning root...");
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: cloning root...");
         let mut current = root.clone();
-        crate::kinfo!("[VFS] lookup: clone OK");
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: clone OK");
 
         // Caminhar pelos componentes (simples, sem .. ou .)
-        crate::kinfo!("[VFS] lookup: starting path iteration...");
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: starting path iteration...");
 
         // Simplificado: normalizar path removendo / inicial
         let path_trimmed = path.trim_start_matches('/');
-        crate::kinfo!("[VFS] lookup: path_trimmed={}", path_trimmed);
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: path_trimmed={}", path_trimmed);
 
         // Buscar arquivo na lista (comparando diretamente)
         if current.kind() != NodeType::Directory {
             return Err(VfsError::NotDirectory);
         }
 
-        crate::kinfo!("[VFS] lookup: list()...");
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: list()...");
         let children = current.list()?;
-        crate::kinfo!("[VFS] lookup: list OK, {} children", children.len());
+        crate::kinfo!(
+            "\x1b[36m[VFS]\x1b[0m lookup: list OK, {} children",
+            children.len()
+        );
 
         for child in children.iter() {
             let child_name = child.name();
-            crate::kinfo!("[VFS] lookup: child_name={}", child_name);
+            crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: child_name={}", child_name);
 
             // Comparação manual byte a byte (evitar starts_with que pode causar GPF)
             let child_bytes = child_name.as_bytes();
             let has_dot_slash =
                 child_bytes.len() >= 2 && child_bytes[0] == b'.' && child_bytes[1] == b'/';
-            crate::kinfo!("[VFS] lookup: has_dot_slash={}", has_dot_slash);
+            crate::kinfo!(
+                "\x1b[36m[VFS]\x1b[0m lookup: has_dot_slash={}",
+                has_dot_slash
+            );
 
             let child_normalized = if has_dot_slash {
                 unsafe { core::str::from_utf8_unchecked(&child_bytes[2..]) }
             } else {
                 child_name
             };
-            crate::kinfo!("[VFS] lookup: child_normalized={}", child_normalized);
+            crate::kinfo!(
+                "\x1b[36m[VFS]\x1b[0m lookup: child_normalized={}",
+                child_normalized
+            );
 
             // Comparar byte a byte manualmente
             let path_bytes = path_trimmed.as_bytes();
@@ -132,13 +141,13 @@ impl Vfs {
                     }
                 }
                 if is_match {
-                    crate::kinfo!("[VFS] lookup: FOUND!");
+                    crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: FOUND!");
                     return Ok(child.clone());
                 }
             }
         }
 
-        crate::kinfo!("[VFS] lookup: NOT FOUND");
+        crate::kinfo!("\x1b[36m[VFS]\x1b[0m lookup: NOT FOUND");
         Err(VfsError::NotFound)
     }
 }
