@@ -139,8 +139,40 @@ fn spawn_init_process() {
                     Ok(entry_point) => {
                         crate::kinfo!("[Init] ELF carregado. Ponto de entrada: {:#x}", entry_point);
 
-                        // Define onde será o topo da stack do usuário (arbitrário por enquanto)
+                        // Mapear User Stack (16KB em 0x80000000 - 0x80004000)
+                        let user_stack_size = 16 * 1024; // 16KB
+                        let user_stack_base = 0x8000_0000 - user_stack_size as u64;
                         let user_stack_top = 0x8000_0000;
+
+                        crate::kinfo!(
+                            "[Init] Mapeando user stack {:#x} - {:#x}...",
+                            user_stack_base,
+                            user_stack_top
+                        );
+
+                        {
+                            use crate::mm::pmm::FRAME_ALLOCATOR;
+                            use crate::mm::vmm::{self, PAGE_PRESENT, PAGE_USER, PAGE_WRITABLE};
+
+                            let mut addr = user_stack_base;
+                            while addr < user_stack_top {
+                                let frame = FRAME_ALLOCATOR
+                                    .lock()
+                                    .allocate_frame()
+                                    .expect("No frames for user stack");
+                                unsafe {
+                                    vmm::map_page(
+                                        addr,
+                                        frame.addr,
+                                        PAGE_PRESENT | PAGE_USER | PAGE_WRITABLE,
+                                    );
+                                    // TLB flush
+                                    core::arch::asm!("invlpg [{0}]", in(reg) addr, options(nostack, preserves_flags));
+                                }
+                                addr += 4096;
+                            }
+                        }
+                        crate::kinfo!("[Init] User stack mapeada OK");
 
                         // Usa a Page Table atual (CR3) - Em produção, clonaríamos o espaço do kernel.
                         let cr3 = unsafe { crate::arch::platform::memory::cr3() };

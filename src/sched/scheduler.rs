@@ -68,17 +68,21 @@ impl Scheduler {
 
         // 1. Processar a tarefa atual (Old)
         let old_task_ref = self.current_task.take();
-        if let Some(ref old) = old_task_ref {
-            let mut t = old.lock();
 
-            // Se estava rodando, volta para o estado Ready e vai para o fim da fila.
+        // Calcular old_rsp_ptr ANTES de re-enfileirar (senão perdemos a referência!)
+        let old_rsp_ptr = if let Some(ref old) = old_task_ref {
+            let mut t = old.lock();
+            // Se estava rodando, volta para o estado Ready.
             if t.state == TaskState::Running {
                 t.state = TaskState::Ready;
             }
-            drop(t); // Liberar lock
-        }
+            let ptr = &mut t.kstack_top as *mut u64;
+            ptr as u64
+        } else {
+            0 // Primeira troca, não há tarefa antiga
+        };
 
-        // Re-enfileirar a tarefa antiga
+        // Re-enfileirar a tarefa antiga no fim da fila
         if let Some(old) = old_task_ref {
             self.tasks.push_back(old);
         }
@@ -90,19 +94,26 @@ impl Scheduler {
 
             // Obter o valor do Stack Pointer onde a tarefa parou.
             let next_rsp = t.kstack_top;
+            let next_id = t.id;
 
             drop(t); // Liberar lock
 
-            // Calcular ponteiro para kstack_top (para o assembly salvar RSP)
-            let old_rsp_ptr = if let Some(ref old) = self.current_task {
-                let ptr = &mut old.lock().kstack_top as *mut u64;
-                ptr as u64
-            } else {
-                0 // Primeira troca, não há tarefa antiga
-            };
-
             // Atualizar referência global
             self.current_task = Some(next);
+
+            // Debug: mostrar troca (apenas a cada 100 ticks para não poluir)
+            static mut TICK_COUNT: u64 = 0;
+            unsafe {
+                TICK_COUNT += 1;
+                if TICK_COUNT % 100 == 1 {
+                    crate::kinfo!(
+                        "[Sched] switch: old_rsp_ptr={:#x} next_rsp={:#x} task={:?}",
+                        old_rsp_ptr,
+                        next_rsp,
+                        next_id
+                    );
+                }
+            };
 
             return Some((old_rsp_ptr, next_rsp));
         }
@@ -116,6 +127,10 @@ impl Scheduler {
 pub fn init() {
     let mut sched = SCHEDULER.lock();
 
+    crate::kinfo!("[Sched] Scheduler inicializado (sem tarefas de teste)");
+
+    // Tarefas de teste comentadas para testar init sozinho
+    /*
     crate::kinfo!("[Teste] Criando tarefas do kernel...");
 
     // Criar Tasks de Kernel
@@ -130,6 +145,7 @@ pub fn init() {
     crate::kinfo!("[Sched] Criando task_c...");
     sched.add_task(Task::new_kernel(task_c));
     crate::kinfo!("[Sched] task_c adicionada OK");
+    */
 }
 
 // --- Tarefas de Teste ---

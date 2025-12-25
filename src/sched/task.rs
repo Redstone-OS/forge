@@ -151,7 +151,9 @@ impl Task {
                 ptr = ptr.sub(1);
                 *ptr = user_rsp; // RSP (User)
                 ptr = ptr.sub(1);
-                *ptr = 0x202; // RFLAGS (Interrupts Enabled)
+                // RFLAGS: Bit 9 (IF) + IOPL=3 (bits 12-13 = 11b)
+                // 0x3202 = Interrupts Enabled + IOPL=3 (permite I/O em Ring 3)
+                *ptr = 0x3202;
                 ptr = ptr.sub(1);
                 *ptr = cs as u64; // CS
                 ptr = ptr.sub(1);

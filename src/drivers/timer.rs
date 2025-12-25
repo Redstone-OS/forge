@@ -133,6 +133,10 @@ pub fn handle_timer_interrupt() {
     // no contexto da tarefa antiga imediatamente.
     if let Some((old_ptr, new_ptr)) = switch_info {
         unsafe {
+            // IMPORTANTE: Configurar TSS.rsp0 com a kstack da nova tarefa
+            // Quando uma interrupção ocorre em Ring 3, a CPU usa TSS.rsp0 como kernel stack
+            crate::arch::x86_64::gdt::set_kernel_stack(new_ptr);
+
             crate::sched::context_switch(old_ptr as *mut u64, new_ptr);
         }
     }
