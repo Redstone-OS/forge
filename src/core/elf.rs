@@ -96,10 +96,12 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
             }
 
             // Verificar se vaddr é válido (não nulo para userspace)
-            if ph.vaddr == 0 {
-                crate::kwarn!("[ELF] Skipping segment with vaddr=0");
-                continue;
-            }
+            // if ph.vaddr == 0 {
+            //     crate::kwarn!("[ELF] Skipping segment with vaddr=0");
+            //     continue;
+            // }
+            // NOTA: Se o binário foi linkado em 0, precisamos carregar.
+            // O init accessou 0x247, que está nesse segmento.
 
             // Calcular flags de página - durante carregamento SEMPRE writable
             // TODO: depois ajustar permissões corretas (read-only para .text etc)
@@ -118,8 +120,22 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
             // TODO: VMM deveria ter função map_range
             let mut curr = start_page;
             while curr < end_page {
-                // Se já estiver mapeado (ex: overlap), ignorar ou erro?
-                // Vamos assumir espaço limpo.
+                // Verificar se a página já está mapeada (overlap de segmentos)
+                if let Some((_phys, flags)) = vmm::translate_addr_with_flags(curr) {
+                    // Se já estiver mapeada como USER, é um overlap legítimo de segmentos ELF.
+                    if flags & vmm::PAGE_USER != 0 {
+                        crate::kinfo!(
+                            "[ELF] Skipped alloc for {:#x} (already mapped USER, overlap)",
+                            curr
+                        );
+                        // IMPORTANTE: Não zerar a página se já existe e é USER!
+                        curr += 4096;
+                        continue;
+                    }
+                    // Se for mapeamento de KERNEL (ex: identity map), ignoramos e mapeamos por cima (com USER).
+                }
+
+                // Se não está mapeado, alocar novo frame
                 let frame = FRAME_ALLOCATOR
                     .lock()
                     .allocate_frame()

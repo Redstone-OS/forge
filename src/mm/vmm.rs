@@ -444,7 +444,9 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
             return pt_phys;
         }
 
-        // Entrada presente e não-huge: retornar endereço base da próxima tabela.
+        // Entrada presente e não-huge: garantir flags de acesso e retornar endereço.
+        // É seguro marcar diretórios como USER/WRITABLE pois a proteção final é feita na PTE.
+        *entry |= PAGE_USER | PAGE_WRITABLE;
         return *entry & 0x000F_FFFF_FFFF_F000;
     }
 
@@ -462,4 +464,109 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
     *entry = phys | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
 
     phys
+}
+
+/// Traduz um endereço virtual para físico.
+/// Retorna None se não estiver mapeado.
+pub fn translate_addr(virt_addr: u64) -> Option<u64> {
+    unsafe {
+        let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
+        let pml4_ptr = ACTIVE_PML4_PHYS as *const u64;
+        let pml4_entry = *pml4_ptr.add(pml4_idx);
+        if pml4_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        let pdpt_phys = pml4_entry & 0x000F_FFFF_FFFF_F000;
+        let pdpt_ptr = pdpt_phys as *const u64;
+        let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
+        let pdpt_entry = *pdpt_ptr.add(pdpt_idx);
+        if pdpt_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        // Huge page (1GB) check
+        if pdpt_entry & PAGE_HUGE != 0 {
+            let base = pdpt_entry & 0x000F_FFFF_C000_0000;
+            let offset = virt_addr & 0x3FFF_FFFF;
+            return Some(base + offset);
+        }
+
+        let pd_phys = pdpt_entry & 0x000F_FFFF_FFFF_F000;
+        let pd_ptr = pd_phys as *const u64;
+        let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
+        let pd_entry = *pd_ptr.add(pd_idx);
+        if pd_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        // Huge page (2MB) check
+        if pd_entry & PAGE_HUGE != 0 {
+            let base = pd_entry & 0x000F_FFFF_FFE0_0000;
+            let offset = virt_addr & 0x1FFFFF;
+            return Some(base + offset);
+        }
+
+        let pt_phys = pd_entry & 0x000F_FFFF_FFFF_F000;
+        let pt_ptr = pt_phys as *const u64;
+        let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
+        let pt_entry = *pt_ptr.add(pt_idx);
+        if pt_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        let phys_base = pt_entry & 0x000F_FFFF_FFFF_F000;
+        Some(phys_base + (virt_addr & 0xFFF))
+    }
+}
+
+/// Traduz endereço virtual para físico e retorna as flags da página.
+pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
+    unsafe {
+        let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
+        let pml4_ptr = ACTIVE_PML4_PHYS as *const u64;
+        let pml4_entry = *pml4_ptr.add(pml4_idx);
+        if pml4_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        let pdpt_phys = pml4_entry & 0x000F_FFFF_FFFF_F000;
+        let pdpt_ptr = pdpt_phys as *const u64;
+        let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
+        let pdpt_entry = *pdpt_ptr.add(pdpt_idx);
+        if pdpt_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        if pdpt_entry & PAGE_HUGE != 0 {
+            let base = pdpt_entry & 0x000F_FFFF_C000_0000;
+            let offset = virt_addr & 0x3FFF_FFFF;
+            return Some((base + offset, pdpt_entry & 0xFFF));
+        }
+
+        let pd_phys = pdpt_entry & 0x000F_FFFF_FFFF_F000;
+        let pd_ptr = pd_phys as *const u64;
+        let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
+        let pd_entry = *pd_ptr.add(pd_idx);
+        if pd_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        if pd_entry & PAGE_HUGE != 0 {
+            let base = pd_entry & 0x000F_FFFF_FFE0_0000;
+            let offset = virt_addr & 0x1FFFFF;
+            return Some((base + offset, pd_entry & 0xFFF));
+        }
+
+        let pt_phys = pd_entry & 0x000F_FFFF_FFFF_F000;
+        let pt_ptr = pt_phys as *const u64;
+        let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
+        let pt_entry = *pt_ptr.add(pt_idx);
+        if pt_entry & PAGE_PRESENT == 0 {
+            return None;
+        }
+
+        let phys_base = pt_entry & 0x000F_FFFF_FFFF_F000;
+        Some((phys_base + (virt_addr & 0xFFF), pt_entry & 0xFFF))
+    }
 }
