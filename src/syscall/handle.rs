@@ -69,7 +69,7 @@ pub fn sys_handle_create(
     // TODO: Acessar HandleTable do processo atual via task
     // TODO: Inserir entrada e retornar handle
 
-    crate::kwarn!("[Syscall] handle_create não implementado completamente");
+    crate::kwarn!("(Syscall) sys_handle_create não implementado");
     Err(SysError::NotImplemented)
 }
 
@@ -90,7 +90,7 @@ pub fn sys_handle_dup(handle: usize, new_rights: usize) -> SysResult<usize> {
 
     // TODO: Acessar HandleTable, validar handle, verificar rights, criar cópia
 
-    crate::kwarn!("[Syscall] handle_dup não implementado");
+    crate::kwarn!("(Syscall) sys_handle_dup não implementado");
     Err(SysError::NotImplemented)
 }
 
@@ -110,7 +110,7 @@ pub fn sys_handle_close(handle: usize) -> SysResult<usize> {
 
     // TODO: Acessar HandleTable, remover entrada, cleanup
 
-    crate::kwarn!("[Syscall] handle_close não implementado");
+    crate::kwarn!("(Syscall) sys_handle_close não implementado");
     Err(SysError::NotImplemented)
 }
 
@@ -132,6 +132,6 @@ pub fn sys_check_rights(handle: usize, rights_mask: usize) -> SysResult<usize> {
 
     // TODO: Acessar HandleTable, verificar direitos
 
-    crate::kwarn!("[Syscall] check_rights não implementado");
+    crate::kwarn!("(Syscall) sys_check_rights não implementado");
     Err(SysError::NotImplemented)
 }

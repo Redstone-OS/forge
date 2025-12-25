@@ -59,7 +59,10 @@ impl Pit {
     /// * `Ok(u32)`: Frequência real configurada (devido à precisão do divisor).
     /// * `Err(Errno)`: Se a frequência for inválida (0 ou muito alta).
     pub fn set_frequency(&mut self, freq: u32) -> Result<u32, Errno> {
+        crate::kdebug!("(PIT) set_frequency: Desejado {} Hz", freq);
+
         if freq == 0 || freq > BASE_FREQUENCY {
+            crate::kwarn!("(PIT) set_frequency: Frequência inválida");
             return Err(Errno::EINVAL);
         }
 
@@ -68,26 +71,30 @@ impl Pit {
 
         // O divisor deve caber em 16 bits (exceto 0 que significa 65536)
         if divisor > 65535 {
+            crate::kwarn!("(PIT) set_frequency: Divisor muito grande para {} Hz", freq);
             return Err(Errno::EINVAL); // Frequência muito baixa (< 18.2 Hz)
         }
 
         let actual_freq = BASE_FREQUENCY / divisor;
+        crate::ktrace!(
+            "(PIT) set_frequency: Divisor calculado: {} (Freq real: {} Hz)",
+            divisor,
+            actual_freq
+        );
 
         unsafe {
             // Modo de Operação:
-            // - Channel 0
-            // - Access Mode: Lo/Hi byte (acesso de 16 bits em dois passos)
-            // - Mode 2: Rate Generator (pulso repetitivo)
-            // - Binary Mode (16-bit binary)
-            // 00 11 010 0 = 0x34 or 0x36? Usually 0x36 (Square Wave) for frequency generation
             self.command.write(0x36);
+            crate::ktrace!("(PIT) set_frequency: Comando 0x36 (Square Wave) enviado");
 
             // Enviar divisor (Low byte, depois High byte)
             self.channel0.write((divisor & 0xFF) as u8);
             self.channel0.write((divisor >> 8) as u8);
+            crate::ktrace!("(PIT) set_frequency: LSB/MSB do divisor enviados");
         }
 
         self.frequency = actual_freq;
+        crate::kinfo!("(PIT) Frequência configurada para {} Hz", actual_freq);
         Ok(actual_freq)
     }
 

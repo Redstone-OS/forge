@@ -49,29 +49,47 @@ impl ChainedPics {
 
     /// Inicializa e remapeia o PIC.
     pub unsafe fn init(&mut self) {
+        crate::kdebug!("(PIC) init: Remapeando IRQs para vetores 32-47...");
+
         // Salvar máscaras
         let mask1 = self.pics[0].data.read();
         let mask2 = self.pics[1].data.read();
+        crate::ktrace!(
+            "(PIC) init: Máscaras originais salvas: 0x{:02x}, 0x{:02x}",
+            mask1,
+            mask2
+        );
 
         // Sequência de inicialização (ICW1)
         self.pics[0].command.write(0x11);
         self.pics[1].command.write(0x11);
+        crate::ktrace!("(PIC) init: ICW1 enviado");
 
         // ICW2: Offsets dos vetores
         self.pics[0].data.write(self.pics[0].offset);
         self.pics[1].data.write(self.pics[1].offset);
+        crate::ktrace!(
+            "(PIC) init: ICW2 offsets: {}, {}",
+            self.pics[0].offset,
+            self.pics[1].offset
+        );
 
         // ICW3: Cascata
         self.pics[0].data.write(4); // IRQ2 tem slave
         self.pics[1].data.write(2); // Identidade cascade
+        crate::ktrace!("(PIC) init: ICW3 cascata configurada");
 
         // ICW4: Modo 8086
         self.pics[0].data.write(0x01);
         self.pics[1].data.write(0x01);
+        crate::ktrace!("(PIC) init: ICW4 modo 8086 pronto");
 
         // Restaurar máscaras
         self.pics[0].data.write(mask1);
         self.pics[1].data.write(mask2);
+        crate::ktrace!("(PIC) init: Máscaras restauradas");
+
+        crate::kinfo!("(PIC) Inicializado e Remapeado");
     }
 
     /// Envia "End of Interrupt" (EOI).

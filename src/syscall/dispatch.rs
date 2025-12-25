@@ -16,12 +16,26 @@ use crate::arch::x86_64::idt::ContextFrame;
 pub extern "C" fn syscall_dispatcher(ctx: &mut ContextFrame) {
     let args = SyscallArgs::from_context(ctx);
 
+    crate::ktrace!(
+        "(Syscall) #{:#x} : args({:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x})",
+        args.num,
+        args.arg1,
+        args.arg2,
+        args.arg3,
+        args.arg4,
+        args.arg5,
+        args.arg6
+    );
+
     let result = dispatch(&args);
 
     // Resultado vai em RAX (positivo = sucesso, negativo = erro)
     ctx.rax = match result {
         Ok(val) => val as u64,
-        Err(e) => e.as_isize() as u64,
+        Err(e) => {
+            crate::ktrace!("(Syscall) #{:#x} result: ERR({:?})", args.num, e);
+            e.as_isize() as u64
+        }
     };
 }
 
@@ -67,7 +81,7 @@ fn dispatch(args: &SyscallArgs) -> SysResult<usize> {
 
         // === Async IO (futuro) ===
         SYS_CREATE_RING | SYS_SUBMIT_IO | SYS_WAIT_IO | SYS_CLOSE_RING => {
-            crate::kwarn!("[Syscall] Async IO não implementado: {:#x}", args.num);
+            crate::kwarn!("(Syscall) Async IO não implementado: {:#x}", args.num);
             Err(SysError::NotImplemented)
         }
 
@@ -77,7 +91,7 @@ fn dispatch(args: &SyscallArgs) -> SysResult<usize> {
 
         // === Desconhecida ===
         _ => {
-            crate::kwarn!("[Syscall] Desconhecida: {:#x}", args.num);
+            crate::kwarn!("(Syscall) Desconhecida: {:#x}", args.num);
             Err(SysError::NotImplemented)
         }
     }

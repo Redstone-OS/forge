@@ -35,7 +35,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 3. Inicializar Arquitetura (HAL)
     // Configura GDT (segmentação) e IDT (tratamento de interrupções/exceções).
     // Crítico fazer isso antes de qualquer operação que possa gerar falhas (ex: acesso a memória inválida).
-    crate::kinfo!("Inicializando Arquitetura (GDT/IDT/TSS)...");
+    crate::kinfo!("(Core) Inicializando hardware (GDT/IDT/TSS)...");
     unsafe {
         crate::arch::platform::gdt::init();
         crate::arch::platform::idt::init();
@@ -44,26 +44,24 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 4. Gerenciamento de Memória (PMM, VMM, Heap)
     // Inicializa o alocador de frames físicos, paginação e o Heap do kernel.
     // Habilita o uso de `Box`, `Vec`, `Arc`, etc.
-    crate::kinfo!("Inicializando Memória (PMM/VMM/Heap)...");
+    crate::kinfo!("(Core) Inicializando subsistema de memória...");
     crate::mm::init(boot_info);
 
     // 5. Drivers Básicos (Hardware Timer & Interrupt Controller)
     // Configura o PIC (Programmable Interrupt Controller) para não conflitar com exceções da CPU
     // e o PIT (Programmable Interval Timer) para gerar o "heartbeat" do scheduler.
-    crate::kinfo!("Configurando Drivers (PIC/PIT)...");
+    crate::kinfo!("(Core) Configurando controladores de interrupção (PIC/PIT)...");
     unsafe {
         let mut pic = crate::drivers::pic::PICS.lock();
         pic.init();
         pic.unmask(0); // Habilita IRQ0 (Timer)
-                       // pic.unmask(1); // Futuro: Habilitar IRQ1 (Teclado)
     }
 
     {
         let mut pit = crate::drivers::timer::PIT.lock();
         // Configura frequência para 100Hz (10ms por tick).
-        // Usamos expect pois sem timer o sistema não pode operar em multitarefa.
         let freq = pit.set_frequency(100).expect("Falha ao configurar timer");
-        crate::kinfo!("Timer configurado para {}Hz", freq);
+        crate::kdebug!("(Core) Timer configurado para {}Hz", freq);
     }
 
     // 6. Subsistemas Lógicos
@@ -80,7 +78,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 7. Scheduler (Multitarefa)
     // Inicializa a fila de processos e cria as tarefas iniciais (Kernel Tasks).
-    crate::kinfo!("Inicializando Scheduler...");
+    crate::kinfo!("(Core) Ativando escalonador multitarefa...");
     crate::sched::scheduler::init();
 
     // Tenta carregar o processo de usuário (/init)
@@ -118,44 +116,32 @@ fn spawn_init_process() {
     crate::kinfo!("[Init] VFS lock OK");
 
     // Procura pelo arquivo "/system/core/init" (estrutura moderna Redstone)
-    crate::kinfo!("[Init] lookup /system/core/init...");
     if let Ok(node) = vfs.lookup("/system/core/init") {
-        crate::kinfo!("[Init] Found /system/core/init, loading ELF...");
+        crate::kinfo!("(Init) Carregando processo inicial '/system/core/init'...");
 
-        crate::kinfo!("[Init] Chamando node.open()...");
         if let Ok(handle) = node.open() {
-            crate::kinfo!("[Init] node.open() OK");
-            crate::kinfo!("[Init] node.size()...");
             let size = node.size() as usize;
-            crate::kinfo!("[Init] size={}", size);
-            // Aloca buffer para ler o executável inteiro
-            crate::kinfo!("[Init] Vec::with_capacity({})...", size);
             let mut buffer = Vec::with_capacity(size);
-            crate::kinfo!("[Init] Vec OK");
             unsafe {
-                crate::kinfo!("[Init] set_len...");
                 buffer.set_len(size);
-                crate::kinfo!("[Init] set_len OK");
             }
 
-            crate::kinfo!("[Init] handle.read...");
             if let Ok(bytes_read) = handle.read(&mut buffer, 0) {
-                crate::kinfo!("[Init] read OK, {} bytes", bytes_read);
+                crate::kdebug!(
+                    "(Init) Arquivo lido ({} bytes), iniciando parsing ELF...",
+                    bytes_read
+                );
                 // Tenta parsear e carregar o ELF na memória
                 match unsafe { crate::core::elf::load(&buffer[..bytes_read]) } {
                     Ok(entry_point) => {
-                        crate::kinfo!("[Init] ELF carregado. Ponto de entrada: {:#x}", entry_point);
+                        crate::kdebug!("(Init) ELF carregado em {:#x}", entry_point);
 
                         // Mapear User Stack (16KB em 0x80000000 - 0x80004000)
                         let user_stack_size = 16 * 1024; // 16KB
                         let user_stack_base = 0x8000_0000 - user_stack_size as u64;
                         let user_stack_top = 0x8000_0000;
 
-                        crate::kinfo!(
-                            "[Init] Mapeando user stack {:#x} - {:#x}...",
-                            user_stack_base,
-                            user_stack_top
-                        );
+                        crate::ktrace!("(Init) Mapeando user stack em {:#x}", user_stack_base);
 
                         {
                             use crate::mm::pmm::FRAME_ALLOCATOR;
@@ -179,30 +165,26 @@ fn spawn_init_process() {
                                 addr += 4096;
                             }
                         }
-                        crate::kinfo!("[Init] User stack mapeada OK");
+                        crate::kdebug!("(Init) Stack de usuário preparada");
 
                         // Usa a Page Table atual (CR3) - Em produção, clonaríamos o espaço do kernel.
                         let cr3 = unsafe { crate::arch::platform::memory::cr3() };
 
                         // Cria a tarefa Ring 3
-                        crate::kinfo!("[Init] Criando Task::new_user...");
                         let task =
                             crate::sched::task::Task::new_user(entry_point, user_stack_top, cr3);
-                        crate::kinfo!("[Init] Task::new_user OK");
 
                         // Adiciona ao Scheduler
-                        crate::kinfo!("[Init] Chamando add_task...");
                         crate::sched::scheduler::SCHEDULER.lock().add_task(task);
-                        crate::kinfo!("[Init] Processo PID 1 iniciado!");
-                        crate::kinfo!("[Init] Processo PID 1 iniciado!");
+                        crate::kinfo!("(Init) Processo PID 1 (init) disparado!");
                     }
-                    Err(e) => crate::kerror!("[Init] Falha ao carregar ELF: {:?}", e),
+                    Err(e) => crate::kerror!("(Init) Erro fatal ao carregar ELF: {:?}", e),
                 }
             }
         }
     } else {
         // Fallback: Se não houver disco ou /init, roda uma tarefa de teste interna.
-        crate::kwarn!("[Init] /init não encontrado via VFS. Criando tarefa dummy de kernel.");
+        crate::kwarn!("(Init) /init não encontrado via VFS. Criando tarefa dummy de kernel.");
         crate::sched::scheduler::SCHEDULER
             .lock()
             .add_task(crate::sched::task::Task::new_kernel(dummy_init));

@@ -185,16 +185,25 @@ struct GdtDescriptor {
 /// Deve ser chamado apenas uma vez durante o boot do processador (BSP).
 /// Em SMP, cada AP terá sua própria GDT/TSS.
 pub unsafe fn init() {
+    crate::kdebug!("(GDT) init: Configurando GDT e TSS...");
+
     // 1. Configurar entrada do TSS na GDT com o endereço real
     GDT.tss = SystemSegmentEntry::new_tss(&TSS);
+    crate::ktrace!("(GDT) init: TSS configurado em GDT");
 
     // 2. Carregar GDTR
     let gdt_ptr = GdtDescriptor {
         limit: (size_of::<Gdt>() - 1) as u16,
         base: core::ptr::addr_of!(GDT) as u64,
     };
+    crate::ktrace!(
+        "(GDT) init: GDTR base={:#x} limit={}",
+        gdt_ptr.base,
+        gdt_ptr.limit
+    );
 
     asm!("lgdt [{}]", in(reg) &gdt_ptr, options(readonly, nostack, preserves_flags));
+    crate::kdebug!("(GDT) init: GDT carregada");
 
     // 3. Recarregar Segmentos
     // CORREÇÃO E0658: Usamos registradores (in(reg)) para passar os seletores,
@@ -226,4 +235,6 @@ pub unsafe fn init() {
         tss_sel = in(reg) tss_sel,
         tmp = lateout(reg) _,
     );
+
+    crate::kinfo!("(GDT) Inicializado");
 }

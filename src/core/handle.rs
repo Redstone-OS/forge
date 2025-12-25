@@ -143,6 +143,12 @@ impl HandleTable {
         for i in 0..len {
             let idx = (start + i) % len;
             if !self.entries[idx].is_active() {
+                crate::ktrace!(
+                    "(Handle) insert: Slot {} ocupado por {:?} (ptr: {:#x})",
+                    idx,
+                    entry.object_type,
+                    entry.object_ptr
+                );
                 self.entries[idx] = entry;
                 self.next_free = ((idx + 1) % len) as u32;
                 return Some(Handle(idx as u32));
@@ -154,6 +160,8 @@ impl HandleTable {
             let new_len = (len * 2).min(Self::MAX_CAPACITY);
             let idx = len;
 
+            crate::kdebug!("(Handle) Expandindo tabela: {} -> {} slots", len, new_len);
+
             // Expandir
             for _ in len..new_len {
                 self.entries.push(HandleEntry::empty());
@@ -164,6 +172,10 @@ impl HandleTable {
             return Some(Handle(idx as u32));
         }
 
+        crate::kwarn!(
+            "(Handle) Falha ao inserir: Tabela de handles cheia (max {})",
+            Self::MAX_CAPACITY
+        );
         None // Tabela cheia
     }
 
@@ -201,6 +213,11 @@ impl HandleTable {
 
         // Trocar por entrada vazia
         let old = core::mem::replace(entry, HandleEntry::empty());
+        crate::ktrace!(
+            "(Handle) remove: Handle {} ({:?}) removido",
+            idx,
+            old.object_type
+        );
 
         // Atualizar hint de slot livre
         if (self.next_free as usize) > idx {
@@ -234,7 +251,16 @@ impl HandleTable {
             rights: new_rights,
         };
 
-        self.insert(new_entry)
+        let result = self.insert(new_entry);
+        if let Some(h) = result {
+            crate::ktrace!(
+                "(Handle) duplicate: {} -> {} (direitos: {:?})",
+                handle.0,
+                h.0,
+                new_rights
+            );
+        }
+        result
     }
 }
 

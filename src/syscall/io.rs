@@ -21,7 +21,12 @@ use core::slice;
 ///
 /// # Retorno
 /// Total de bytes escritos ou erro
-pub fn sys_writev(handle: usize, iov_ptr: usize, iov_cnt: usize, _flags: usize) -> SysResult<usize> {
+pub fn sys_writev(
+    handle: usize,
+    iov_ptr: usize,
+    iov_cnt: usize,
+    _flags: usize,
+) -> SysResult<usize> {
     // Validação básica
     if iov_ptr == 0 || iov_cnt == 0 {
         return Err(SysError::InvalidArgument);
@@ -43,7 +48,7 @@ pub fn sys_writev(handle: usize, iov_ptr: usize, iov_cnt: usize, _flags: usize) 
     // 2. Verificar direito WRITE
     // 3. Despachar para o driver/subsistema correto
 
-    crate::kwarn!("[Syscall] writev para handle {} não implementado", handle);
+    crate::kwarn!("(Syscall) sys_writev: Handle {} não implementado", handle);
     Err(SysError::BadHandle)
 }
 
@@ -72,13 +77,13 @@ pub fn sys_readv(handle: usize, iov_ptr: usize, iov_cnt: usize, _flags: usize) -
     // HACK TEMPORÁRIO: Handle 0 = console (stdin de teclado)
     if handle == 0 {
         // TODO: Ler do buffer de teclado
-        crate::kwarn!("[Syscall] readv de console não implementado");
+        crate::kwarn!("(Syscall) sys_readv: Leitura de console não implementada");
         return Err(SysError::NotImplemented);
     }
 
     // TODO: Para outros handles, dispatch por tipo
 
-    crate::kwarn!("[Syscall] readv para handle {} não implementado", handle);
+    crate::kwarn!("(Syscall) sys_readv: Handle {} não implementado", handle);
     Err(SysError::BadHandle)
 }
 

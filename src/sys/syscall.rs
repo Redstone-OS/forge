@@ -18,28 +18,23 @@ pub extern "C" fn syscall_dispatcher(context: &mut ContextFrame) {
 
     match syscall_num {
         SYS_WRITE => {
-            // sys_write(fd, buffer, len)
-            // fd: arg1 (1 = stdout)
-            // buffer: arg2 (ptr)
-            // len: arg3 (usize)
             let fd = arg1;
             let ptr = arg2 as *const u8;
             let len = arg3 as usize;
 
+            crate::ktrace!("(Sys) sys_write: fd={} ptr={:p} len={}", fd, ptr, len);
+
             if fd == 1 {
                 // STDOUT
-                // Validar ponteiro (básico)
                 if ptr.is_null() {
-                    context.rax = -1i64 as u64; // Error
+                    crate::kwarn!("(Sys) sys_write: Ponteiro nulo recebido");
+                    context.rax = -1i64 as u64;
                     return;
                 }
 
-                // Safety: Assumimos que o userspace passou ponteiro válido por enquanto.
-                // Em OS real, precisa validar se endereços pertencem ao processo.
                 let slice = unsafe { core::slice::from_raw_parts(ptr, len) };
 
-                // Tenta converter para UTF-8 string, se falhar imprime bytes raw?
-                // Vamos imprimir lossy.
+                // Tenta converter para UTF-8 string
                 if let Ok(s) = core::str::from_utf8(slice) {
                     crate::kprint!("{}", s);
                 } else {
@@ -50,15 +45,20 @@ pub extern "C" fn syscall_dispatcher(context: &mut ContextFrame) {
 
                 context.rax = len as u64; // Retorna bytes escritos
             } else {
+                crate::kdebug!("(Sys) sys_write: FD {} não suportado", fd);
                 context.rax = -1i64 as u64; // EBADF
             }
         }
         SYS_YIELD => {
+            crate::ktrace!("(Sys) sys_yield: Cedendo tempo de CPU voluntariamente");
             crate::sched::scheduler::yield_now();
             context.rax = 0;
         }
         _ => {
-            crate::kprintln!("Syscall desconhecida: {}", syscall_num);
+            crate::kwarn!(
+                "(Sys) Chamada inesperada: syscall {} não implementada",
+                syscall_num
+            );
             context.rax = -1i64 as u64; // ENOSYS
         }
     }

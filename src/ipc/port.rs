@@ -47,18 +47,32 @@ impl PortHandle {
         Self(Arc::new(Mutex::new(Port::new(capacity))))
     }
 
-    /// Envia uma mensagem para a porta (Non-blocking).
     pub fn send(&self, msg: Message) -> PortStatus {
+        let msg_id = msg.header.id;
         let mut port = self.0.lock();
 
         if !port.active {
+            crate::kwarn!(
+                "(IPC) send: Tentativa de envio para porta fechada (ID: {})",
+                msg_id
+            );
             return PortStatus::Closed;
         }
 
         if port.queue.len() >= port.capacity {
+            crate::ktrace!(
+                "(IPC) send: Porta cheia ({} mensagens), bloqueando ID: {}",
+                port.capacity,
+                msg_id
+            );
             return PortStatus::Full;
         }
 
+        crate::ktrace!(
+            "(IPC) send: Mensagem ID: {} enfileirada ({} bytes)",
+            msg_id,
+            msg.header.data_len
+        );
         port.queue.push_back(msg);
         PortStatus::Ok
     }
@@ -68,6 +82,10 @@ impl PortHandle {
         let mut port = self.0.lock();
 
         if let Some(msg) = port.queue.pop_front() {
+            crate::ktrace!(
+                "(IPC) recv: Mensagem ID: {} retirada da fila",
+                msg.header.id
+            );
             Ok(msg)
         } else if !port.active {
             Err(PortStatus::Closed)
@@ -78,6 +96,7 @@ impl PortHandle {
 
     /// Fecha a porta, impedindo novos envios.
     pub fn close(&self) {
+        crate::kdebug!("(IPC) port: Fechando porta...");
         let mut port = self.0.lock();
         port.active = false;
     }

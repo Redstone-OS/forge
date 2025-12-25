@@ -39,15 +39,20 @@ impl SerialPort {
 
     /// Inicializa a porta serial UART 16550.
     pub fn init(&mut self) {
+        crate::kdebug!("(Serial) init: Inicializando UART 16550 na porta 0x3F8...");
         unsafe {
             self.int_en.write(0x00); // Disable interrupts
+            crate::ktrace!("(Serial) init: Interrupções desabilitadas");
             self.line_ctrl.write(0x80); // Enable DLAB (set baud rate divisor)
             self.data.write(0x03); // Set divisor to 3 (lo byte) 38400 baud
             self.int_en.write(0x00); //                  (hi byte)
+            crate::ktrace!("(Serial) init: Baud rate configurado para 38400");
             self.line_ctrl.write(0x03); // 8 bits, no parity, one stop bit
             self.fifo_ctrl.write(0xC7); // Enable FIFO, clear them, with 14-byte threshold
             self.modem_ctrl.write(0x0B); // IRQs enabled, RTS/DSR set
+            crate::ktrace!("(Serial) init: FIFO e Modem configurados");
         }
+        crate::kinfo!("(Serial) Inicializado");
     }
 
     /// Envia um byte pela serial.

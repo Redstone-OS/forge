@@ -34,7 +34,7 @@ pub fn sys_create_port(capacity: usize) -> SysResult<usize> {
     // TODO: Registrar porta na HandleTable do processo
     // TODO: Retornar handle
 
-    crate::kwarn!("[Syscall] create_port criou porta, mas não registrou handle");
+    crate::kwarn!("(Syscall) sys_create_port: Porta criada mas HandleTable não implementada");
     Err(SysError::NotImplemented)
 }
 
@@ -73,7 +73,7 @@ pub fn sys_send_msg(
     // TODO: Verificar direito WRITE
     // TODO: Copiar dados e enviar
 
-    crate::kwarn!("[Syscall] send_msg não implementado");
+    crate::kwarn!("(Syscall) sys_send_msg não implementado");
     Err(SysError::NotImplemented)
 }
 
@@ -108,7 +108,7 @@ pub fn sys_recv_msg(
     // TODO: Verificar direito READ
     // TODO: Receber mensagem (bloqueante ou não)
 
-    crate::kwarn!("[Syscall] recv_msg não implementado");
+    crate::kwarn!("(Syscall) sys_recv_msg não implementado");
     Err(SysError::NotImplemented)
 }
 
@@ -128,6 +128,6 @@ pub fn sys_peek_msg(port_handle: usize, _buf_ptr: usize, _buf_len: usize) -> Sys
     // TODO: Verificar se há mensagem
     // TODO: Copiar para buf sem remover
 
-    crate::kwarn!("[Syscall] peek_msg não implementado");
+    crate::kwarn!("(Syscall) sys_peek_msg não implementado");
     Err(SysError::NotImplemented)
 }

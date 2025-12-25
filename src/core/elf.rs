@@ -84,8 +84,8 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
         let ph = &*(data.as_ptr().add(offset) as *const ProgramHeader);
 
         if ph.typ == PT_LOAD {
-            crate::kinfo!(
-                "[ELF] PT_LOAD: vaddr={:#x} memsz={} filesz={}",
+            crate::ktrace!(
+                "(Elf) PT_LOAD: vaddr={:#x} memsz={} filesz={}",
                 ph.vaddr,
                 ph.memsz,
                 ph.filesz
@@ -115,7 +115,7 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
             let start_page = start_addr & !0xFFF;
             let end_page = (end_addr + 0xFFF) & !0xFFF;
 
-            crate::kinfo!("[ELF] Mapeando páginas {:#x} - {:#x}", start_page, end_page);
+            crate::ktrace!("(Elf) Mapeando páginas {:#x} - {:#x}", start_page, end_page);
 
             // TODO: VMM deveria ter função map_range
             let mut curr = start_page;
@@ -124,10 +124,7 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                 if let Some((_phys, flags)) = vmm::translate_addr_with_flags(curr) {
                     // Se já estiver mapeada como USER, é um overlap legítimo de segmentos ELF.
                     if flags & vmm::PAGE_USER != 0 {
-                        crate::kinfo!(
-                            "[ELF] Skipped alloc for {:#x} (already mapped USER, overlap)",
-                            curr
-                        );
+                        crate::ktrace!("(Elf) Slot {:#x} já mapeado como USER (overlap ELF)", curr);
                         // IMPORTANTE: Não zerar a página se já existe e é USER!
                         curr += 4096;
                         continue;
@@ -141,8 +138,8 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                     .allocate_frame()
                     .ok_or(Errno::ENOMEM)?;
 
-                crate::kinfo!(
-                    "[ELF] map_page({:#x}, {:#x}, {:#x})",
+                crate::ktrace!(
+                    "(Elf) map_page: virt={:#x} phys={:#x} flags={:#x}",
                     curr,
                     frame.addr,
                     page_flags
@@ -151,7 +148,6 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
 
                 // TLB flush para garantir que o mapeamento está visível
                 core::arch::asm!("invlpg [{0}]", in(reg) curr, options(nostack, preserves_flags));
-                crate::kinfo!("[ELF] map_page OK, zerando...");
 
                 // Zerar memória (BSS requirement) - loop manual para evitar write_bytes
                 let ptr = curr as *mut u8;
@@ -165,7 +161,7 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
 
             // Copiar dados do arquivo - loop manual para evitar copy_nonoverlapping
             if ph.filesz > 0 {
-                crate::kinfo!("[ELF] Copiando {} bytes para {:#x}", ph.filesz, start_addr);
+                crate::ktrace!("(Elf) Copiando {} bytes para {:#x}", ph.filesz, start_addr);
                 let dest = start_addr as *mut u8;
                 let src_offset = ph.offset as usize;
                 let src_len = ph.filesz as usize;
@@ -174,7 +170,6 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                     let byte = data[src_offset + j];
                     core::ptr::write_volatile(dest.add(j), byte);
                 }
-                crate::kinfo!("[ELF] Cópia OK");
             }
         }
     }

@@ -16,7 +16,7 @@ use crate::sched::task::TaskState;
 /// - Remove da runqueue
 /// - Cede CPU para sempre (não retorna)
 pub fn sys_exit(code: i32) -> SysResult<usize> {
-    crate::kinfo!("[Syscall] exit({})", code);
+    crate::kinfo!("(Syscall) sys_exit: Processo encerrado com código {}", code);
 
     // TODO: Implementar exit real quando tiver process management
     // Por enquanto: loop infinito cedendo CPU
@@ -42,7 +42,7 @@ pub fn sys_spawn(
     _args_ptr: usize,
     _args_len: usize,
 ) -> SysResult<usize> {
-    crate::kwarn!("[Syscall] spawn não implementado");
+    crate::kwarn!("(Syscall) sys_spawn não implementado");
     Err(SysError::NotImplemented)
 }
 
@@ -54,7 +54,7 @@ pub fn sys_spawn(
 /// # TODO
 /// Requer: process parent/child tracking, wait queues
 pub fn sys_wait(_task_id: usize, _timeout_ms: usize) -> SysResult<usize> {
-    crate::kwarn!("[Syscall] wait não implementado");
+    crate::kwarn!("(Syscall) sys_wait não implementado");
     Err(SysError::NotImplemented)
 }
 

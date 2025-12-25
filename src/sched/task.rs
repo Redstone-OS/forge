@@ -92,31 +92,23 @@ impl Task {
     /// * `user_stack_top`: Endereço virtual (RSP) da stack no userspace.
     /// * `cr3`: Endereço físico da tabela de páginas do processo.
     pub fn new_user(entry_point: u64, user_stack_top: u64, cr3: u64) -> PinnedTask {
-        crate::kinfo!(
-            "[Task] new_user INICIO: entry={:#x} stack={:#x} cr3={:#x}",
+        crate::ktrace!(
+            "(Task) new_user: entry={:#x} stack={:#x} cr3={:#x}",
             entry_point,
             user_stack_top,
             cr3
         );
 
-        crate::kinfo!("[Task] new_user: chamando create_base()...");
-        let base = Self::create_base();
-        crate::kinfo!("[Task] new_user: create_base() OK, fazendo Box::pin...");
-        let mut task = Box::pin(base);
-        crate::kinfo!("[Task] new_user: Box::pin OK");
+        let mut task = Box::pin(Self::create_base());
 
         // SAFETY: Task pinada, só mutamos campos internos
         unsafe {
-            crate::kinfo!("[Task] new_user: get_unchecked_mut...");
             let t = task.as_mut().get_unchecked_mut();
-            crate::kinfo!("[Task] new_user: t={:p}", t);
             t.cr3 = cr3;
-            crate::kinfo!("[Task] new_user: cr3 OK, chamando setup_stack...");
             t.setup_stack(entry_point, USER_CODE_SEL, USER_DATA_SEL, user_stack_top);
-            crate::kinfo!("[Task] new_user: setup_stack OK");
         }
         crate::kinfo!(
-            "[Task] Processo de usuário criado: PID {}",
+            "(Task) Processo de usuário criado: PID {}",
             task.id.as_u64()
         );
         task
@@ -126,42 +118,25 @@ impl Task {
     fn create_base() -> Self {
         const STACK_SIZE: usize = 32 * 1024; // 32KB
 
-        crate::kinfo!(
-            "[Task] create_base: alocando {} bytes para stack...",
+        crate::ktrace!(
+            "(Task) create_base: Alocando {} bytes para stack...",
             STACK_SIZE
         );
 
         // SEGURO: Vec::resize inicializa memória sem unsafe
         let mut kstack = Vec::with_capacity(STACK_SIZE);
-        crate::kinfo!("[Task] create_base: Vec::with_capacity OK, resize...");
         kstack.resize(STACK_SIZE, 0u8);
-        crate::kinfo!("[Task] create_base: resize OK, len={}", kstack.len());
 
         // Calcular topo da stack com alinhamento de 16 bytes (System V ABI)
         let stack_start = kstack.as_ptr() as u64;
         let stack_end = stack_start + STACK_SIZE as u64;
         let kstack_top = stack_end & !0xF;
 
-        crate::kinfo!(
-            "[Task] create_base: stack={:#x}-{:#x}, top={:#x}",
-            stack_start,
-            stack_end,
-            kstack_top
-        );
-
-        crate::kinfo!("[Task] create_base: criando TaskId...");
         let id = TaskId::new();
-        crate::kinfo!("[Task] create_base: TaskId={}", id.as_u64());
-
-        crate::kinfo!("[Task] create_base: criando Context::empty...");
         let context = Context::empty();
-
-        crate::kinfo!("[Task] create_base: criando HandleTable::empty...");
         let handles = HandleTable::empty();
-        crate::kinfo!("[Task] create_base: HandleTable OK");
 
-        crate::kinfo!("[Task] create_base: montando struct Task...");
-        let task = Self {
+        Self {
             id,
             state: TaskState::Ready,
             context,
@@ -169,9 +144,7 @@ impl Task {
             kstack_top,
             cr3: 0,
             handles,
-        };
-        crate::kinfo!("[Task] create_base: struct Task OK");
-        task
+        }
     }
 
     /// Prepara a stack para o primeiro Context Switch.

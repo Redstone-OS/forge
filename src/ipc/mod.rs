@@ -11,6 +11,8 @@ pub use port::{Port, PortHandle, PortStatus};
 
 /// Inicializa o subsistema de IPC.
 pub fn init() {
-    crate::kinfo!("IPC: Inicializado.");
+    crate::kinfo!("(IPC) Inicializando subsistema de mensagens...");
+    crate::kdebug!("(IPC) init: Protocolo assíncrono baseado em capacidades ativo");
     // Futuro: Criar portas globais do sistema (ex: NameService)
+    crate::kinfo!("(IPC) Inicializado");
 }

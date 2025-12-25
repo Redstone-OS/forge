@@ -42,12 +42,12 @@ impl Scheduler {
     /// Adiciona uma tarefa à fila de prontos.
     /// A tarefa será agendada na próxima oportunidade.
     pub fn add_task(&mut self, task: PinnedTask) {
-        crate::kinfo!("[Sched] add_task...");
+        let id = task.id.as_u64();
+        crate::ktrace!("(Sched) add_task: Adicionando PID {}...", id);
         // Mutex envolve o Pin - Task NUNCA move
         let wrapped = Box::new(Mutex::new(task));
-        crate::kinfo!("[Sched] add_task: push_back...");
         self.tasks.push_back(wrapped);
-        crate::kinfo!("[Sched] add_task: OK");
+        crate::kdebug!("(Sched) Tarefa PID {} adicionada ao escalonador", id);
     }
 
     /// Executa o algoritmo de agendamento (Round-Robin).
@@ -109,8 +109,8 @@ impl Scheduler {
             unsafe {
                 TICK_COUNT += 1;
                 if TICK_COUNT % 100 == 1 {
-                    crate::kinfo!(
-                        "[Sched] switch: old_rsp_ptr={:#x} next_rsp={:#x} task={:?}",
+                    crate::ktrace!(
+                        "(Sched) switch: [{:#x} -> {:#x}] task={:?}",
                         old_rsp_ptr,
                         next_rsp,
                         next_id
@@ -128,9 +128,9 @@ impl Scheduler {
 /// Inicializa o subsistema de multitarefa.
 /// Cria tarefas iniciais para teste.
 pub fn init() {
-    let mut sched = SCHEDULER.lock();
-
-    crate::kinfo!("[Sched] Scheduler inicializado (sem tarefas de teste)");
+    let _sched = SCHEDULER.lock();
+    crate::kinfo!("(Sched) Inicializado (Escalonador Round-Robin)");
+}
 
     // Tarefas de teste comentadas para testar init sozinho
     /*

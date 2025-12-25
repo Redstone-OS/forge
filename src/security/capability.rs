@@ -67,6 +67,7 @@ pub struct Capability {
 
 impl Capability {
     pub fn new(object_type: CapType, object_addr: u64, rights: CapRights) -> Self {
+        crate::ktrace!("(Security) new capability: type={:?} addr={:#x} rights={:?}", object_type, object_addr, rights);
         Self {
             object_type,
             object_addr,

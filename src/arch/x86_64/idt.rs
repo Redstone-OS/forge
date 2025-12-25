@@ -101,6 +101,8 @@ struct IdtDescriptor {
 
 /// Inicializa a IDT e registra os handlers básicos.
 pub unsafe fn init() {
+    crate::kdebug!("(IDT) init: Inicializando tabela de vetores...");
+
     // Limpar IDT (segurança)
     IDT.entries = [IdtEntry::missing(); 256];
 
@@ -110,34 +112,33 @@ pub unsafe fn init() {
     IDT.entries[8] = IdtEntry::new(interrupts::double_fault_handler as usize);
     IDT.entries[13] = IdtEntry::new(interrupts::general_protection_fault_handler as usize);
     IDT.entries[14] = IdtEntry::new(interrupts::page_fault_handler as usize);
+    crate::ktrace!("(IDT) init: Exceções de CPU registradas");
 
     // Timer (PIC remapeia IRQ0 para vetor 0x20 = 32)
     IDT.entries[32] = IdtEntry::new(interrupts::timer_handler as usize);
+    crate::ktrace!("(IDT) init: IRQ 0 (Timer) registrado");
 
     // Syscall API (Vector 0x80)
-    // DPL=3, Present=1, IntGate
-    // 0xEE = 1110 1110 = Present(1) DPL(11) S(0) Type(1110 - IntGate 32-bit? No 64-bit IDT uses 0xE for IntGate)
-    // Rust IdtEntry hardcodou 0x8E (DPL0). Precisamos de DPL3 para syscall inter-level.
-    // Vamos criar um método helper ou hackear aqui.
-    // IDT Entry: [OffsetLow][Selector][IST][TypeAttr][OffsetMid]...
-    // TypeAttr: P(1) DPL(2) S(1) Type(4)
-    // Kernel (0x8E): 1 00 0 1110
-    // User   (0xEE): 1 11 0 1110
     extern "C" {
         fn syscall_handler();
     }
     let mut syscall_entry = IdtEntry::new(syscall_handler as usize);
     syscall_entry.type_attr = 0xEE; // Set DPL=3
     IDT.entries[0x80] = syscall_entry;
+    crate::ktrace!("(IDT) init: Vetor 0x80 (Syscall) configurado");
 
     // Carregar IDT
     let idt_ptr = IdtDescriptor {
         limit: (size_of::<Idt>() - 1) as u16,
         base: core::ptr::addr_of!(IDT) as u64,
     };
+    crate::ktrace!(
+        "(IDT) init: IDTR base={:#x} limit={}",
+        idt_ptr.base,
+        idt_ptr.limit
+    );
 
     asm!("lidt [{}]", in(reg) &idt_ptr, options(readonly, nostack, preserves_flags));
 
-    // Interrupções ainda estão desabilitadas (CLI).
-    // Só devem ser habilitadas (STI) após configurar o PIC/APIC.
+    crate::kinfo!("(IDT) Inicializado");
 }

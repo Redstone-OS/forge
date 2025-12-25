@@ -20,10 +20,17 @@ pub static CONSOLE: Mutex<Option<Console>> = Mutex::new(None);
 /// # Argumentos
 /// * `info`: Informações do Framebuffer obtidas do BootInfo.
 pub fn init_console(info: FramebufferInfo) {
+    crate::kdebug!(
+        "(Console) init: Inicializando framebuffer em {:#x} ({}x{})",
+        info.addr,
+        info.width,
+        info.height
+    );
     let mut console_lock = CONSOLE.lock();
     let mut console = Console::new(info);
     console.clear();
     *console_lock = Some(console);
+    crate::kinfo!("(Console) Inicializado");
 }
 
 /// Helper para escrever fmt::Arguments no console global (se inicializado).
@@ -140,8 +147,9 @@ impl Console {
 
         // Loop manual de cópia (Forward, pois dest < src)
         // SUBSTITUIÇÃO: Usando Assembly `rep movsd` para performance máxima e segura (sem SIMD implícito)
+        let count = u32s_to_copy;
+        crate::ktrace!("(Console) scroll: Movendo {} dwords via rep movsd", count);
         unsafe {
-            let count = u32s_to_copy;
             let src = buffer.as_ptr().add(start_src);
             let dst = buffer.as_mut_ptr();
             core::arch::asm!(

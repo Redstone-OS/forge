@@ -119,25 +119,25 @@ pub fn sys_debug(cmd: usize, arg_ptr: usize, arg_len: usize) -> SysResult<usize>
             let data = unsafe { slice::from_raw_parts(arg_ptr as *const u8, len) };
 
             match core::str::from_utf8(data) {
-                Ok(s) => crate::kinfo!("[Debug] {}", s),
-                Err(_) => crate::kwarn!("[Debug] (dados não-UTF8)"),
+                Ok(s) => crate::kinfo!("(Debug) {}", s),
+                Err(_) => crate::kwarn!("(Debug) sys_debug: Dados não-UTF8 recebidos"),
             }
 
             Ok(len)
         }
 
         debug_cmd::DUMP_REGS => {
-            crate::kinfo!("[Debug] DUMP_REGS não implementado");
+            crate::kinfo!("(Debug) sys_debug: DUMP_REGS não implementado");
             Err(SysError::NotImplemented)
         }
 
         debug_cmd::DUMP_MEM => {
-            crate::kinfo!("[Debug] DUMP_MEM não implementado");
+            crate::kinfo!("(Debug) sys_debug: DUMP_MEM não implementado");
             Err(SysError::NotImplemented)
         }
 
         debug_cmd::BREAKPOINT => {
-            crate::kinfo!("[Debug] Breakpoint acionado");
+            crate::kinfo!("(Debug) sys_debug: Breakpoint acionado por userspace");
             unsafe {
                 core::arch::asm!("int 3");
             }
@@ -145,7 +145,7 @@ pub fn sys_debug(cmd: usize, arg_ptr: usize, arg_len: usize) -> SysResult<usize>
         }
 
         _ => {
-            crate::kwarn!("[Debug] Comando desconhecido: {}", cmd);
+            crate::kwarn!("(Debug) sys_debug: Comando desconhecido: {}", cmd);
             Err(SysError::InvalidArgument)
         }
     }
