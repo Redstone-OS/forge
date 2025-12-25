@@ -1,13 +1,47 @@
-//! Subsistema de Vídeo.
+//! # Video Subsystem (Framebuffer)
 //!
-//! Responsável por primitivas gráficas, gerenciamento de cores e fontes.
-//! O Console usa este módulo para renderizar texto.
+//! O subsistema de vídeo é responsável por gerenciar a memória de vídeo (LFB - Linear Framebuffer)
+//! entregue pelo bootloader via GOP (Graphics Output Protocol).
+//!
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Gerenciamento de Memória de Vídeo:** Mapeia a região física do framebuffer para o espaço virtual do kernel.
+//! - **Primitivas Gráficas:** Fornece funções de baixo nível (`put_pixel`, `clear_screen`) usadas por consumidores como o Console.
+//! - **Abstração de Formato:** Deve (futuramente) lidar com conversão de formatos de pixel (RGB, BGR, etc).
+//!
+//! ## 🏗️ Arquitetura Atual
+//! | Componente    | Função | Status |
+//! |---------------|--------|--------|
+//! | `framebuffer` | Structs e definições do layout de memória. | **Passivo:** Apenas dados. |
+//! | `font`        | Renderizador de bitmap fonts (Fixed Width). | **Básico:** Renderiza glifos byte-a-byte. |
+//! | `mod.rs`      | Glue logic e funções globais (`init`, `put_pixel`). | **Unsafe Global:** Usa `static mut` sem VRAM lock adequado. |
+//!
+//! ## 🔍 Análise Crítica
+//!
+//! ### ✅ Pontos Fortes
+//! - **Agnóstico de Hardware:** Funciona em qualquer GPU compatível com VESA/UEFI GOP.
+//! - **Zero Alocação:** As primitivas de desenho não alocam memória no heap, seguro para uso em Panic/Exception handlers.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Performance (Software Rendering):** Toda operação gráfica é feita pela CPU escrevendo na VRAM. Sem aceleração de hardware.
+//!   - *Gargalo:* Limpar a tela ou rolar o console em resoluções 4K é visivelmente lento.
+//! - **Falta de Double Buffering:** Desenhamos direto na tela ("Front Buffer"). Isso causa "flickering" e "tearing".
+//! - **Segurança de Memória:** O acesso ao `FRAMEBUFFER` estático é `unsafe` e não sincronizado. Duas cores tentando desenhar ao mesmo tempo causarão Data Race.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Performance)** Implementar *Dirty Rectangles* ou *Damage Tracking*.
+//!   - *Motivo:* Redesenhar apenas o que mudou, em vez da tela toda.
+//! - [ ] **TODO: (Architecture)** Criar uma abstração `Surface` ou `Canvas`.
+//!   - *Motivo:* Permitir desenhar em buffers off-screen (Back Buffer) para implementar Double Buffering.
+//! - [ ] **TODO: (Safety)** Encapsular o `FRAMEBUFFER` global em um `Spinlock<Framebuffer>`.
+//!   - *Impacto:* Prevenir Data Races em ambientes Multicore.
+//! - [ ] **TODO: (Feature)** Suporte a aceleração 2D básica (Blit).
+//!   - *Nota:* Difícil sem drivers específicos de GPU, mas otimizações SIMD (AVX/SSE) para `memcpy` de vídeo ajudam.
 
 pub mod font;
 pub mod font_data;
 pub mod framebuffer;
 
-use crate::core::handoff::{FramebufferInfo};
+use crate::core::handoff::FramebufferInfo;
 use crate::mm::vmm;
 
 /// Informações globais do Framebuffer ativo.

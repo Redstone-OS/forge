@@ -1,4 +1,41 @@
-//! Módulo de Agendamento (Scheduler).
+//! # Multitasking & Scheduler Subsystem
+//!
+//! O módulo `sched` é o motor de execução do Redstone OS. Ele transforma o hardware single-threaded
+//! (ou multi-core físico) em uma abstração capaz de executar múltiplas tarefas "simultaneamente".
+//!
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Abstração de Tarefa:** Define o que é uma `Task` (PCB - Process Control Block) e seu ciclo de vida.
+//! - **Troca de Contexto:** Gerencia a mágica do `context_switch` assembly para salvar/restaurar estado.
+//! - **Política de Escalonamento:** Decide *quem* roda e *por quanto tempo* (atualmente Round-Robin).
+//!
+//! ## 🏗️ Arquitetura: Cooperative + Preemptive
+//! O design atual é híbrido:
+//! 1. **Preemptivo:** O Timer Interrupt (IRQ 0) chama o scheduler periodicamente (Timeslice).
+//! 2. **Cooperativo:** Tarefas podem ceder CPU voluntariamente via `yield_now()`.
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Interface Limpa:** A separação entre `Context`, `Task` e `Scheduler` está bem definida.
+//! - **Memory Safety:** O uso de `PinnedTask` (`Pin<Box<Task>>`) previne erros catastróficos de use-after-free
+//!   ou movimentação de stack ativa na memória.
+//! - **Trampoline Explícito:** A função `user_entry_trampoline` documenta claramente a transição Ring 0 -> Ring 3.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Bare-Metal Naked Functions:** O trampoline está implementado como função `#[naked]`. Embora funcione,
+//!   esconde complexidade de stack frame que seria melhor gerida em .asm puro.
+//! - **Global Lock Contention:** O `SCHEDULER` é protegido por um único Mutex. Em multicore, isso será o maior gargalo do sistema.
+//! - **Missing FPU State:** O contexto atual NÃO salva registradores SSE/AVX. Se uma thread usar float e trocar de contexto,
+//!   corromperá o estado da outra thread. (Isso é um BUG crítico em potencial).
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical/Bug)** Salvar/Restaurar contexto **FPU/SSE/AVX** (`fxsave`/`fxrstor`).
+//!   - *Risco:* Cálculos flutuantes em userspace vão colidir e gerar dados corrompidos aleatoriamente.
+//! - [ ] **TODO: (SMP)** Suporte a **Per-CPU Runqueues**.
+//!   - *Meta:* Eliminar o lock global do scheduler para escalar linearmente com número de cores.
+//! - [ ] **TODO: (Feature)** Implementar **Priority Scheduling** (Feedback Queue).
+//!   - *Motivo:* Processos de UI não podem esperar processos de background (compilação/backup).
+//! - [ ] **TODO: (Arch)** Mover `user_entry_trampoline` para `src/arch/x86_64/trampoline.s`.
 
 pub mod context;
 pub mod scheduler;

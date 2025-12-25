@@ -1,6 +1,13 @@
-//! Testes de Metadados do Sistema
+//! # System Metadata Tests
 //!
-//! Valida formato de versão e constantes de build.
+//! Testes unitários para validar constantes globais e metadados de build.
+//!
+//! ## 🎯 Propósito
+//! - **Sanity Check:** Garantir que o kernel sabe sua própria versão e modo de compilação (Debug/Release).
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Validation)** Adicionar teste de **Endianness** e tamanho de `usize`.
+//!   - *Motivo:* Garantir que `usize == u64` (em build x86_64) para evitar supresas na ABI.
 
 /// Executa todos os testes de sys
 pub fn run_sys_tests() {

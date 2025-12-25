@@ -1,12 +1,40 @@
-//! Definição de Tarefa (Task/Process Control Block).
+//! # Task / Process Control Block (PCB)
 //!
-//! Representa uma unidade de execução agendável no Redstone OS.
-//! Suporta tanto tarefas de Kernel (Ring 0) quanto Processos de Usuário (Ring 3).
+//! Este módulo define a unidade atômica de escalonamento do Redstone OS: a `Task`.
 //!
-//! # Estrutura de Memória
-//! Cada tarefa possui sua própria Kernel Stack (kstack).
-//! - Tasks de Kernel: Rodam inteiramente nesta stack.
-//! - Tasks de Usuário: Usam esta stack apenas ao entrar no kernel (Syscalls/Interrupts).
+//! ## 🎯 Propósito e Responsabilidade
+//! - **PCB (Process Control Block):** Mantém o estado completo de execução (Contexto, Stack, CR3).
+//! - **Kernel Stack Ownership:** Cada tarefa possui sua própria pilha de kernel de 32KB.
+//! - **Resource Holding:** Detém a `HandleTable` (permissões/capabilities) e o espaço de endereçamento (CR3).
+//!
+//! ## 🏗️ Arquitetura: Pinned Task
+//! Devido à natureza sensível da stack de kernel, as tarefas são criadas como `PinnedTask` (`Pin<Box<Task>>`).
+//! - **Por que Pin?** O `context_switch` armazena o endereço do topo da stack (`kstack_top`) dentro da própria estrutura `Task`.
+//!   Se a `Task` fosse movida na memória (ex: `realloc` de um `Vec<Task>`), o ponteiro `current_rsp` salvo apontaria para lixo.
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Stack Isolada:** O uso de `Vec<u8>` para a kstack garante que cada tarefa tenha memória contígua e segura (exceto por overflows).
+//! - **Capability-Based:** A inclusão de `HandleTable` no núcleo do PCB reforça o modelo de segurança zero-trust.
+//! - **ID Atômico:** `TaskId` monotonicamente crescente com `AtomicU64` previne colisão de PIDs.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Heap Allocation:** `Task` e `kstack` são alocados no Heap (`Vec`). Isso gera:
+//!   1. Fragmentação.
+//!   2. Dependência de alocador complexo em caminhos críticos (spawn).
+//!   3. Risco de OOM imprevisível.
+//! - **Hardcoded Stack Size:** 32KB é fixo. Drivers complexos ou recursão podem causar **Stack Overflow** silencioso (corrupção de heap),
+//!   poís não há "Guard Pages".
+//! - **Lack of Hierarchy:** Não existe conceito de "Task Pai" ou "Task Filho". `waitpid` é impossível hoje.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical/Security)** Implementar **Guard Pages** na base da stack.
+//!   - *Como:* Deixar uma página não-mapeada (zero permissão) antes da stack. Se estourar, gera Page Fault (bom) em vez de corromper o vizinho (catastrófico).
+//! - [ ] **TODO: (Performance)** Migrar alocação de stacks para **PMM Direct** (evitar Heap).
+//!   - *Ganho:* Stacks são sempre múltiplos de página (4KB). Alocar direto do PMM é mais rápido e reduz pressão no Heap.
+//! - [ ] **TODO: (Feature)** Adicionar `parent_id` e lista de `children` para suportar árvores de processos.
+//!
 
 use crate::arch::x86_64::gdt::{KERNEL_CODE_SEL, KERNEL_DATA_SEL, USER_CODE_SEL, USER_DATA_SEL};
 use crate::core::handle::HandleTable;

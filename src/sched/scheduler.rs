@@ -1,17 +1,35 @@
-//! Scheduler Round-Robin (Cooperativo/Preemptivo).
+//! # Round-Robin Scheduler
 //!
-//! Gerencia a fila de tarefas e decide quem roda a seguir.
+//! O `scheduler` orquestra a execução de tarefas na CPU.
 //!
-//! # Mecânica de Troca (Context Switch)
-//! O scheduler não troca registradores individualmente. Ele troca o **Stack Pointer (RSP)**.
-//! 1. O Assembly `context_switch` salva os registradores na pilha *atual*.
-//! 2. O Assembly salva o RSP atual em `old_task.kstack_top`.
-//! 3. O Assembly carrega o RSP de `new_task.kstack_top`.
-//! 4. O Assembly restaura os registradores da *nova* pilha.
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Queue Management:** Mantém uma fila de tarefas prontas (`Ready`).
+//! - **Context Switching:** Calcula quem é o próximo a rodar e instrui a substituição de pilhas (RSP).
+//! - **Cooperative/Preemptive:** Suporta ambos os modelos via `yield_now()` e Timer Interrupt.
 //!
-//! # Nota sobre Arc
-//! Usamos Box em vez de Arc porque Arc::new causa GPF 0x32 (Invalid Opcode)
-//! devido a problemas com a inicialização do contador atômico em bare-metal.
+//! ## 🏗️ Arquitetura: Global Round-Robin
+//! Implementação clássica de fila circular (`VecDeque`):
+//! - `schedule()`: Remove a cabeça da fila, coloca a tarefa atual no final, e retorna o par de ponteiros para o switch assembly.
+//! - **Global Lock:** Uma única instância `SCHEDULER` protegida por `Mutex` serve o sistema inteiro.
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Justiça (Fairness):** Round-Robin garante que todas as tarefas recebam tempo de CPU, prevenindo *starvation* completa.
+//! - **Simplicidade:** Algoritmo O(1) para enqueue/dequeue, ideal para boots iniciais ou sistemas simples.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Scalability Nightmare:** O `Mutex<Scheduler>` global é um gargalo severo. Em um sistema com 4 cores, 3 ficarão esperando enquanto 1 decide o agendamento.
+//! - **Double Locking:** `VecDeque<Box<Mutex<PinnedTask>>>` implica adquirir dois locks para agendar: um para a fila, outro para a tarefa. Deadlocks são possíveis se a ordem mudar.
+//! - **No Priority:** Tarefas críticas (drivers de áudio/input) rodam com a mesma frequência que tarefas de fundo (compilação). Isso destrói a latência percebida.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Performance)** Migrar para **Per-CPU Runqueues**.
+//!   - *Meta:* Remover o lock global. Cada CPU agenda suas próprias tarefas (Work Stealing opcional).
+//! - [ ] **TODO: (Algorithm)** Implementar **Multilevel Feedback Queue** ou Priority Queue.
+//!   - *Motivo:* Priorizar tarefas interativas (IO-bound) sobre tarefas CPU-bound.
+//! - [ ] **TODO: (Optimization)** Remover `Box<Mutex<...>>` interno se mudarmos para Per-CPU queues exclusivas (sem lock na task).
+//!
 
 use super::task::{PinnedTask, TaskState};
 use crate::sync::Mutex;

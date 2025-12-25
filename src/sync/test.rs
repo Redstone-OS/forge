@@ -1,6 +1,16 @@
-//! Testes da Lógica de Sincronização
+//! # Synchronization Tests
 //!
-//! Valida alinhamento atômico e estados de bloqueio.
+//! Testes unitários para validar as primitivas de sincronização.
+//!
+//! ## 🎯 Objetivo
+//! - Verificar se a semântica de **Mutual Exclusion** está sendo respeitada.
+//! - Validar alinhamento de memória para operações atômicas (CRÍTICO em algumas arquiteturas).
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Test)** Adicionar **Concurrency Stress Test** (requer suporte a Threads/MP).
+//!   - *Meta:* Duas threads tentando incrementar um contador atômico/protegido 1 milhão de vezes.
+//! - [ ] **TODO: (Test)** Validar **Lazy Initialization**.
+//!   - *Meta:* Garantir que o bloco de init só roda 1 vez.
 
 /// Executa todos os testes de sync
 pub fn run_sync_tests() {

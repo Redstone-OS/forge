@@ -1,7 +1,23 @@
-//! Syscalls de Sistema
+//! # System Info & Debug Syscalls
 //!
-//! Informações do sistema e debug.
-
+//! Metadados globais e ferramentas de diagnóstico.
+//!
+//! ## 🎯 Propósito
+//! - **Introspection:** `sysinfo` permite que ferramentas (ex: `top`, `neofetch`) saibam o estado da máquina.
+//! - **Debug:** `sys_debug` é uma "porta dos fundos" controlada para logs e diagnósticos durante desenvolvimento.
+//!
+//! ## 🏗️ Arquitetura
+//! - **Struct Stability:** `SysInfo` é `#[repr(C)]` para garantir layout fixo entre versões.
+//! - **Debug Channel:** `sys_debug` bypassa abstrações de arquivo para garantir que logs saiam mesmo se o VFS quebrar.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Missing Metrics:** `SysInfo` tem placeholders (hardcoded 512MB RAM). O userspace não tem visão real de consumo de memória.
+//! - **Security Risk:** `sys_debug` deve ser desabilitado ou restrito em builds `RELEASE`. Qualquer processo pode spammar o log do kernel (DoS).
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Security)** Restringir `SYS_DEBUG` apenas para **Development Mode** ou Capability de Admin.
+//! - [ ] **TODO: (Feature)** Conectar `SysInfo` aos contadores reais do PMM e Scheduler.
+//!
 use super::error::{SysError, SysResult};
 use super::numbers::debug_cmd;
 use core::slice;

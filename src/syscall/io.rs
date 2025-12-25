@@ -1,4 +1,29 @@
-//! Syscalls de IO
+//! # Generic I/O Syscalls
+//!
+//! Primitivas de leitura e escrita universais.
+//!
+//! ## 🎯 Propósito
+//! - **Uniformidade:** `read` e `write` funcionam para Arquivos, Sockets, Pipes, Console e Dispositivos.
+//! - **Scatter/Gather:** Suporte nativo a vetores (`IoVec`), evitando cópias de buffers contíguos no userspace.
+//!
+//! ## 🏗️ Arquitetura
+//! - **Handle-Based:** O primeiro argumento é sempre um handle. O kernel faz dispatch para a implementação do objeto (`File`, `Socket`, etc).
+//! - **Synchronous (Default):** Por padrão, bloqueia até completar. Flags `NONBLOCK` permitem polling.
+//!
+//! ## 🔍 Análise Crítica
+//!
+//! ### ✅ Pontos Fortes
+//! - **Vectored I/O First:** Não implementamos `read` simples, apenas `readv`. `read` é apenas um caso especial de `readv` com 1 vetor. Isso simplifica o kernel.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Console Hack:** O código atual trata `Handle 0` como console hardcoded. Isso é inaceitável para produção. O console deve ser um `Port` ou `Device` aberto explicitamente.
+//! - **Buffer Validation:** `write_console` confia cegamente nos ponteiros do usuário. Risco de **Kernel Panic** ou **Info Leak**.
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Security)** Implementar `copy_from_user` robusto com checagem de limites.
+//! - [ ] **TODO: (Feature)** Remover **Magic Handle 0**. O processo deve herdar Handles 0, 1, 2 (Stdio) do pai via `spawn`.
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! Leitura e escrita vetorizada via handles.
 //! Todo IO passa por handles - não há file descriptors.

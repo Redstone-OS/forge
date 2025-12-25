@@ -1,8 +1,42 @@
-//! Capability-based Security Primitives.
+//! # Capability Primitives
 //!
-//! No Redstone, segurança não é uma lista de verificação (ACL), é a posse de um token.
-//! Uma `Capability` é uma referência opaca a um objeto do kernel com direitos específicos.
-
+//! Este módulo define os "átomos" do modelo de segurança do Redstone: `Capability`, `rights` e `types`.
+//!
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Kernel Object Reference:** Uma `Capability` aponta para um recurso real (ex: `Port`, `Frame`) e carrega metadados de acesso (`CapRights`).
+//! - **Unforgeable Token:** O userspace opera apenas com `CapHandle` (inteiros). A `Capability` real vive em memória protegida do kernel.
+//! - **Type Safety:** `CapType` garante que você não tente "chamar" uma página de memória ou "escrever" em uma interrupção.
+//!
+//! ## 🏗️ Arquitetura: Object-Capability Model
+//! A estrutura `Capability` é a "chave mestra". Ela contém:
+//! 1. **Tipo:** O que é? (`CapType`)
+//! 2. **Endereço:** Onde está? (`object_addr`)
+//! 3. **Direitos:** O que posso fazer? (`CapRights`)
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Bitflags for Rights:** O uso de `bitflags!` para `CapRights` permite composição eficiente (ex: `READ | WRITE`) e verificação O(1).
+//! - **Strong Typing:** `CapHandle` é um tipo de tupla (`pub u32`) impedindo confusão com inteiros ou ponteiros nus.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Raw Pointers in Capability:** `object_addr` é um `u64`. Se o objeto apontado for desalocado (Use-After-Free), a Capability se torna um "Dangling Pointer".
+//!   - *Correção Necessária:* O kernel precisa de um **Object Database** ou Reference Counting nas capabilities para garantir "Liveness".
+//! - **Sem Badges:** Em seL4, capabilities podem ter um "Badge" (inteiro imutável) usado para identificar quem está chamando um servidor. Aqui, falta esse campo.
+//!   - *Impacto:* Servidores não conseguem distinguir clientes facilmente sem criar um endpoint (Port) por cliente.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical)** Adicionar **Life-Cycle Management**.
+//!   - *Problema:* Quando um objeto (ex: Thread) morre, quem limpa as capabilities que apontam pra ele?
+//! - [ ] **TODO: (Feature)** Adicionar campo **Badge** à struct `Capability`.
+//!   - *Caso de Uso:* Servidor de Filesystem usa o Badge para saber qual Client ID enviou a mensagem.
+//! - [ ] **TODO: (Precision)** Refinar `CapType`.
+//!   - *Ação:* Separar `Memory` em `Untyped` (memória crua) e `Frame` (memória mapeada), similar ao seL4.
+//!
+//! --------------------------------------------------------------------------------
+//!
+//!
+//! Tipos de objetos que podem ser referenciados por uma Capability.
 use bitflags::bitflags;
 
 /// Tipos de objetos que podem ser referenciados por uma Capability.
@@ -67,7 +101,6 @@ pub struct Capability {
 
 impl Capability {
     pub fn new(object_type: CapType, object_addr: u64, rights: CapRights) -> Self {
-        crate::ktrace!("(Security) new capability: type={:?} addr={:#x} rights={:?}", object_type, object_addr, rights);
         Self {
             object_type,
             object_addr,

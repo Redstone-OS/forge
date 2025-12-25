@@ -1,7 +1,23 @@
-//! Syscalls de Tempo
+//! # Time Management Syscalls
 //!
-//! Relógios e espera.
-
+//! Controle de tempo e relógios.
+//!
+//! ## 🎯 Propósito
+//! - **Timekeeping:** Saber "que horas são" (`clock_get`).
+//! - **Timer:** Esperar "N milissegundos" (`sleep`).
+//!
+//! ## 🏗️ Arquitetura
+//! - **Tick-Based:** Baseado em interrupção de timer (lapic/pit) rodando a ~100Hz (10ms).
+//! - **Monotonicity:** `CLOCK_MONOTONIC` nunca volta no tempo, ideal para medir duração.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Busy Wait:** `sys_sleep` atualmente faz um loop `yield`. Isso gasta CPU inutilmente (polling). Precisa de fila de espera com *deadline*.
+//! - **Low Resolution:** 10ms é muito lento para multimídia ou jogos. O sistema precisa de High Resolution Timers (HPET/TSC).
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Performance)** Implementar **Timer Queue** (Wheel ou Heap) para acordar threads apenas quando necessário (Tickless Kernel).
+//! - [ ] **TODO: (Hardware)** Implementar driver **HPET/APIC Timer** calibravel para precisão de µs.
+//!
 use super::abi::{ClockId, TimeSpec};
 use super::error::{SysError, SysResult};
 

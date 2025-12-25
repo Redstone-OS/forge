@@ -1,28 +1,41 @@
-//! Physical Memory Manager (PMM) — Bitmap Frame Allocator
-//! -----------------------------------------------------
-//! Gerencia a alocação de frames físicos (4 KiB) através de um bitmap.
-//! Projetado para ser simples, determinístico e adequado ao early-kernel do
-//! Redstone OS. O bitmap é armazenado em memória física (colocado em uma região
-//! "usable" grande no boot) e cada bit representa um frame: 0 = livre, 1 = usado.
+//! # Physical Memory Manager (PMM)
 //!
-//! ### Contratos / Invariantes
-//! - `BitmapFrameAllocator::init()` **deve** ser chamado cedo, com um `BootInfo` válido.
-//! - O bitmap é colocado numa região Usable do mapa de memória; o init garante que
-//!   a região escolhida não conflita com o kernel ou com o próprio bitmap.
-//! - `FRAME_SIZE` é 4 KiB (constante); todas as contas de frames e alinhamentos usam esse valor.
-//! - A estrutura é normalmente protegida por `FRAME_ALLOCATOR: Mutex<...>` para uso concorrente.
+//! O `PMM` é responsável por rastrear a posse de todos os frames de memória física (4 KiB) do sistema.
+//! Ele serve como a "fonte da verdade" sobre quais blocos de RAM estão livres ou ocupados.
 //!
-//! ### Segurança / notas de `unsafe`
-//! - `init()` faz conversões de ponteiro físico -> slice mutável; isso é `unsafe`.
-//!   Garantimos que o endereço e tamanho escolhidos são válidos e alinhados a 8 bytes.
-//! - Operações de marcação/limpeza do bitmap manipulam bits diretamente; qualquer corrupção
-//!   do bitmap pode causar alocações inválidas. Teste em QEMU antes de rodar em hardware.
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Alocação de Frames:** Oferecer frames livres para o VMM (para criar Page Tables ou mapear memória).
+//! - **Contabilidade:** Rastrear uso de memória e detectar OOM (Out-Of-Memory).
+//! - **Bootstrapping:** Inicializar-se a partir do Memory Map cru fornecido pelo bootloader.
 //!
-//! ### Melhoria futura (TODO)
-//! - Detectar e reportar double-free com logging mais agressivo.
-//! - Suportar lock-free allocation fast-path para múltiplos CPUs.
-//! - Compactar / remover frames reservados por dispositivos (MMIO) ao construir mapa.
+//! ## 🏗️ Arquitetura Interna (Bitmap Allocator)
+//! O PMM utiliza um **Bitmap Global** linear:
+//! - Cada bit corresponde a um frame de 4 KiB.
+//! - `0` = Livre, `1` = Ocupado.
+//! - O bitmap reside na própria memória física (alocado dinamicamente durante `init`).
 //!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Eficiência Espacial:** O overhead é mínimo (1 bit por 4 KiB = ~0.003% da RAM).
+//!   - Ex: 4GB RAM requer apenas 128 KB de bitmap.
+//! - **Simplicidade de Init:** Não requer estruturas complexas como árvores ou listas ligadas antes do heap existir.
+//! - **Robustez:** Protege a si mesmo e ao kernel durante a inicialização, marcando suas próprias regiões como ocupadas.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Linear Scan (Performance):** A alocação (`allocate_frame`) faz uma busca linear no array de `u64`.
+//!   - *Pior caso:* O(N/64). Em 32GB RAM, isso pode ser lento se a memória estiver fragmentada.
+//! - **Single Global Lock:** O `Mutex<BitmapFrameAllocator>` é um ponto de contenção em multicore.
+//! - **Fragmentação Física:** Não há suporte para alocar "blocos contíguos" (ex: para DMA drivers que precisam de buffers fisicamente contíguos > 4KiB).
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Optimization)** Implementar "Search Pointer (Next Fit)" mais inteligente ou Hierarchical Bitmap.
+//!   - *Meta:* Reduzir tempo de busca de O(N) para O(1) amortizado.
+//! - [ ] **TODO: (Features)** Implementar `allocate_contiguous_frames(n)`.
+//!   - *Motivo:* Drivers de vídeo/rede frequentemente precisam de buffers DMA contíguos.
+//! - [ ] **TODO: (Arch)** Suporte a **NUMA (Non-Uniform Memory Access)**.
+//!   - *Futuro:* Ter um PMM por nó NUMA para reduzir latência de acesso à memória.
+//! - [ ] **TODO: (Reliability)** Detectar e isolar "Bad RAM" informada pelo firmware/bootloader.
 
 use crate::core::handoff::BootInfo;
 use crate::sync::Mutex;

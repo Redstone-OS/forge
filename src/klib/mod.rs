@@ -1,7 +1,39 @@
-//! Kernel Library (KLib).
+//! # Kernel Library (KLib)
 //!
-//! Utilitários agnósticos de hardware para uso interno do Kernel.
-//! Funciona como uma extensão da `core` library.
+//! A `klib` é uma coleção de utilitários de baixo nível, agnósticos de arquitetura,
+//! que complementam a `core` library do Rust para ambientes bare-metal.
+//!
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Algoritmos Básicos:** Bitmaps, Listas, Alinhamento de memória.
+//! - **Runtime functions:** Implementações de `memcpy`, `memset` (necessárias quando não linkamos com libc).
+//! - **Helpers:** Funções `const` para cálculo de endereços (ex: `align_up`).
+//!
+//! ## 🏗️ Arquitetura dos Módulos
+//!
+//! | Módulo      | Responsabilidade | Estado Atual |
+//! |-------------|------------------|--------------|
+//! | `bitmap`    | Gerenciamento de bits (usado pelo PMM para rastrear frames). | **Funcional:** Busca linear simples (O(N)). |
+//! | `mem_funcs` | Implementação de `memset/memcpy` em Rust. (Desabilitado) | **Crítico:** Implementação manual lenta e possivelmente instável. |
+//! | `util`      | Funções de alinhamento (`align_up`, `align_down`). | **Estável:** Primitivas `const fn` eficientes. |
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Independência:** Não depende de alocação (Heap) ou `lock` (Concurrency), seguro para uso em estágios iniciais de boot.
+//! - **Simplicidade:** O `Bitmap` opera sobre slices `&mut [u64]`, permitindo alocação estática ou dinâmica.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Performance do Bitmap:** A função `find_first` faz um scan linear bit a bit. Para bitmaps grandes (ex: 4GB RAM = 128KB bitmap), isso é lento.
+//! - **Memória Volátil em `mem_funcs`:** As funções de memória usam `read/write_volatile`. Isso impede otimizações do compilador (auto-vectorization) e torna `memcpy` ordens de magnitude mais lento que o ideal para RAM normal.
+//! - **Estabilidade:** `mem_funcs` está comentado no `mod.rs` indicando problemas de crash ou conflito com `compiler_builtins`.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Performance)** Otimizar `Bitmap::find_first` usando instruções intrínsecas (`ctz`, `lzcnt`).
+//!   - *Ganho:* Reduzir custo de alocação de O(N) para O(N/64) ou O(1) com hints.
+//! - [ ] **TODO: (Arch)** Reimplementar `memcpy/memset` em Assembly (ASM) otimizado.
+//!   - *Motivo:* Rust seguro (mesmo com pointers) é difícil de bater implementações "hand-tuned" em ASM usando registros SSE/AVX.
+//! - [ ] **TODO: (Safety)** Separar `memcpy` (RAM) de `mmio_memcpy` (Device).
+//!   - *Risco:* Usar `volatile` para mover dados de processo é desperdício. Usar `memcpy` normal em MMIO é bug (caching/reordering).
 
 pub mod bitmap;
 pub mod test;

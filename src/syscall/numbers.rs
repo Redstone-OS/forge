@@ -1,4 +1,25 @@
-//! Números das Syscalls - ABI Redstone OS
+//! # Syscall Numbers Registry
+//!
+//! Catálogo central de todas as operações suportadas pelo kernel.
+//!
+//! ## 🎯 Propósito
+//! - **Central Authority:** Garante que cada número de syscall seja único e imutável.
+//! - **Categorization:** Agrupa syscalls por domínio funcional (Processo, Memória, IO).
+//!
+//! ## ⚠️ Compatibility Warning
+//! **ESTE SISTEMA NÃO É LINUX.**
+//! A numeração de syscalls não segue a tabela x86_64 do Linux.
+//! Portar software requer recompilação ou uma camada de emulação (Linuxlator) que traduza os números.
+//!
+//! ### ⚠️ Pontos de Atenção
+//! - **Missing Features:** A lista atual é muito curta para um OS real. Faltam syscalls críticas de rede (`socket`, `bind`), sinais (`kill`, `sigaction`) e filesystem (`openat`, `fstat`).
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Architecture)** Reservar range para **Vendor Extensions**.
+//!   - *Meta:* Permitir que drivers específicos registrem syscalls dinâmicas (ex: GPU driver).
+//! - [ ] **TODO: (Feature)** Adicionar bloco de **Network Syscalls** (0x60-0x7F).
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! **ATENÇÃO**: Esta numeração é EXCLUSIVA do Redstone OS.
 //! NÃO é compatível com Linux, POSIX ou qualquer outro sistema.

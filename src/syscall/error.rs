@@ -1,4 +1,28 @@
-//! Códigos de Erro do Redstone OS
+//! # Kernel Error System
+//!
+//! A taxonomia de falhas do Redstone OS.
+//!
+//! ## 🎯 Propósito
+//! - **Unification:** Um único enum `SysError` cobre todos os módulos (IPC, Memória, Processo).
+//! - **Transport:** Projetado para caber em um registrador (valores negativos pequenos) e ser convertido para `isize`.
+//!
+//! ## 🏗️ Arquitetura
+//! - **Categorized Ranges:** Erros agrupados (1-15 Geral, 16-31 Handle, etc) para facilitar identificação de subsistema.
+//! - **Zero-Panic:** O kernel SÓ retorna erros, nunca panica por input de usuário (exceto bugs internos graves).
+//!
+//! ## 🔍 Análise Crítica
+//!
+//! ### ✅ Pontos Fortes
+//! - **Explicidade semântica:** `HandleTypeMismatch` é muito mais claro que o genérico `EINVAL` do POSIX.
+//!
+//! ### ⚠️ Pontos de Atenção
+//! - **Translation:** Esses códigos NÃO mapeiam 1:1 para `errno` do Linux. A `libc` terá que traduzir se quiser compatibilidade POSIX.
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (DevEx)** Adicionar `#[must_use]` em `SysResult` para forçar check de erros.
+//! - [ ] **TODO: (Feature)** Criar mecanismo de **Error String** estendida? (Provavelmente não no kernel, mas no userspace tracing).
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! Sistema de erros unificado para todas as syscalls.
 //! Erros são retornados como valores negativos em RAX.

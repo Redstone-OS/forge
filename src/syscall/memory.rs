@@ -1,4 +1,26 @@
-//! Syscalls de Memória
+//! # Memory Management Syscalls
+//!
+//! A interface primária para controle do espaço de endereçamento virtual (VMM) do processo.
+//!
+//! ## 🎯 Propósito
+//! - **Allocation:** Pedir mais memória ao kernel (`sbrk` morreu, vida longa ao `mmap`).
+//! - **Sharing:** Mapear objetos (arquivos, memória compartilhada) no espaço de endereço.
+//!
+//! ## 🏗️ Arquitetura
+//! - **Page Granularity:** Todas as operações são arredondadas para 4KiB (Page Size).
+//! - **VMA (Virtual Memory Area):** O kernel mantém uma lista de regiões válidas. Acessar fora delas gera Page Fault (SIGSEGV).
+//!
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **No ASLR:** Atualmente o `sys_alloc` é determinístico. Falta randomização de endereço base (ASLR) para segurança contra exploits.
+//! - **No Overcommit:** O kernel promete memória que talvez não tenha? Precisamos definir a política de *Overcommit*.
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Feature)** Implementar **Shared Memory** real (mapear o mesmo frame físico em dois processos).
+//! - [ ] **TODO: (Security)** Implementar **ASLR** (Address Space Layout Randomization).
+//! - [ ] **TODO: (Reliability)** Implementar **Guard Pages** (páginas não mapeadas entre alocações para pegar buffer overflows lineares).
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! Alocação e mapeamento de memória virtual.
 

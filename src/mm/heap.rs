@@ -1,30 +1,36 @@
-//! Kernel Heap Allocator (Bump) — Documentação Profissional e Industrial
-//! ===============================================================
+//! # Kernel Heap Allocator
 //!
-//! Este módulo implementa um **Global Allocator** simples baseado em *bump allocator*,
-//! protegido por `Mutex`. É projetado para o uso **early-kernel** do Redstone OS,
-//! fornecendo alocações dinâmicas determinísticas e previsíveis durante a inicialização.
+//! O `heap` fornece alocação dinâmica de memória (`Box`, `Vec`, `String`) para o kernel.
 //!
-//! # Filosofia de Design
-//! - **Simplicidade:** design minimalista para bootstrap do kernel.
-//! - **Determinístico:** aloca sempre subindo o ponteiro `next`, sem listas de free complexas.
-//! - **Segurança:** valida OOM e retorna `null_mut` quando não há memória suficiente.
-//! - **Progresso:** permite crescimento dinâmico do heap via mapeamento de novas páginas.
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Dynamic Allocation:** Permite que o kernel use estruturas de dados que não têm tamanho conhecido em tempo de compilação.
+//! - **Global Allocator:** Implementa a trait `GlobalAlloc` do Rust, integrando-se nativamente com a `alloc` crate.
 //!
-//! # Limitações
-//! - Não é um allocator de produção completo: **não recicla fragmentos**.
-//! - `dealloc` apenas decrementa contador lógico; memória só é reutilizada quando `allocations == 0`.
-//! - Não há proteção multithread além do `Mutex`; para múltiplos núcleos, atomic ops seriam necessárias.
+//! ## 🏗️ Arquitetura Atual: Bump Allocator (Temporário)
+//! Atualmente, o kernel utiliza um **Bump Allocator** (também conhecido como Arena Allocator):
+//! - **Pointer Bump:** `alloc` simplesmente retorna o ponteiro atual e incrementa o offset.
+//! - **No Free:** `dealloc` é (quase) uma operação vazia. A memória nunca é reutilizada, a menos que *tudo* seja liberado.
 //!
-//! # Contratos importantes
-//! - `init_heap(...)` **deve** ser chamado **uma vez** após mapear páginas físicas para o heap.
-//! - `HEAP_START` deve estar **sincronizado com o VMM**, pois mapeia memória virtual.
-//! - Todos os acessos `unsafe` são restritos ao mapeamento de memória e inicialização.
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
 //!
-//! # Melhorias possíveis
-//! - Implementar crescimento automático transparente (já parcialmente suportado via `grow`).
-//! - Substituir bump allocator por um allocator com free list ou slab para produção.
-//! - Adicionar suporte a múltiplos núcleos e alocações atomizadas.
+//! ### ✅ Pontos Fortes
+//! - **Velocidade de Boot:** Alocação é O(1) (puro incremento de ponteiro). Zero overhead de busca de blocos livres.
+//! - **Determinismo:** O layout de memória durante o boot é estritamente sequencial e previsível.
+//! - **Simplicidade:** Implementação trivial de auditar, sem metadados complexos (headers/footers) que poderiam ser corrompidos.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica CRÍTICA)
+//! - **Memory Leak by Design:** Como `dealloc` não recicla memória, qualquer driver ou serviço que aloque/desaloque repetidamente vai exaurir a RAM rapidamente.
+//! - **Fragmentação:** Não há coalescência de blocos.
+//! - **Single Global Lock:** Assim como no PMM, o `LockedHeap` usa um `Mutex` global, serializando todas as alocações do kernel.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical)** Migrar para **Slab Allocator** (objetos pequenos fixos) + **Buddy System** (páginas).
+//!   - *Meta:* Permitir `cargo build` e uso normal de coleções sem vazar memória.
+//! - [ ] **TODO: (Scalability)** Implementar **Per-CPU Caches** (sem lock) para alocações pequenas.
+//!   - *Motivo:* Reduzir contenção do lock global do heap em workloads intensivos.
+//! - [ ] **TODO: (Security)** Adicionar **Canaries/Guard Bytes** ao redor de alocações.
+//!   - *Risco:* Detectar Heap Overflow antes que corrompa dados vizinhos.
+//! - [ ] **TODO: (Safety)** Implementar **Randomization (ASLR-like)** para o heap base.
 
 use crate::sync::Mutex;
 use core::alloc::{GlobalAlloc, Layout};

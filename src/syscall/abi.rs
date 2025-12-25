@@ -1,4 +1,35 @@
-//! ABI de Syscalls do Redstone OS (x86_64)
+//! # Syscall ABI (x86_64)
+//!
+//! Este módulo define o contrato binário (Application Binary Interface) para chamadas de sistema.
+//! A estabilidade deste contrato é o que permite que aplicações continuem rodando mesmo após
+//! atualizações do kernel.
+//!
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Standardization:** Define como registradores são mapeados para argumentos.
+//! - **Data Structures:** Define o layout de memória de estruturas compartilhadas (`IoVec`, `TimeSpec`).
+//!
+//! ## 🏗️ Arquitetura: System V AMD64 (Modified)
+//! Adotamos a convenção de passagem de parâmetros da System V (Linux), mas com especificidades:
+//! - **Instruction:** `int 0x80` (Legado/Compat) e `syscall` (Moderno/Rápido).
+//! - **Clobbers:** RCX e R11 são destruídos pela instrução `syscall`. O kernel preserva os demais (RBX, RBP, R12-R15).
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Compatibilidade Mecânica:** Usar a mesma ordem de registradores do Linux (`rdi, rsi, rdx...`) facilita o port de compiladores (LLVM/Rustc) e libc.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Lack of Alignment Check:** `SyscallArgs` assume que o `ContextFrame` está alinhado. Se o trampoline falhar, o cast é UB.
+//! - **Manual Padding:** `TimeSpec` tem padding manual (`_pad`). Seria melhor usar `#[repr(align(16))]` ou similiar para garantir alinhamento explícito sem campos fantasmas.
+//! - **IO VEC Validity:** `IoVec::is_valid` é muito simplório. Ele checa `null`, mas não checa se o range `base..base+len` está totalmente dentro do espaço de usuário (canonica address check).
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical/Security)** Implementar **Pointer Sanitizer**.
+//!   - *Meta:* `IoVec` deve validar se o range de memória toca em endereços de kernel (`> 0x0000_7FFF_FFFF_FFFF`).
+//! - [ ] **TODO: (Performance)** Migrar exclusivamente para instrução **`syscall`**.
+//!   - *Motivo:* `int 0x80` é muito mais lenta devido ao overhead de tratamento de interrupção (hardware context save).
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! Define a convenção de chamada e estruturas para syscalls.
 //!

@@ -1,15 +1,44 @@
-//! Memory Management Subsystem
-//! ===========================
+//! # Memory Management Subsystem (MM)
 //!
-//! Este módulo concentra **todo o gerenciamento de memória do kernel**.
-//! Ele define a arquitetura, responsabilidades e ordem de inicialização
-//! dos componentes de memória do Redstone OS.
+//! O módulo `mm` é o **coração** do gerenciamento de recursos do Redstone OS.
+//! Ele orquestra a percepção que o kernel tem da memória física e virtual.
 //!
-//! O design segue princípios clássicos de kernels modernos:
-//! - Separação clara entre memória física e virtual
-//! - Controle explícito de paginação
-//! - Inicialização previsível em early-kernel
-//! - Zero dependência de runtime externo
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Abstração Unificada:** Define a ordem estrita de inicialização (PMM -> VMM -> Heap).
+//! - **Segurança de Concorrência:** Implementa estratégia de *Locking Hierárquico* para evitar deadlocks entre alocadores.
+//! - **Interface Pública:** Re-exporta primitivas de tradução de endereços (`virt_to_phys`, etc).
+//!
+//! ## 🏗️ Arquitetura dos Módulos
+//!
+//! | Módulo | Responsabilidade | Estado Atual |
+//! |--------|------------------|--------------|
+//! | `pmm`  | Gerencia frames físicos (4KiB) via Bitmap. | **Funcional:** Simples, mas scan linear é O(N). |
+//! | `vmm`  | Gerencia Page Tables (PML4) e mapeamentos. | **Robusto:** Suporta *Huge Page Splitting* e Scratch Slot. |
+//! | `heap` | Alocador dinâmico (`Box`, `Vec`). | **Temporário:** Bump Allocator (não recicla memória). Necessita migração urgente para Slab/Buddy. |
+//! | `addr` | Utilitários de conversão de endereços. | **Estável:** Baseado no Identity Map de 4GB. |
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Deadlock Prevention:** A função `init` adquire o lock do PMM uma única vez e o repassa, evitando a clássica armadilha `VMM -> lock(PMM)` vs `Heap -> lock(VMM) -> lock(PMM)`.
+//! - **Huge Page Handling:** O VMM detecta huge pages do bootloader e faz *split* transparente. Isso evita GPF aleatórios ao mapear páginas de 4KiB sobre regiões de 2MiB.
+//! - **Scratch Slot:** Uso de uma região virtual dedicada para zerar memória previne corrupção e dependências circulares durante a criação de Page Tables.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Heap "Bump":** O alocador atual cresce indefinidamente até resetar (apenas se `allocs == 0`). Isso causará *Memory Leaks* em uptime longo.
+//! - **Identity Map Limitado:** `phys_to_virt` assume que toda memória física relevante cabe nos primeiros 4GB (Identity Map do Ignite). Se tivermos >4GB RAM, acessos diretos falharão.
+//! - **SMP Unsafe:** Falta mecanismo de *TLB Shootdown*. Alterações no VMM em um core não são propagadas para outros cores, levando a inconsistência de TLB.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical)** Substituir `BumpAllocator` por **Slab/Buddy Allocator**.
+//!   - *Motivo:* Permitir reutilização real de memória e evitar exaustão do heap.
+//! - [ ] **TODO: (SMP)** Implementar **TLB Shootdown** (Inter-Processor Interrupt).
+//!   - *Impacto:* Obrigatório para suportar multicore com segurança. Sem isso, um core pode acessar memória já liberada/remapeada por outro.
+//! - [ ] **TODO: (Arch)** Estender `phys_to_virt` para suportar > 4GB RAM.
+//!   - *Solução:* Mapear toda a RAM física em uma janela `HHDM` (Higher Half Direct Map) no VMM.
+//! - [ ] **TODO: (Security)** Implementar `Guard Pages` no Heap e Stacks.
+//!   - *Risco:* Prevenir stack overflow silencioso corrompendo o heap adjacente.
+
 //!
 //! ---------------------------------------------------------------------
 //! VISÃO GERAL DOS SUBMÓDULOS

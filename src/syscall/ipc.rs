@@ -1,10 +1,37 @@
-//! Syscalls de IPC (Inter-Process Communication)
+//! # IPC Syscalls (Message Passing)
+//!
+//! O sistema nervoso central do Redstone OS. Tudo que não é computação pura é comunicação.
+//!
+//! ## 🎯 Propósito
+//! - **Isolamento:** Processos não compartilham memória (exceto setup explícito). Eles trocam mensagens.
+//! - **Synchronization:** O ato de enviar/receber mensagem também sincroniza os processos (Rendezvous).
+//!
+//! ## 🏗️ Arquitetura: Port-Based IPC
+//! - **Ports:** São filas de mensagens no kernel.
+//! - **Handles:** Quem tem o Handle da porta pode escrever (Send) ou ler (Recv), dependendo dos direitos.
+//! - **Copy-Semantics:** Mensagens pequenas são copiadas. Mensagens grandes usam *Memory Grant* (fase 2).
+//!
+//! ## 🔍 Análise Crítica
+//!
+//! ### ✅ Pontos Fortes
+//! - **Desacoplamento:** O remetente não precisa saber quem é o destinatário, apenas ter o handle da porta de serviço. Isso facilita *Service Swapping*.
+//!
+//! ### ⚠️ Pontos de Atenção
+//! - **Overhead de Cópia:** `sys_send_msg` copia dados User->Kernel, e `sys_recv_msg` copia Kernel->User. (2 cópias).
+//!   - *Correção:* Para payloads grandes, precisamos de *Zero-Copy* (transferência de páginas de memória).
+//! - **Queue Flooding:** Se um servidor for lento, a fila enche. O sender bloqueia ou falha? Precisamos de *Backpressure*.
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Performance)** Implementar **Zero-Copy IPC** para mensagens > 4KiB.
+//! - [ ] **TODO: (Architecture)** Definir **IPC Namespace** para descoberta de serviços (Name Server).
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! Comunicação entre processos via portas de mensagens.
 //! Modelo: portas são endpoints para filas de mensagens.
 
 use super::error::{SysError, SysResult};
-use crate::ipc::{PortHandle};
+use crate::ipc::PortHandle;
 
 /// Capacidade padrão de uma porta.
 const DEFAULT_PORT_CAPACITY: usize = 32;

@@ -1,7 +1,23 @@
-//! Syscalls de Processo
+//! # Process Management Syscalls
 //!
-//! Gerenciamento de processos e escalonamento.
-
+//! Controle do ciclo de vida das threads e tarefas.
+//!
+//! ## 🎯 Propósito
+//! - **Lifecycle:** `spawn` (nascer) e `exit` (morrer).
+//! - **Scheduling:** `yield` (ceder vez) e `wait` (sincronizar).
+//!
+//! ## 🏗️ Arquitetura
+//! - **Identifier:** `TaskId` (ou `Pid`) é um inteiro opaco usado pelo scheduler.
+//! - **Preemptive:** O kernel pode interromper qualquer tarefa a qualquer momento, mas `yield` permite cooperação explícita.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Blocking Wait:** `sys_wait` atualmente bloqueia a thread do kernel.
+//! - **Lack of Hierarchy:** Não há árvore de processos (Parent/Child) robusta. Se o pai morre, quem adota os filhos? (Reaper?).
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Feature)** Implementar **Task Hierarchy** (Parent/Child/Siblings).
+//! - [ ] **TODO: (Security)** Implementar **Resource Quotas** (CPU time, RAM limit) no `spawn`.
+//!
 use super::error::{SysError, SysResult};
 use crate::sched::scheduler::SCHEDULER;
 

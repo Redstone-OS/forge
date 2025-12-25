@@ -1,4 +1,27 @@
-//! Tipos Primitivos do Sistema.
+//! # Standard System Types
+//!
+//! Define os tipos primitivos usados nas interfaces do kernel (Syscalls).
+//!
+//! ## 🎯 Propósito e Responsabilidade
+//! - **ABI Stability:** Usar `Pid` (alias para `usize`) permite mudar a representação interna sem quebrar a assinatura das funções públicas.
+//! - **Clarity:** `Time` é mais semântico que `i64`.
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Separation:** Centralizar tipos evita "magic numbers" espalhados.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Identity Crisis:** O Redstone OS é um sistema Capability-Based, mas define `Uid` e `Gid` (Access Control List - ACL).
+//!   - *Problema:* A presença desses tipos sugere que o kernel ainda pensa em "usuários UNIX", o que contradiz a filosofia Zero Trust/Capabilities.
+//! - **Architecture Dependent:** `usize` varia entre 32/64 bits. Se quisermos compatibilidade 32-bits (compat layer), `Pid` deveria ser `u32` fixo na ABI?
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical/Architecture)** Deprecar **Uid/Gid**.
+//!   - *Motivo:* Substituir por `SubjectId` ou remover totalmente em favor de Capabilities anônimas.
+//! - [ ] **TODO: (Cleanup)** Mover `STDIN/OUT/ERR` para constants em `unistd.rs` ou similar.
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! Define aliases padrão para garantir consistência em todo o OS.
 

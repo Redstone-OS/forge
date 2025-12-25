@@ -1,6 +1,15 @@
-//! Testes da Lógica de Segurança
+//! # Security Tests (Legacy/Placeholder)
 //!
-//! Valida máscaras de permissão e conceitos de superusuário.
+//! Este módulo contém testes unitários simples para validar a lógica de bits.
+//!
+//! ## ⚠️ Deprecation Warning
+//! A lógica de `test_root_perm` utiliza conceitos de **UID** e **Root**, que foram **abolidos**
+//! pela nova arquitetura Security-First do Redstone OS.
+//!
+//! ## 🛠️ TODOs
+//! - [ ] **TODO: (Refactor)** Remover testes de UID/Root.
+//! - [ ] **TODO: (Test)** Criar testes reais de **Capability Exchange** (A concede para B).
+//! - [ ] **TODO: (Test)** Criar testes de **Access Denied** (verificar se falha corretamente).
 
 /// Executa todos os testes de segurança
 pub fn run_security_tests() {

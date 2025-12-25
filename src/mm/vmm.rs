@@ -1,25 +1,41 @@
-//! VMM — Virtual Memory Manager (x86_64)
-//! ===================================
+//! # Virtual Memory Manager (VMM)
 //!
-//! Visão geral
-//! -----------
-//! Este módulo implementa o **Gerenciador de Memória Virtual** do Redstone OS
-//! para arquitetura x86_64. Ele fornece a infraestrutura fundamental para
-//! paginação do kernel em early-boot e nas fases iniciais de execução.
+//! O `VMM` implementa a paginação de 4 Níveis (x86_64 PML4) e gerencia o espaço de endereçamento virtual do kernel.
 //!
-//! Suas responsabilidades principais são:
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Page Table Management:** Cria, modifica e navega na hierarquia PML4 → PDPT → PD → PT.
+//! - **Memory Mapping:** Mapeia endereços físicos arbitrários em virtuais (`map_page`).
+//! - **Fine-Grained Access:** Divide "Huge Pages" (2MiB) em 512 páginas de 4KiB sob demanda para permitir proteção granular.
 //!
-//! - gerenciar a hierarquia de page tables de 4 níveis
-//!   (PML4 → PDPT → PD → PT);
-//! - criar mapeamentos Virtual → Físico de páginas de 4 KiB;
-//! - detectar e resolver conflitos com huge pages de 2 MiB;
-//! - prover um mecanismo seguro para:
-//!   - criação dinâmica de page tables;
-//!   - zeragem de frames físicos recém-alocados;
-//!   - expansão controlada do espaço virtual do kernel.
+//! ## 🏗️ Arquitetura Singular: Scratch Slot & Huge Splitting
+//! Diferente de VMMs acadêmicos, este VMM resolve problemas reais de hardware moderno:
 //!
-//! O design prioriza **previsibilidade**, **segurança em early-kernel**
-//! e **controle explícito do hardware**, evitando abstrações opacas.
+//! 1. **Scratch Slot:** Uma região virtual fixa (`0xFFFF_FE00_...`) usada para mapear temporariamente frames físicos.
+//!    - *Por que?* Para zerar uma nova Page Table antes de inseri-la na hierarquia, sem depender de "Identity Map" (que pode não cobrir toda a RAM).
+//! 2. **Auto-Splitting:** Se `map_page` encontra uma Huge Page (2MB) no caminho, ele a converte atomicamente em uma tabela de páginas menores.
+//!    - *Por que?* Bootloaders mapeiam 0-4GB como Huge Pages para performance. O kernel precisa de granularidade 4KB para `MPROTECT` e `Guard Pages`.
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Isolamento de Boot:** O uso do Scratch Slot desacopla a inicialização do VMM das decisões do bootloader.
+//! - **Robustez:** A lógica de *Splitting* permite que o kernel refine permissões de memória (ex: tornar `.rodata` Read-Only) mesmo se o bootloader entregou tudo como RWX Huge Pages.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **TLB Shootdown Inexistente:** Em multicore, alterar uma page table aqui **não** invalida o TLB de outros CPUs.
+//!   - *Consequência:* Risco gravíssimo de corrupção de memória em SMP.
+//! - **Ausência de `unmap`:** Atualmente o VMM só sabe mapear. Não há lógica para remover mapeamentos e liberar frames das page tables intermediárias.
+//! - **Hardcoded Offsets:** Os índices PML4 (Kernel, Heap, Scratch) são constantes mágicas que devem bater com o `Ignite`. Desalinhamento = Crash.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Critical/SMP)** Implementar **TLB Shootdown**.
+//!   - *Ação:* Enviar IPI (Inter-Processor Interrupt) para todos os cores executarem `invlpg` ao alterar mapeamentos globais.
+//! - [ ] **TODO: (Management)** Implementar `unmap_page(virt_addr)`.
+//!   - *Requisito:* Liberar frames físicos se a Page Table ficar vazia (Reclaim).
+//! - [ ] **TODO: (Security)** Implementar bits **NX (No-Execute)** e **USER/SUPERVISOR** rigorosos.
+//!   - *Alvo:* Garantir que Heap/Stack não sejam executáveis (W^X).
+//! - [ ] **TODO: (Feature)** Suporte a **5-Level Paging** (Ice Lake+).
+//!   - *Impacto:* Permitir endereçamento virtual acima de 256 TiB (futuro distante).
 //!
 //! ----------------------------------------------------------------------
 //! ARQUITETURA DE PAGINAÇÃO x86_64

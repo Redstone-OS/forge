@@ -1,9 +1,40 @@
-// (FASE2) src/lib.rs
-//! Forge Kernel Library.
+//! # Redstone OS Kernel (Forge)
 //!
-//! Ponto central de exportação dos módulos do Kernel.
-//! Define a estrutura hierárquica do sistema operacional.
-
+//! O núcleo do sistema operacional, responsável por orquestrar hardware e software.
+//!
+//! ## 🏗️ Arquitetura: Micro-Modular Pragmática
+//!
+//! O `forge` não é um kernel monolítico convencional (Linux), nem um microkernel acadêmico (Minix).
+//! Adotamos um meio-termo pragmático focado em:
+//! - **Isolamento de Falhas:** Drivers e Serviços rodam isolados (idealmente em userspace ou ring 1).
+//! - **Capability-Based Security:** Permissões são tokens, não listas de acesso (ACLs). Zero Trust interno.
+//! - **Imutabilidade:** O kernel assume que o sistema de arquivos base é imutável.
+//!
+//! ## 📦 Estrutura de Módulos (Map)
+//!
+//! ### Hardware Abstraction Layer (HAL)
+//! - [`arch`]: Traduz conceitos abstratos (interrupção, paginação) para o dialeto da CPU (x86_64).
+//! - [`drivers`]: Implementações específicas de dispositivos (Serial, Video).
+//!
+//! ### Core Subsystems
+//! - [`mm`]: **Memory Manager**. PMM (Físico) -> VMM (Virtual) -> Heap (Kernel Objects).
+//! - [`sched`]: **Scheduler**. Multitarefa preemptiva, threads e contextos.
+//! - [`ipc`]: **Inter-Process Communication**. Portas e mensagens. O "barramento" do OS.
+//! - [`security`]: **Capabilities**. A autoridade que valida quem pode fazer o quê.
+//!
+//! ### System Interfaces
+//! - [`syscall`]: **API do Userspace**. A fronteira de ataque. Onde o Ring 3 pede coisas ao Ring 0.
+//! - [`fs`]: **Virtual File System**. Abstração unificada de armazenamento.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Inicialização Frágil:** O fluxo de `_start` até `init` depende de uma ordem rígida de inicialização de subsistemas (Logger -> MM -> Sched). Erros aqui causam Boot Loop ou Triple Fault.
+//! - **Driver Model:** Atualmente os drivers (ex: Serial) estão linkados estaticamente no binário do kernel. Isso é "Monolítico". O objetivo futuro é movê-los para módulos carregáveis ou processos separados.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Architecture)** Definir interface estável para **Drivers Assíncronos** (baseado em `Future`).
+//! - [ ] **TODO: (Security)** Implementar **Kernel Address Space Layout Randomization (KASLR)**. O kernel carrega sempre no mesmo endereço físico/virtual hoje.
+//! - [ ] **TODO: (Reliability)** Criar um **Watchdog de Kernel** que detecte deadlocks em spinlocks e cause um panic controlado.
+//!
 #![no_std]
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]

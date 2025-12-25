@@ -1,4 +1,28 @@
-//! Códigos de Erro do Sistema (Errno).
+//! # Standard Error Codes (Errno)
+//!
+//! Define os códigos de erro retornados pelo kernel.
+//! Baseado no padrão POSIX para compatibilidade com ferramentas existentes.
+//!
+//! ## 🎯 Propósito e Responsabilidade
+//! - **Uniformidade:** Todas as syscalls retornam códigos padronizados.
+//! - **Conversion:** Métodos `as_isize` facilitam o retorno negativo no registrador RAX.
+//!
+//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//!
+//! ### ✅ Pontos Fortes
+//! - **Standard Compliance:** Seguir a numeração do Linux/POSIX evita reinvenção da roda e facilita porting de `std`.
+//!
+//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
+//! - **Limited Scope:** Erros POSIX são focados em Arquivos e Processos. Eles descrevem mal erros de **IPC, Capabilities e Microkernel**.
+//!   - *Problema:* O que retornar quando uma Capability é inválida? `EBADF`? `EPERM`? `EINVAL`? Nenhum serve perfeitamente.
+//!
+//! ## 🛠️ TODOs e Roadmap
+//! - [ ] **TODO: (Architecture)** Definir estratégia de erros para Capabilities.
+//!   - *Opção A:* Mapear tudo para códigos POSIX (perde semântica).
+//!   - *Opção B:* Estender `Errno` com códigos customizados (ex: `ECAP = 1000`).
+//! - [ ] **TODO: (DevEx)** Implementar `impl Display` para imprimir mensagens de erro legíveis no log do kernel.
+//!
+//! --------------------------------------------------------------------------------
 //!
 //! Segue o padrão POSIX/Linux para facilitar compatibilidade futura e entendimento.
 //! Valores negativos são usados em retornos de syscalls (isize).
