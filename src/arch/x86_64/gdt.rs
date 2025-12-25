@@ -196,11 +196,10 @@ pub unsafe fn init() {
         limit: (size_of::<Gdt>() - 1) as u16,
         base: core::ptr::addr_of!(GDT) as u64,
     };
-    crate::ktrace!(
-        "(GDT) init: GDTR base={:#x} limit={}",
-        gdt_ptr.base,
-        gdt_ptr.limit
-    );
+    // Copiar campos packed para variáveis locais (evita E0793)
+    let gdt_base = gdt_ptr.base;
+    let gdt_limit = gdt_ptr.limit;
+    crate::ktrace!("(GDT) init: GDTR base={:#x} limit={}", gdt_base, gdt_limit);
 
     asm!("lgdt [{}]", in(reg) &gdt_ptr, options(readonly, nostack, preserves_flags));
     crate::kdebug!("(GDT) init: GDT carregada");

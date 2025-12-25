@@ -132,24 +132,23 @@ pub fn init() {
     crate::kinfo!("(Sched) Inicializado (Escalonador Round-Robin)");
 }
 
-    // Tarefas de teste comentadas para testar init sozinho
-    /*
-    crate::kinfo!("[Teste] Criando tarefas do kernel...");
+// Tarefas de teste comentadas para testar init sozinho
+/*
+crate::kinfo!("[Teste] Criando tarefas do kernel...");
 
-    // Criar Tasks de Kernel
-    crate::kinfo!("[Sched] Criando task_a...");
-    sched.add_task(Task::new_kernel(task_a));
-    crate::kinfo!("[Sched] task_a adicionada OK");
+// Criar Tasks de Kernel
+crate::kinfo!("[Sched] Criando task_a...");
+sched.add_task(Task::new_kernel(task_a));
+crate::kinfo!("[Sched] task_a adicionada OK");
 
-    crate::kinfo!("[Sched] Criando task_b...");
-    sched.add_task(Task::new_kernel(task_b));
-    crate::kinfo!("[Sched] task_b adicionada OK");
+crate::kinfo!("[Sched] Criando task_b...");
+sched.add_task(Task::new_kernel(task_b));
+crate::kinfo!("[Sched] task_b adicionada OK");
 
-    crate::kinfo!("[Sched] Criando task_c...");
-    sched.add_task(Task::new_kernel(task_c));
-    crate::kinfo!("[Sched] task_c adicionada OK");
-    */
-}
+crate::kinfo!("[Sched] Criando task_c...");
+sched.add_task(Task::new_kernel(task_c));
+crate::kinfo!("[Sched] task_c adicionada OK");
+*/
 
 /// Força a troca de contexto voluntária (Yield).
 ///

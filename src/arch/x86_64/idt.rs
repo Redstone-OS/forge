@@ -132,11 +132,10 @@ pub unsafe fn init() {
         limit: (size_of::<Idt>() - 1) as u16,
         base: core::ptr::addr_of!(IDT) as u64,
     };
-    crate::ktrace!(
-        "(IDT) init: IDTR base={:#x} limit={}",
-        idt_ptr.base,
-        idt_ptr.limit
-    );
+    // Copiar campos packed para variáveis locais (evita E0793)
+    let idt_base = idt_ptr.base;
+    let idt_limit = idt_ptr.limit;
+    crate::ktrace!("(IDT) init: IDTR base={:#x} limit={}", idt_base, idt_limit);
 
     asm!("lidt [{}]", in(reg) &idt_ptr, options(readonly, nostack, preserves_flags));
 
