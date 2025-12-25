@@ -71,6 +71,19 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::ipc::init();
     crate::fs::init(boot_info);
 
+    // Inicializar Vídeo (após memória e antes do console real)
+    // Agora inicializamos o CONSOLE, que gerencia o vídeo + texto.
+    crate::drivers::console::init_console(boot_info.framebuffer);
+
+    crate::kprintln!(
+        "[Video] {}x{} (Stride: {}) Format: {:?}",
+        boot_info.framebuffer.width,
+        boot_info.framebuffer.height,
+        boot_info.framebuffer.stride,
+        boot_info.framebuffer.format
+    );
+    crate::kprintln!("[Console] Redstone OS v0.1.0 - Video Text Mode Active!");
+
     // 7. Scheduler (Multitarefa)
     // Inicializa a fila de processos e cria as tarefas iniciais (Kernel Tasks).
     crate::kinfo!("Inicializando Scheduler...");

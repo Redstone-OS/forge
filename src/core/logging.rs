@@ -39,16 +39,17 @@ impl KernelLogger {
             }
         }
 
-        // 3. Escrita Atômica
+        // 3. Escrita Atômica (Serial + Video)
         {
             // Usamos try_lock para evitar travar o kernel se a serial estiver corrompida
             // ou permanentemente travada por um panic anterior.
             if let Some(mut serial) = SERIAL1.try_lock() {
                 let _ = fmt::write(&mut *serial, args);
-            } else {
-                // Em um sistema de produção, aqui poderíamos escrever num buffer de emergência
-                // na memória RAM (pstore) para análise pós-crash.
             }
+
+            // Escrever no Console de Vídeo (se disponível)
+            // O Console tem seu próprio locking interno no método helper
+            crate::drivers::console::console_print_fmt(args);
         }
 
         // 4. Sair da seção crítica
