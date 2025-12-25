@@ -4,8 +4,7 @@
 //! Funciona como uma extensão da `core` library.
 
 pub mod bitmap;
-// Futuro: pub mod ring_buffer;
-// Futuro: pub mod linked_list;
+// pub mod mem_funcs; // TEMPORARIAMENTE DESABILITADO - causou crash
 
 /// Alinha um endereço para cima.
 ///

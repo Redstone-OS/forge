@@ -98,15 +98,19 @@ impl Task {
         unsafe {
             kstack.set_len(STACK_SIZE);
 
-            // DEBUG: Log antes de write_bytes
+            // DEBUG: Log antes de zerar
             crate::kinfo!(
                 "[Task] set_len ok. Zerando memória em {:p}...",
                 kstack.as_mut_ptr()
             );
 
-            core::ptr::write_bytes(kstack.as_mut_ptr(), 0, STACK_SIZE);
+            // Usar loop manual (write_bytes causa GPF 0x32)
+            let ptr = kstack.as_mut_ptr() as *mut u64;
+            for i in 0..(STACK_SIZE / 8) {
+                core::ptr::write_volatile(ptr.add(i), 0u64);
+            }
 
-            // DEBUG: Log após write_bytes
+            // DEBUG: Log após zerar
             crate::kinfo!("[Task] Memória zerada com sucesso.");
         }
 

@@ -103,10 +103,15 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 fn spawn_init_process() {
     use crate::fs::vfs::{VfsHandle, ROOT_VFS};
 
+    crate::kinfo!("[Init] spawn_init_process iniciando...");
+
     // Tenta obter acesso exclusivo ao VFS
+    crate::kinfo!("[Init] Obtendo lock do VFS...");
     let vfs = ROOT_VFS.lock();
+    crate::kinfo!("[Init] VFS lock OK");
 
     // Procura pelo arquivo "/init" na raiz
+    crate::kinfo!("[Init] lookup /init...");
     if let Ok(node) = vfs.lookup("/init") {
         crate::kinfo!("[Init] Found /init, loading ELF...");
 

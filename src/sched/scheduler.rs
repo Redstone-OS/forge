@@ -38,7 +38,13 @@ impl Scheduler {
     /// Adiciona uma tarefa à fila de prontos.
     /// A tarefa será agendada na próxima oportunidade.
     pub fn add_task(&mut self, task: Task) {
-        self.tasks.push_back(Arc::new(Mutex::new(task)));
+        crate::kinfo!("[Sched] add_task: Mutex::new...");
+        let wrapped = Mutex::new(task);
+        crate::kinfo!("[Sched] add_task: Arc::new...");
+        let arc_task = Arc::new(wrapped);
+        crate::kinfo!("[Sched] add_task: push_back...");
+        self.tasks.push_back(arc_task);
+        crate::kinfo!("[Sched] add_task: OK");
     }
 
     /// Executa o algoritmo de agendamento (Round-Robin).
@@ -114,9 +120,17 @@ pub fn init() {
     crate::kinfo!("[Teste] Criando tarefas do kernel...");
 
     // Criar Tasks de Kernel
+    crate::kinfo!("[Sched] Criando task_a...");
     sched.add_task(Task::new_kernel(task_a));
+    crate::kinfo!("[Sched] task_a adicionada OK");
+
+    crate::kinfo!("[Sched] Criando task_b...");
     sched.add_task(Task::new_kernel(task_b));
+    crate::kinfo!("[Sched] task_b adicionada OK");
+
+    crate::kinfo!("[Sched] Criando task_c...");
     sched.add_task(Task::new_kernel(task_c));
+    crate::kinfo!("[Sched] task_c adicionada OK");
 }
 
 // --- Tarefas de Teste ---
