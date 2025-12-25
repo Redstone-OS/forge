@@ -5,6 +5,7 @@
 
 pub mod elf;
 pub mod entry;
+pub mod handle;
 pub mod handoff;
 pub mod logging;
 pub mod panic;

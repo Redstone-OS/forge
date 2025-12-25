@@ -9,6 +9,7 @@
 //! - Tasks de Usuário: Usam esta stack apenas ao entrar no kernel (Syscalls/Interrupts).
 
 use crate::arch::x86_64::gdt::{KERNEL_CODE_SEL, KERNEL_DATA_SEL, USER_CODE_SEL, USER_DATA_SEL};
+use crate::core::handle::HandleTable;
 use crate::sched::context::Context;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -27,6 +28,11 @@ impl TaskId {
     pub fn new() -> Self {
         static NEXT_ID: AtomicU64 = AtomicU64::new(1);
         TaskId(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Retorna o valor numérico do ID.
+    pub fn as_u64(&self) -> u64 {
+        self.0
     }
 }
 
@@ -55,6 +61,9 @@ pub struct Task {
     // Endereço Físico da Tabela de Páginas (PML4).
     // 0 = Usa o mapeamento padrão do Kernel.
     pub cr3: u64,
+
+    /// Tabela de handles do processo (capability-based).
+    pub handles: HandleTable,
 }
 
 impl Task {
@@ -134,6 +143,7 @@ impl Task {
             kstack,
             kstack_top,
             cr3: 0,
+            handles: HandleTable::new(),
         }
     }
 

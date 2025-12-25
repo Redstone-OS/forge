@@ -1,38 +1,72 @@
-//! Implementação de Syscalls de Processos.
+//! Syscalls de Processo
+//!
+//! Gerenciamento de processos e escalonamento.
 
-use super::numbers::*;
+use super::error::{SysError, SysResult};
 use crate::sched::scheduler::SCHEDULER;
 use crate::sched::task::TaskState;
 
 /// Encerra o processo atual.
-pub fn sys_exit(code: i32) -> ! {
-    crate::kinfo!("Process exiting with code: {}", code);
+///
+/// # Syscall
+/// `SYS_EXIT (0x01)` - Args: (exit_code: i32)
+///
+/// # Comportamento
+/// - Marca a tarefa como Terminated
+/// - Remove da runqueue
+/// - Cede CPU para sempre (não retorna)
+pub fn sys_exit(code: i32) -> SysResult<usize> {
+    crate::kinfo!("[Syscall] exit({})", code);
 
-    // 1. Marcar tarefa atual como terminada
-    {
-        // Precisamos de acesso ao scheduler/task atual
-        // Como o SCHEDULER é global, podemos alterar o estado.
-        // Nota: Idealmente teríamos um método `scheduler.exit_current(code)`.
-
-        // HACK TEMPORÁRIO: Como não expusemos `exit_current` no Scheduler da Fase 7,
-        // vamos apenas logar e travar/yieldar loop.
-        // Na implementação real, isso deve remover a task da runqueue.
-    }
-
-    // 2. Ceder CPU para sempre
+    // TODO: Implementar exit real quando tiver process management
+    // Por enquanto: loop infinito cedendo CPU
     loop {
-        sys_yield();
+        let _ = sys_yield();
+        // Em um sistema real, o scheduler removeria essa task
     }
 }
 
-/// Cede o restante do quantum de tempo (Voluntary Preemption).
-pub fn sys_yield() -> isize {
-    // Forçar agendamento
-    // Nota: A função schedule() deve ser segura de chamar daqui.
-    // Como estamos "dentro" do kernel via syscall (int 0x80), interrupções podem estar
-    // desabilitadas ou habilitadas dependendo do stub.
-    // O stub `int 0x80` desabilita IRQs (Interrupt Gate).
+/// Cria um novo processo (spawn).
+///
+/// # Syscall
+/// `SYS_SPAWN (0x02)` - Args: (image_ptr, image_len, args_ptr, args_len)
+///
+/// # TODO
+/// Esta syscall será implementada quando tivermos:
+/// - ELF loader no userspace
+/// - Memory space isolation
+/// - Process table
+pub fn sys_spawn(
+    _image_ptr: usize,
+    _image_len: usize,
+    _args_ptr: usize,
+    _args_len: usize,
+) -> SysResult<usize> {
+    crate::kwarn!("[Syscall] spawn não implementado");
+    Err(SysError::NotImplemented)
+}
 
+/// Espera um processo filho terminar.
+///
+/// # Syscall
+/// `SYS_WAIT (0x03)` - Args: (task_id, timeout_ms)
+///
+/// # TODO
+/// Requer: process parent/child tracking, wait queues
+pub fn sys_wait(_task_id: usize, _timeout_ms: usize) -> SysResult<usize> {
+    crate::kwarn!("[Syscall] wait não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Cede o restante do quantum de tempo.
+///
+/// # Syscall
+/// `SYS_YIELD (0x04)` - Args: nenhum
+///
+/// # Retorno
+/// Sempre retorna 0 (sucesso)
+pub fn sys_yield() -> SysResult<usize> {
+    // Solicitar troca de contexto
     let switch = {
         let mut sched = SCHEDULER.lock();
         sched.schedule()
@@ -40,16 +74,33 @@ pub fn sys_yield() -> isize {
 
     if let Some((old_sp, new_sp)) = switch {
         unsafe {
-            // Reutiliza o assembly de switch
             crate::sched::context_switch(old_sp as *mut u64, new_sp);
         }
     }
 
-    0 // Sucesso
+    Ok(0)
 }
 
-/// Retorna o ID do processo atual.
-pub fn sys_getpid() -> isize {
-    // TODO: Implementar quando Task tiver acesso fácil ao próprio ID via thread-local ou similar
-    1
+/// Obtém o PID do processo atual.
+///
+/// # Syscall
+/// `SYS_GETPID (0x05)` - Args: nenhum
+///
+/// # Retorno
+/// TaskId do processo atual
+pub fn sys_getpid() -> SysResult<usize> {
+    // TODO: Acessar current_task do scheduler
+    // Por enquanto retorna 1 (init)
+    Ok(1)
+}
+
+/// Obtém informações sobre uma tarefa.
+///
+/// # Syscall
+/// `SYS_GETTASKINFO (0x06)` - Args: (task_id, out_ptr)
+///
+/// # TODO
+/// Requer: struct TaskInfo, validação de ponteiro
+pub fn sys_gettaskinfo(_task_id: usize, _out_ptr: usize) -> SysResult<usize> {
+    Err(SysError::NotImplemented)
 }
