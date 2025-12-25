@@ -107,9 +107,15 @@ extern "C" fn timer_handler_impl(_frame: &ContextFrame) {
     crate::drivers::timer::handle_timer_interrupt();
 }
 
+extern "C" fn invalid_opcode_handler_impl(frame: &ContextFrame) {
+    crate::kerror!("FALHA DE CPU: OPERAÇÃO INVÁLIDA (UD) em {:#x}", frame.rip);
+    crate::arch::platform::Cpu::hang();
+}
+
 // --- Geração dos Stubs ---
 
 handler_no_err!(breakpoint_handler, breakpoint_handler_impl);
+handler_no_err!(invalid_opcode_handler, invalid_opcode_handler_impl); // ADDED
 handler_with_err!(double_fault_handler, double_fault_handler_impl);
 handler_with_err!(page_fault_handler, page_fault_handler_impl);
 handler_with_err!(

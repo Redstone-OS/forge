@@ -148,6 +148,15 @@ pub fn init() {
     */
 }
 
+/// Força a troca de contexto voluntária (Yield).
+///
+/// Chama a interrupção de timer (0x20) via software para invocar o scheduler.
+pub fn yield_now() {
+    unsafe {
+        core::arch::asm!("int 0x20");
+    }
+}
+
 // --- Tarefas de Teste ---
 
 extern "C" fn task_a() {

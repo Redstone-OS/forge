@@ -106,12 +106,29 @@ pub unsafe fn init() {
 
     // Registrar Handlers Críticos
     IDT.entries[3] = IdtEntry::new(interrupts::breakpoint_handler as usize);
+    IDT.entries[6] = IdtEntry::new(interrupts::invalid_opcode_handler as usize); // ADDED
     IDT.entries[8] = IdtEntry::new(interrupts::double_fault_handler as usize);
     IDT.entries[13] = IdtEntry::new(interrupts::general_protection_fault_handler as usize);
     IDT.entries[14] = IdtEntry::new(interrupts::page_fault_handler as usize);
 
     // Timer (PIC remapeia IRQ0 para vetor 0x20 = 32)
     IDT.entries[32] = IdtEntry::new(interrupts::timer_handler as usize);
+
+    // Syscall API (Vector 0x80)
+    // DPL=3, Present=1, IntGate
+    // 0xEE = 1110 1110 = Present(1) DPL(11) S(0) Type(1110 - IntGate 32-bit? No 64-bit IDT uses 0xE for IntGate)
+    // Rust IdtEntry hardcodou 0x8E (DPL0). Precisamos de DPL3 para syscall inter-level.
+    // Vamos criar um método helper ou hackear aqui.
+    // IDT Entry: [OffsetLow][Selector][IST][TypeAttr][OffsetMid]...
+    // TypeAttr: P(1) DPL(2) S(1) Type(4)
+    // Kernel (0x8E): 1 00 0 1110
+    // User   (0xEE): 1 11 0 1110
+    extern "C" {
+        fn syscall_handler();
+    }
+    let mut syscall_entry = IdtEntry::new(syscall_handler as usize);
+    syscall_entry.type_attr = 0xEE; // Set DPL=3
+    IDT.entries[0x80] = syscall_entry;
 
     // Carregar IDT
     let idt_ptr = IdtDescriptor {

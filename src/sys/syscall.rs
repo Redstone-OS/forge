@@ -1,4 +1,5 @@
 use crate::arch::x86_64::idt::ContextFrame;
+use core::ffi::c_void;
 
 // Syscall Numbers
 const SYS_WRITE: u64 = 1;

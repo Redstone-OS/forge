@@ -12,3 +12,6 @@ pub mod ports;
 
 // Re-exporta a implementação concreta de CPU para uso genérico
 pub use cpu::X64Cpu as Cpu;
+
+// Incluir Assembly do Handler de Syscall
+core::arch::global_asm!(include_str!("syscall.s"));

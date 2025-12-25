@@ -104,14 +104,6 @@ impl Console {
 
     /// Rola a tela para cima (Move memória de vídeo).
     fn scroll(&mut self) {
-        // DEBUG: Trace scroll para achar GPF
-        {
-            use core::fmt::Write;
-            if let Some(mut serial) = crate::drivers::serial::SERIAL1.try_lock() {
-                let _ = write!(serial, "[DEBUG] Console::scroll start\n");
-            }
-        }
-
         let stride = self.info.stride as usize;
         let height = self.info.height as usize;
 
@@ -123,7 +115,7 @@ impl Console {
 
         if height < font_height {
             return;
-        } // Proteção
+        }
 
         let lines_to_copy = height - font_height;
         let u32s_to_copy = lines_to_copy * u32_stride;
@@ -138,54 +130,47 @@ impl Console {
         // Validação de bounds exata
         let total_pixels = stride * height;
         if buffer.len() < total_pixels {
-            // Panic seguro (serial only)
-            use core::fmt::Write;
-            if let Some(mut serial) = crate::drivers::serial::SERIAL1.try_lock() {
-                let _ = write!(
-                    serial,
-                    "[PANIC] Framebuffer menor que stride*height! Len={} Req={}\n",
-                    buffer.len(),
-                    total_pixels
-                );
-            }
             return;
         }
 
         // Mover o conteúdo da tela para cima.
-        // copy_within é seguro para sobreposição (memmove).
-        // Copia do início da segunda linha (stride * 16) até o final desejado, para o início (0).
+        // Substituimos copy_within por um loop manual para evitar instruções SIMD (AVX/SSE)
+        // que estavam causando Invalid Opcode (UD) em alguns hardwares/QEMU configs.
         let start_src = u32_stride * font_height;
-        let end_src = start_src + u32s_to_copy;
 
-        // Bounds Check Paranoico
-        if end_src > buffer.len() {
-            use core::fmt::Write;
-            if let Some(mut serial) = crate::drivers::serial::SERIAL1.try_lock() {
-                let _ = write!(
-                    serial,
-                    "[PANIC] Scroll Overflow! EndSrc={} Buffer={}\n",
-                    end_src,
-                    buffer.len()
-                );
-            }
-            return;
+        // Loop manual de cópia (Forward, pois dest < src)
+        // SUBSTITUIÇÃO: Usando Assembly `rep movsd` para performance máxima e segura (sem SIMD implícito)
+        unsafe {
+            let count = u32s_to_copy;
+            let src = buffer.as_ptr().add(start_src);
+            let dst = buffer.as_mut_ptr();
+            core::arch::asm!(
+                "cld",          // Clear direction flag (forward copy)
+                "rep movsd",    // Move ECX dwords (u32) from [RSI] to [RDI]
+                inout("ecx") count => _,
+                inout("rsi") src => _,
+                inout("rdi") dst => _,
+                options(nostack, preserves_flags)
+            );
         }
-
-        buffer.copy_within(start_src..end_src, 0);
 
         // Limpar a última linha (área nova em baixo)
         let start_clear = u32s_to_copy;
         let end_clear = height * u32_stride;
+        let clear_count = end_clear - start_clear;
 
-        if end_clear <= buffer.len() {
-            buffer[start_clear..end_clear].fill(self.bg_color);
-        }
-
-        {
-            use core::fmt::Write;
-            if let Some(mut serial) = crate::drivers::serial::SERIAL1.try_lock() {
-                let _ = write!(serial, "[DEBUG] Console::scroll end\n");
-            }
+        // Preenchimento rápido com `rep stosd`
+        unsafe {
+            let dst = buffer.as_mut_ptr().add(start_clear);
+            let val = self.bg_color;
+            core::arch::asm!(
+                "cld",
+                "rep stosd",    // Store EAX to [RDI], ECX times
+                inout("ecx") clear_count => _,
+                inout("edi") dst => _,
+                in("eax") val,
+                options(nostack, preserves_flags)
+            );
         }
     }
 
