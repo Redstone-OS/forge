@@ -24,15 +24,19 @@ pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
         );
 
         // Criar slice unsafe para a memória do initramfs
+        crate::kinfo!("VFS: criando slice...");
         let data = unsafe {
             core::slice::from_raw_parts(
                 boot_info.initramfs_addr as *const u8,
                 boot_info.initramfs_size as usize,
             )
         };
+        crate::kinfo!("VFS: slice OK, len={}", data.len());
 
         // Montar Initramfs como raiz
+        crate::kinfo!("VFS: parsing initramfs...");
         let initfs = Arc::new(initramfs::Initramfs::new(data));
+        crate::kinfo!("VFS: initfs OK, montando raiz...");
         vfs::ROOT_VFS.lock().mount_root(initfs);
 
         crate::kinfo!("Sistema de arquivos raiz montado.");
