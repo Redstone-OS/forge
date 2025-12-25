@@ -148,7 +148,7 @@ impl Console {
         // Loop manual de cópia (Forward, pois dest < src)
         // SUBSTITUIÇÃO: Usando Assembly `rep movsd` para performance máxima e segura (sem SIMD implícito)
         let count = u32s_to_copy;
-        crate::ktrace!("(Console) scroll: Movendo {} dwords via rep movsd", count);
+        // crate::ktrace!("(Console) scroll: Movendo {} dwords via rep movsd", count);
         unsafe {
             let src = buffer.as_ptr().add(start_src);
             let dst = buffer.as_mut_ptr();
