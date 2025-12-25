@@ -110,10 +110,10 @@ fn spawn_init_process() {
     let vfs = ROOT_VFS.lock();
     crate::kinfo!("[Init] VFS lock OK");
 
-    // Procura pelo arquivo "/init" na raiz
-    crate::kinfo!("[Init] lookup /init...");
-    if let Ok(node) = vfs.lookup("/init") {
-        crate::kinfo!("[Init] Found /init, loading ELF...");
+    // Procura pelo arquivo "/system/core/init" (estrutura moderna Redstone)
+    crate::kinfo!("[Init] lookup /system/core/init...");
+    if let Ok(node) = vfs.lookup("/system/core/init") {
+        crate::kinfo!("[Init] Found /system/core/init, loading ELF...");
 
         if let Ok(handle) = node.open() {
             let size = node.size() as usize;
