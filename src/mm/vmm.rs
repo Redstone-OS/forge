@@ -248,10 +248,6 @@ unsafe fn init_scratch_slot() {
     let pml4_entry = *pml4.add(pml4_idx);
 
     if pml4_entry & PAGE_PRESENT == 0 {
-        crate::kwarn!(
-            "VMM: Scratch slot não configurado (PML4[{}] vazio)",
-            pml4_idx
-        );
         SCRATCH_READY = false;
         return;
     }
@@ -261,7 +257,6 @@ unsafe fn init_scratch_slot() {
     let pdpt_entry = *pdpt.add(pdpt_idx);
 
     if pdpt_entry & PAGE_PRESENT == 0 {
-        crate::kwarn!("VMM: PDPT[{}] do scratch não existe", pdpt_idx);
         SCRATCH_READY = false;
         return;
     }
@@ -271,19 +266,15 @@ unsafe fn init_scratch_slot() {
     let pd_entry = *pd.add(pd_idx);
 
     if pd_entry & PAGE_PRESENT == 0 {
-        crate::kwarn!("VMM: PD[{}] do scratch não existe", pd_idx);
         SCRATCH_READY = false;
         return;
     }
 
     if pd_entry & PAGE_HUGE != 0 {
-        // Se for huge page, a PT não existe — isso quebra a premissa do scratch.
-        crate::kerror!("VMM: PD[{}] do scratch é HUGE PAGE!", pd_idx);
         SCRATCH_READY = false;
         return;
     }
 
-    // OK: extraímos o endereço físico da PT apontada pelo PD
     SCRATCH_PT_PHYS = pd_entry & 0x000F_FFFF_FFFF_F000;
     SCRATCH_READY = true;
 }
@@ -304,34 +295,14 @@ unsafe fn init_scratch_slot() {
 /// - Se `SCRATCH_READY` for false, tentamos fallback escrevendo diretamente no físico
 ///   (menos seguro e pode falhar em algumas configurações). Detecte e corrija no bootloader.
 unsafe fn zero_frame_via_scratch(phys: u64) {
-    if !SCRATCH_READY {
-        // Fallback direto — pode falhar se memória não estiver identity-mapped corretamente.
-        let ptr = phys as *mut u8;
-        core::ptr::write_bytes(ptr, 0, FRAME_SIZE);
-        return;
+    // Zerar usando loop manual via identity map (phys < 4GiB)
+    // O identity map do bootloader mapeia 0-4GiB como virtual == físico
+    let ptr = phys as *mut u64;
+
+    // Zerar 4096 bytes = 512 u64s
+    for i in 0..512 {
+        core::ptr::write_volatile(ptr.add(i), 0u64);
     }
-
-    // Posição do PTE dentro da PT do scratch (neste design, índice 0)
-    let pt_idx = ((SCRATCH_VIRT >> 12) & 0x1FF) as usize; // 0
-
-    // Endereço físico da PT do scratch (fornecido pelo bootloader)
-    let pt = SCRATCH_PT_PHYS as *mut u64;
-
-    // 1) Mapear: escrever PTE (phys | PRESENT | WRITABLE)
-    let pte = phys | PAGE_PRESENT | PAGE_WRITABLE;
-    core::ptr::write_volatile(pt.add(pt_idx), pte);
-
-    // 2) Invalidate TLB para forçar leitura da nova PTE
-    asm!("invlpg [{}]", in(reg) SCRATCH_VIRT, options(nostack, preserves_flags));
-
-    // 3) Zerar via virtual address do scratch
-    core::ptr::write_bytes(SCRATCH_VIRT as *mut u8, 0, FRAME_SIZE);
-
-    // 4) Desmapear PTE
-    core::ptr::write_volatile(pt.add(pt_idx), 0);
-
-    // 5) Invalidar TLB novamente
-    asm!("invlpg [{}]", in(reg) SCRATCH_VIRT, options(nostack, preserves_flags));
 }
 
 // =============================================================================
@@ -405,7 +376,7 @@ pub unsafe fn map_page_with_pmm(
     // Escrever PTE final (endereço físico + flags + PRESENT)
     *pt_entry = (phys_addr & 0x000F_FFFF_FFFF_F000) | flags | PAGE_PRESENT;
 
-    // Invalida TLB para o endereço mapeado (garante coerência imediata)
+    // Invalida TLB para o endereço mapeado
     asm!("invlpg [{}]", in(reg) virt_addr, options(nostack, preserves_flags));
 
     true
@@ -480,7 +451,6 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
     // Caso: entrada ausente — aloca nova tabela (frame de 4 KiB)
     let frame = pmm.allocate_frame();
     if frame.is_none() {
-        crate::kerror!("VMM: OOM ao alocar page table!");
         return 0;
     }
     let phys = frame.unwrap().addr;

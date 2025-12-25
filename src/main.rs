@@ -18,12 +18,12 @@ use forge::{core as kernel_core, mm};
 // Habilitar alocação
 extern crate alloc;
 
-// Stack do kernel (16 KB).
+// Stack do kernel (64 KB).
 #[repr(align(16))]
-struct KernelStack([u8; 16 * 1024]);
+struct KernelStack([u8; 64 * 1024]);
 
 #[no_mangle]
-static KERNEL_STACK: KernelStack = KernelStack([0; 16 * 1024]);
+static KERNEL_STACK: KernelStack = KernelStack([0; 64 * 1024]);
 
 /// Ponto de entrada Naked.
 /// Configura o Stack Pointer (RSP) e habilita SSE antes de chamar o código Rust.

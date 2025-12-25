@@ -85,18 +85,43 @@ impl Task {
     /// Aloca estrutura base e stack alinhada.
     fn create_base() -> Self {
         const STACK_SIZE: usize = 32 * 1024; // 32KB
+
+        // DEBUG: Log antes de alocar
+        crate::kinfo!("[Task] Alocando {} bytes para stack...", STACK_SIZE);
+
         let mut kstack = Vec::with_capacity(STACK_SIZE);
+
+        // DEBUG: Log após alocar, antes de set_len
+        crate::kinfo!("[Task] Vec criado. Capacity: {}", kstack.capacity());
 
         // Inicialização segura da memória e ajuste de tamanho
         unsafe {
             kstack.set_len(STACK_SIZE);
+
+            // DEBUG: Log antes de write_bytes
+            crate::kinfo!(
+                "[Task] set_len ok. Zerando memória em {:p}...",
+                kstack.as_mut_ptr()
+            );
+
             core::ptr::write_bytes(kstack.as_mut_ptr(), 0, STACK_SIZE);
+
+            // DEBUG: Log após write_bytes
+            crate::kinfo!("[Task] Memória zerada com sucesso.");
         }
 
         // Calcular topo da stack com alinhamento de 16 bytes (System V ABI)
         let stack_start = kstack.as_ptr() as u64;
         let stack_end = stack_start + STACK_SIZE as u64;
         let kstack_top = stack_end & !0xF;
+
+        // DEBUG: Log do endereço da stack
+        crate::kinfo!(
+            "[Task] Stack: {:#x} - {:#x}, top: {:#x}",
+            stack_start,
+            stack_end,
+            kstack_top
+        );
 
         Self {
             id: TaskId::new(),

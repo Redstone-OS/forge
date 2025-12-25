@@ -162,14 +162,22 @@ pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
         pmm::FRAME_ALLOCATOR.lock().init(boot_info);
     }
 
+    crate::kinfo!("MM: PMM OK, iniciando VMM...");
+
     // 2. Virtual Memory Manager
     // Inicializa paginação e scratch slot
     unsafe {
         vmm::init(boot_info);
     }
 
+    crate::kinfo!("MM: VMM OK, iniciando Heap...");
+
     // 3. Kernel Heap
     // Lock do PMM é adquirido aqui para evitar deadlock
     let mut pmm_lock = pmm::FRAME_ALLOCATOR.lock();
-    heap::init_heap(&mut *pmm_lock);
+    if !heap::init_heap(&mut *pmm_lock) {
+        panic!("Falha crítica ao inicializar heap do kernel!");
+    }
+
+    crate::kinfo!("MM: Heap OK!");
 }

@@ -213,20 +213,27 @@ fn align_up(addr: usize, align: usize) -> usize {
 /// - Inicializa o `ALLOCATOR` global
 /// - Retorna `true` se sucesso, `false` se OOM ou falha de mapeamento
 pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
-    let page_range = HEAP_START..(HEAP_START + HEAP_INITIAL_SIZE);
+    let pages = HEAP_INITIAL_SIZE / 4096;
+    crate::kinfo!(
+        "Heap: mapeando {} paginas ({} KiB)...",
+        pages,
+        HEAP_INITIAL_SIZE / 1024
+    );
 
-    for page_addr in (page_range).step_by(crate::mm::pmm::FRAME_SIZE) {
+    let page_range = HEAP_START..(HEAP_START + HEAP_INITIAL_SIZE);
+    let flags = crate::mm::vmm::PAGE_PRESENT | crate::mm::vmm::PAGE_WRITABLE;
+
+    for page_addr in (page_range).step_by(4096) {
         let frame = match pmm.allocate_frame() {
             Some(f) => f,
             None => {
-                crate::kerror!("Heap init: sem frames suficientes");
+                crate::kerror!("Heap init: OOM");
                 return false;
             }
         };
 
-        let flags = crate::mm::vmm::PAGE_PRESENT | crate::mm::vmm::PAGE_WRITABLE;
         if unsafe { !crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr, flags, pmm) } {
-            crate::kerror!("Heap init: falha ao mapear página {:#x}", page_addr);
+            crate::kerror!("Heap init: map falhou");
             return false;
         }
     }
@@ -235,10 +242,6 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
         ALLOCATOR.init(HEAP_START, HEAP_INITIAL_SIZE);
     }
 
-    crate::kinfo!(
-        "Heap inicializado: {} KiB em {:#x}",
-        HEAP_INITIAL_SIZE / 1024,
-        HEAP_START
-    );
+    crate::kinfo!("Heap inicializado: {} KiB", HEAP_INITIAL_SIZE / 1024);
     true
 }
