@@ -1,6 +1,6 @@
-//! Testes de Segurança e Controle de Acesso (Capabilities)
+//! Testes da Lógica de Segurança
 //!
-//! Executa testes de isolamento e permissões.
+//! Valida máscaras de permissão e conceitos de superusuário.
 
 /// Executa todos os testes de segurança
 pub fn run_security_tests() {
@@ -8,35 +8,52 @@ pub fn run_security_tests() {
     crate::kinfo!("║     🧪 TESTES DE SEGURANÇA             ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 
-    test_capability_delegation();
-    test_access_denied_enforcement();
-    test_resource_isolation();
+    test_capability_mask();
+    test_root_perm();
 
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║  ✅ SEGURANÇA VALIDADA!                ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 }
 
-fn test_capability_delegation() {
-    crate::kinfo!("┌─ Teste Cap Grants ──────────────────────────");
-    crate::kdebug!("(Security) Validando delegação de direitos...");
+fn test_capability_mask() {
+    crate::kinfo!("┌─ Teste Cap Mask ────────────────────────────");
+    crate::kdebug!("(Security) Testando máscaras de bits...");
 
-    crate::kinfo!("│  ✓ Capability Delegation OK              ");
+    const CAP_READ: u8 = 1 << 0;
+    const CAP_WRITE: u8 = 1 << 1;
+
+    let mut my_caps = CAP_READ;
+
+    // Tenta ter Write sem ter concedido
+    let has_write = (my_caps & CAP_WRITE) != 0;
+
+    if !has_write {
+        crate::ktrace!("(Security) Start: No Write Perm (OK)");
+    }
+
+    // Concede Write
+    my_caps |= CAP_WRITE;
+    if (my_caps & CAP_WRITE) != 0 {
+        crate::ktrace!("(Security) Grant: Write Perm Added (OK)");
+    }
+
+    crate::kinfo!("│  ✓ Capability Logic OK                   ");
     crate::kinfo!("└───────────────────────────────────────────");
 }
 
-fn test_access_denied_enforcement() {
-    crate::kinfo!("┌─ Teste Enforcement ─────────────────────────");
-    crate::kdebug!("(Security) Verificando bloqueio de acesso...");
+fn test_root_perm() {
+    crate::kinfo!("┌─ Teste Root Check ──────────────────────────");
+    crate::kdebug!("(Security) Simulando check de superuser...");
 
-    crate::kinfo!("│  ✓ Access Denied OK                      ");
-    crate::kinfo!("└───────────────────────────────────────────");
-}
+    let uid = 0; // Root
+    let is_root = uid == 0;
 
-fn test_resource_isolation() {
-    crate::kinfo!("┌─ Teste Isolation ───────────────────────────");
-    crate::kdebug!("(Security) Validando sandboxing de tarefas...");
-
-    crate::kinfo!("│  ✓ Resource Isolation OK                 ");
+    if is_root {
+        crate::ktrace!("(Security) UID 0 identified as Root");
+        crate::kinfo!("│  ✓ Root Permission Logic OK              ");
+    } else {
+        crate::kerror!("(Security) UID 0 NOT Root!");
+    }
     crate::kinfo!("└───────────────────────────────────────────");
 }

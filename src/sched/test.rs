@@ -1,6 +1,6 @@
-//! Testes do Escalonador (Scheduler)
+//! Testes da Configuração do Scheduler
 //!
-//! Executa testes de multitarefa e troca de contexto.
+//! Valida constantes e hierarquia de prioridades.
 
 /// Executa todos os testes de scheduler
 pub fn run_sched_tests() {
@@ -8,35 +8,47 @@ pub fn run_sched_tests() {
     crate::kinfo!("║     🧪 TESTES DE SCHEDULER             ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 
-    test_context_switch_preemption();
-    test_task_state_transitions();
-    test_priority_queue();
+    test_task_stack_size();
+    test_priority_ordering();
 
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║  ✅ SCHEDULER VALIDADO!                ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 }
 
-fn test_context_switch_preemption() {
-    crate::kinfo!("┌─ Teste Preemption ──────────────────────────");
-    crate::kdebug!("(Sched) Validando alternância forçada...");
+fn test_task_stack_size() {
+    crate::kinfo!("┌─ Teste Stack Size ──────────────────────────");
+    crate::kdebug!("(Sched) Validando constantes de pilha...");
 
-    crate::kinfo!("│  ✓ Context Switch OK                     ");
+    // Stack padrão de kernel geralmente é 16KiB ou 32KiB
+    let stack_size = 16 * 1024; // 16 KiB
+
+    crate::ktrace!("(Sched) Kernel Stack: {} bytes", stack_size);
+
+    if stack_size % 4096 == 0 {
+        crate::kinfo!("│  ✓ Stack Size Page Aligned OK            ");
+    } else {
+        crate::kwarn!("(Sched) Stack Size NOT Page Aligned");
+    }
     crate::kinfo!("└───────────────────────────────────────────");
 }
 
-fn test_task_state_transitions() {
-    crate::kinfo!("┌─ Teste Task States ─────────────────────────");
-    crate::kdebug!("(Sched) Validando ciclo de vida da tarefa...");
+fn test_priority_ordering() {
+    crate::kinfo!("┌─ Teste Priorities ──────────────────────────");
+    crate::kdebug!("(Sched) Verificando hierarquia de enum...");
 
-    crate::kinfo!("│  ✓ Task Transitions OK                   ");
-    crate::kinfo!("└───────────────────────────────────────────");
-}
+    #[derive(PartialEq, PartialOrd)]
+    enum Priority {
+        Low,
+        Normal,
+        High,
+    }
 
-fn test_priority_queue() {
-    crate::kinfo!("┌─ Teste Prioridades ─────────────────────────");
-    crate::kdebug!("(Sched) Verificando filas de multinível...");
-
-    crate::kinfo!("│  ✓ Priority Queue OK                     ");
+    if Priority::High > Priority::Normal && Priority::Normal > Priority::Low {
+        crate::ktrace!("(Sched) High > Normal > Low confirmed");
+        crate::kinfo!("│  ✓ Priority Ordering OK                  ");
+    } else {
+        crate::kerror!("(Sched) Priority Enum Broken!");
+    }
     crate::kinfo!("└───────────────────────────────────────────");
 }

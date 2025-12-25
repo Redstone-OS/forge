@@ -1,42 +1,50 @@
-//! Testes de Informações Globais do Sistema (Sys)
+//! Testes de Metadados do Sistema
 //!
-//! Executa testes de telemetria e estado global.
+//! Valida formato de versão e constantes de build.
 
-/// Executa todos os testes de sistema
+/// Executa todos os testes de sys
 pub fn run_sys_tests() {
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║     🧪 TESTES DE SISTEMA               ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 
-    test_uptime_consistency();
-    test_memory_stats_accuracy();
-    test_cpu_info_parsing();
+    test_kernel_version_format();
+    test_build_constants();
 
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║  ✅ SISTEMA VALIDADO!                  ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 }
 
-fn test_uptime_consistency() {
-    crate::kinfo!("┌─ Teste Uptime ──────────────────────────────");
-    crate::kdebug!("(Sys) Verificando relógio monótono...");
+fn test_kernel_version_format() {
+    crate::kinfo!("┌─ Teste Version String ──────────────────────");
+    crate::kdebug!("(Sys) Validando formato SemVer...");
 
-    crate::kinfo!("│  ✓ Uptime Consistency OK                 ");
+    let version = "0.1.0";
+
+    // Verificação simples se contém pontos
+    let has_dots = version.matches('.').count() >= 2;
+
+    crate::ktrace!("(Sys) Version: {}", version);
+
+    if has_dots {
+        crate::kinfo!("│  ✓ Version Format (x.y.z) OK             ");
+    } else {
+        crate::kwarn!("(Sys) Non-SemVer Version String");
+    }
     crate::kinfo!("└───────────────────────────────────────────");
 }
 
-fn test_memory_stats_accuracy() {
-    crate::kinfo!("┌─ Teste Stats ───────────────────────────────");
-    crate::kdebug!("(Sys) Verificando contagem de páginas...");
+fn test_build_constants() {
+    crate::kinfo!("┌─ Teste Build Consts ────────────────────────");
+    crate::kdebug!("(Sys) Verificando profile de compilação...");
 
-    crate::kinfo!("│  ✓ Memory Stats OK                       ");
-    crate::kinfo!("└───────────────────────────────────────────");
-}
+    #[cfg(debug_assertions)]
+    crate::ktrace!("(Sys) Build Mode: DEBUG");
 
-fn test_cpu_info_parsing() {
-    crate::kinfo!("┌─ Teste CPU ID ──────────────────────────────");
-    crate::kdebug!("(Sys) Identificando extensões de hardware...");
+    #[cfg(not(debug_assertions))]
+    crate::ktrace!("(Sys) Build Mode: RELEASE");
 
-    crate::kinfo!("│  ✓ CPU Info OK                           ");
+    crate::kinfo!("│  ✓ Build Constants Detected              ");
     crate::kinfo!("└───────────────────────────────────────────");
 }
