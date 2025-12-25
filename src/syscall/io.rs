@@ -5,7 +5,6 @@
 
 use super::abi::IoVec;
 use super::error::{SysError, SysResult};
-use super::handle::HandleType;
 use core::slice;
 
 /// Escrita vetorizada em um handle.

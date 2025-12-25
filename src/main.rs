@@ -13,7 +13,7 @@
 #![feature(asm_const)]
 
 // Importar a biblioteca do kernel.
-use forge::{core as kernel_core, mm};
+use forge::{core as kernel_core};
 
 // Habilitar alocação
 extern crate alloc;

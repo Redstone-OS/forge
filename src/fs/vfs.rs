@@ -4,7 +4,6 @@
 //! Não tenta ser um VFS completo POSIX neste estágio (isso é tarefa da libstd/userspace).
 
 use crate::sync::Mutex;
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -80,7 +79,7 @@ impl Vfs {
             return Ok(root.clone());
         }
 
-        let mut current = root.clone();
+        let current = root.clone();
 
         // Simplificado: normalizar path removendo / inicial
         let path_trimmed = path.trim_start_matches('/');

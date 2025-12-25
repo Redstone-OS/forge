@@ -4,7 +4,6 @@
 //! Essencial para `stdin`, `stdout`, `stderr`.
 
 use super::vfs::{NodeType, VfsError, VfsHandle, VfsNode};
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 

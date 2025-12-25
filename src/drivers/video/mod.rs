@@ -7,7 +7,7 @@ pub mod font;
 pub mod font_data;
 pub mod framebuffer;
 
-use crate::core::handoff::{FramebufferInfo, PixelFormat};
+use crate::core::handoff::{FramebufferInfo};
 use crate::mm::vmm;
 
 /// Informações globais do Framebuffer ativo.

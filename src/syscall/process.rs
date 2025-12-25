@@ -4,7 +4,6 @@
 
 use super::error::{SysError, SysResult};
 use crate::sched::scheduler::SCHEDULER;
-use crate::sched::task::TaskState;
 
 /// Encerra o processo atual.
 ///

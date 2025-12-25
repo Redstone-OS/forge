@@ -4,7 +4,7 @@
 //! Fundamental para carregar o primeiro processo (init).
 
 use super::vfs::{NodeType, VfsError, VfsHandle, VfsNode};
-use alloc::string::{String, ToString};
+use alloc::string::{String};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::str;

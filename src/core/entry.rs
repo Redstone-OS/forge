@@ -11,7 +11,6 @@
 use crate::arch::platform::Cpu;
 use crate::arch::traits::CpuOps;
 use crate::core::handoff::{BootInfo, BOOT_MAGIC};
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// Função principal do Kernel (High-Level).

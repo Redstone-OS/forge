@@ -23,7 +23,7 @@ pub fn run_arch_tests() {
 fn test_gdt_structure() {
     crate::kdebug!("(Arch) Validando limites e seletores da GDT...");
 
-    use crate::arch::platform::gdt;
+    
 
     // Em x86_64, a GDT tem tamanhos fixos.
     // O Selector 0 (Null) deve ser sempre 0.

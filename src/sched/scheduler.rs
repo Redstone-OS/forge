@@ -13,7 +13,7 @@
 //! Usamos Box em vez de Arc porque Arc::new causa GPF 0x32 (Invalid Opcode)
 //! devido a problemas com a inicialização do contador atômico em bare-metal.
 
-use super::task::{PinnedTask, Task, TaskState};
+use super::task::{PinnedTask, TaskState};
 use crate::sync::Mutex;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;

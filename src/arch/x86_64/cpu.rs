@@ -79,15 +79,15 @@ impl X64Cpu {
         asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
         cr0 &= !(1 << 2); // Clear EM
         cr0 &= !(1 << 3); // Clear TS
-        cr0 |= (1 << 1); // Set MP
+        cr0 |= 1 << 1; // Set MP
         asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
 
         // 2. Configurar CR4
         // - Setar OSFXSR (OS Support for FXSAVE/FXRSTOR) -> Bit 9
         // - Setar OSXMMEXCPT (OS Support for Unmasked SIMD FPU Exceptions) -> Bit 10
         asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
-        cr4 |= (1 << 9); // Set OSFXSR
-        cr4 |= (1 << 10); // Set OSXMMEXCPT
+        cr4 |= 1 << 9; // Set OSFXSR
+        cr4 |= 1 << 10; // Set OSXMMEXCPT
         asm!("mov cr4, {}", in(reg) cr4, options(nomem, nostack, preserves_flags));
 
         // 3. Inicializar unidade FPU (x87)

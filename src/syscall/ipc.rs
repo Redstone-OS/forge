@@ -4,9 +4,7 @@
 //! Modelo: portas são endpoints para filas de mensagens.
 
 use super::error::{SysError, SysResult};
-use crate::ipc::{Message, PortHandle};
-use crate::security::capability::CapRights;
-use alloc::vec::Vec;
+use crate::ipc::{PortHandle};
 
 /// Capacidade padrão de uma porta.
 const DEFAULT_PORT_CAPACITY: usize = 32;

@@ -2,7 +2,6 @@
 //!
 //! Útil para gerenciamento de recursos (PMM, PIDs, Inodes).
 
-use core::ops::{BitAnd, BitOr, Not};
 
 pub struct Bitmap<'a> {
     data: &'a mut [u64],

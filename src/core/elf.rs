@@ -6,7 +6,6 @@
 use crate::mm::pmm::FRAME_ALLOCATOR;
 use crate::mm::vmm::{self, PAGE_PRESENT, PAGE_USER, PAGE_WRITABLE};
 use crate::sys::Errno;
-use alloc::vec::Vec;
 
 // Constantes ELF
 const ELF_MAGIC: [u8; 4] = [0x7F, b'E', b'L', b'F'];
