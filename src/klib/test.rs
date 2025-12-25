@@ -17,7 +17,6 @@ pub fn run_klib_tests() {
 }
 
 fn test_align_up() {
-    crate::kinfo!("┌─ Teste Align Up ────────────────────────────");
     crate::kdebug!("(klib) Verificando cálculo de alinhamento...");
 
     // Implementação inline para teste
@@ -32,15 +31,13 @@ fn test_align_up() {
     crate::ktrace!("(klib) align_up({}, {}) = {}", addr, align, aligned);
 
     if aligned == 8192 {
-        crate::kinfo!("│  ✓ Align Up Logic OK                     ");
+        crate::kinfo!("(klib) ✓ Align Up Logic OK");
     } else {
         crate::kerror!("(klib) Align Up Failed! Expected 8192");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_bit_manipulation() {
-    crate::kinfo!("┌─ Teste Bit Ops ─────────────────────────────");
     crate::kdebug!("(klib) Testando set/clear bits...");
 
     let mut val = 0u64;
@@ -58,6 +55,5 @@ fn test_bit_manipulation() {
         crate::ktrace!("(klib) Bit 3 CLEAR verified");
     }
 
-    crate::kinfo!("│  ✓ Bit Manipulation OK                   ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(klib) ✓ Bit Manipulation OK");
 }

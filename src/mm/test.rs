@@ -27,14 +27,13 @@ pub fn run_memory_tests() {
 
 /// Teste básico do PMM: alocar e desalocar frames
 fn test_pmm_basic() {
-    crate::kinfo!("┌─ Teste PMM ─────────────────────────────────");
     crate::kdebug!("(PMM) Teste: alocando 10 frames...");
 
     let mut pmm = pmm::FRAME_ALLOCATOR.lock();
     let mut frames = [0u64; 10];
 
     for i in 0..10 {
-        crate::ktrace!("(PMM) Teste: alocando frame {}...", i);
+        // crate::ktrace!("(PMM) Teste: alocando frame {}...", i); // Silencioso
         let frame = pmm.allocate_frame();
 
         if frame.is_none() {
@@ -51,7 +50,7 @@ fn test_pmm_basic() {
             panic!("Teste PMM falhou: alinhamento");
         }
 
-        crate::ktrace!("(PMM) Teste: frame {} = {:#x}", i, f.addr);
+        // crate::ktrace!("(PMM) Teste: frame {} = {:#x}", i, f.addr); // Silencioso
     }
 
     crate::kdebug!("(PMM) Teste: 10 frames alocados OK");
@@ -59,19 +58,16 @@ fn test_pmm_basic() {
 
     // Desalocar
     for (i, &addr) in frames.iter().enumerate() {
-        crate::ktrace!("(PMM) Teste: desalocando frame {} ({:#x})...", i, addr);
+        // crate::ktrace!("(PMM) Teste: desalocando frame {} ({:#x})...", i, addr); // Silencioso
         pmm.deallocate_frame((addr / FRAME_SIZE as u64) as usize);
     }
 
     crate::kdebug!("(PMM) Teste: desalocação OK");
-    crate::kinfo!("│  ✓ PMM alloc/dealloc OK                  ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(PMM) ✓ PMM alloc/dealloc OK");
 }
 
 /// Teste básico do VMM: tradução de endereços
 fn test_vmm_translate() {
-    crate::kinfo!("┌─ Teste VMM ───────────────────────────────");
-
     // Testar tradução de endereço do kernel (deve funcionar)
     let kernel_addr: u64 = 0xffffffff80000000;
     crate::kdebug!(
@@ -84,11 +80,11 @@ fn test_vmm_translate() {
     match result {
         Some(phys) => {
             crate::kdebug!("(VMM) Teste: {:#x} -> phys {:#x}", kernel_addr, phys);
-            crate::kinfo!("│  ✓ VMM translate (kernel) OK            ");
+            crate::kinfo!("(VMM) ✓ VMM translate (kernel) OK");
         }
         None => {
             crate::kwarn!("(VMM) Teste: kernel addr não mapeado (pode ser OK)");
-            crate::kinfo!("│  ⚠ VMM translate (kernel) não mapeado   ");
+            crate::kinfo!("(VMM) ⚠ VMM translate (kernel) não mapeado");
         }
     }
 
@@ -101,20 +97,17 @@ fn test_vmm_translate() {
     match result {
         Some(phys) => {
             crate::kdebug!("(VMM) Teste: {:#x} -> phys {:#x}", heap_addr, phys);
-            crate::kinfo!("│  ✓ VMM translate (heap) OK             ");
+            crate::kinfo!("(VMM) ✓ VMM translate (heap) OK");
         }
         None => {
             crate::kerror!("(VMM) FALHA: heap addr não mapeado!");
             panic!("Teste VMM falhou: heap não mapeado");
         }
     }
-
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 /// Teste básico do Heap: alocar e verificar integridade
 fn test_heap_basic() {
-    crate::kinfo!("┌─ Teste Heap ──────────────────────────────────────────");
     crate::kdebug!("(Heap) Teste: alocando Vec<u64> com 1024 elementos...");
 
     use alloc::vec::Vec;
@@ -126,9 +119,9 @@ fn test_heap_basic() {
     // Preencher
     for i in 0..1024 {
         v.push(i as u64);
-        if i % 256 == 0 {
+        /* if i % 256 == 0 {
             crate::ktrace!("(Heap) Teste: preenchido até índice {}", i);
-        }
+        } */
     }
 
     crate::kdebug!("(Heap) Teste: preenchimento OK, verificando integridade...");
@@ -149,14 +142,11 @@ fn test_heap_basic() {
     let s = String::from("Redstone OS - Teste de Memória OK!");
     crate::ktrace!("(Heap) Teste: String OK, len={}", s.len());
 
-    crate::kinfo!("│  ✓ Heap alloc/integrity OK                  ");
-    crate::kinfo!("└─────────────────────────────────────────────");
+    crate::kinfo!("(Heap) ✓ Heap alloc/integrity OK");
 }
 
 /// Teste de phys_to_virt
 fn test_phys_to_virt() {
-    crate::kinfo!("┌─ Teste phys_to_virt ─────────────────────────");
-
     use crate::mm::addr;
 
     // Testar endereço dentro do identity map
@@ -212,6 +202,5 @@ fn test_phys_to_virt() {
         panic!("Teste frame_align falhou");
     }
 
-    crate::kinfo!("│  ✓ phys_to_virt/virt_to_phys OK          ");
-    crate::kinfo!("└─────────────────────────────────────────────");
+    crate::kinfo!("(Addr) ✓ phys_to_virt/virt_to_phys OK");
 }

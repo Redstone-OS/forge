@@ -17,7 +17,6 @@ pub fn run_syscall_tests() {
 }
 
 fn test_syscall_table_bounds() {
-    crate::kinfo!("┌─ Teste Table Bounds ────────────────────────");
     crate::kdebug!("(Syscall) Verificando limite máximo de ID...");
 
     let max_syscalls = 512;
@@ -27,15 +26,13 @@ fn test_syscall_table_bounds() {
 
     if test_id >= max_syscalls {
         crate::ktrace!("(Syscall) ID {} Rejected (Correct)", test_id);
-        crate::kinfo!("│  ✓ Bounding Check Logic OK               ");
+        crate::kinfo!("(Syscall) ✓ Bounding Check Logic OK");
     } else {
         crate::kerror!("(Syscall) Out-of-bounds ID Accepted!");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_error_codes() {
-    crate::kinfo!("┌─ Teste Error Codes ─────────────────────────");
     crate::kdebug!("(Syscall) Validando códigos negativos (errno)...");
 
     // Padrão Linux/Unix: erros são retornados como -errno
@@ -50,6 +47,5 @@ fn test_error_codes() {
         crate::ktrace!("(Syscall) < 0 treated as Error");
     }
 
-    crate::kinfo!("│  ✓ Error Code Convention OK              ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(Syscall) ✓ Error Code Convention OK");
 }

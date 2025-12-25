@@ -34,3 +34,5 @@ pub mod time;
 // Re-exports principais
 pub use dispatch::syscall_dispatcher;
 pub use error::{SysError, SysResult};
+
+pub mod test;

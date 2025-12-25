@@ -17,7 +17,6 @@ pub fn run_security_tests() {
 }
 
 fn test_capability_mask() {
-    crate::kinfo!("┌─ Teste Cap Mask ────────────────────────────");
     crate::kdebug!("(Security) Testando máscaras de bits...");
 
     const CAP_READ: u8 = 1 << 0;
@@ -38,12 +37,10 @@ fn test_capability_mask() {
         crate::ktrace!("(Security) Grant: Write Perm Added (OK)");
     }
 
-    crate::kinfo!("│  ✓ Capability Logic OK                   ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(Security) ✓ Capability Logic OK");
 }
 
 fn test_root_perm() {
-    crate::kinfo!("┌─ Teste Root Check ──────────────────────────");
     crate::kdebug!("(Security) Simulando check de superuser...");
 
     let uid = 0; // Root
@@ -51,9 +48,8 @@ fn test_root_perm() {
 
     if is_root {
         crate::ktrace!("(Security) UID 0 identified as Root");
-        crate::kinfo!("│  ✓ Root Permission Logic OK              ");
+        crate::kinfo!("(Security) ✓ Root Permission Logic OK");
     } else {
         crate::kerror!("(Security) UID 0 NOT Root!");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }

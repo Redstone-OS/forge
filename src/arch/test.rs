@@ -12,6 +12,7 @@ pub fn run_arch_tests() {
     test_gdt_structure();
     test_idt_entry();
     test_rflags_state();
+    test_cpu_info();
 
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║  ✅ ARQUITETURA VALIDADA!              ║");
@@ -20,8 +21,7 @@ pub fn run_arch_tests() {
 
 /// Verifica a estrutura e limites da GDT
 fn test_gdt_structure() {
-    crate::kinfo!("┌─ Teste GDT Structure ───────────────────────");
-    crate::kdebug!("(Arch) Validando limites e seletores...");
+    crate::kdebug!("(Arch) Validando limites e seletores da GDT...");
 
     use crate::arch::platform::gdt;
 
@@ -37,14 +37,12 @@ fn test_gdt_structure() {
     crate::ktrace!("(Arch) User Data    [24] OK");
     crate::ktrace!("(Arch) User Code    [32] OK");
 
-    crate::kinfo!("│  ✓ GDT Structure OK                      ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(Arch) ✓ GDT Structure OK");
 }
 
 /// Verifica se entradas críticas da IDT estão presentes
 fn test_idt_entry() {
-    crate::kinfo!("┌─ Teste IDT Entry ───────────────────────────");
-    crate::kdebug!("(Arch) Verificando vetores de exceção...");
+    crate::kdebug!("(Arch) Verificando vetores de exceção (IDT)...");
 
     // Testar se vetores críticos estão definidos
     // 0: Divide by Zero
@@ -55,13 +53,11 @@ fn test_idt_entry() {
     crate::ktrace!("(Arch) Vec 14 (PageFault) PRESENT");
     crate::ktrace!("(Arch) Vec  3 (Breakpoint) PRESENT");
 
-    crate::kinfo!("│  ✓ IDT Entry Check OK                    ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(Arch) ✓ IDT Entry Check OK");
 }
 
 /// Valida o estado inicial dos registradores de flags
 fn test_rflags_state() {
-    crate::kinfo!("┌─ Teste RFLAGS State ────────────────────────");
     crate::kdebug!("(Arch) Verificando flags da CPU...");
 
     // O kernel deve rodar com interrupts desabilitados durante o boot inicial
@@ -78,6 +74,48 @@ fn test_rflags_state() {
         crate::kwarn!("(Arch) Interrupts ENABLED (Warning)");
     }
 
-    crate::kinfo!("│  ✓ RFLAGS State OK                       ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(Arch) ✓ RFLAGS State OK");
+}
+
+/// Identifica informações do processador via CPUID
+fn test_cpu_info() {
+    use crate::arch::platform::{Cpu, CpuidResult};
+
+    crate::kinfo!("(Arch) Coletando informações da CPU...");
+
+    // Leaf 0: Vendor String
+    // EBX, EDX, ECX contém a string ASCII (ex: "GenuineIntel")
+    let info: CpuidResult = Cpu::cpuid(0, 0);
+
+    let mut vendor_buf = [0u8; 12];
+
+    // EBX (bytes 0-3)
+    vendor_buf[0] = (info.ebx & 0xFF) as u8;
+    vendor_buf[1] = ((info.ebx >> 8) & 0xFF) as u8;
+    vendor_buf[2] = ((info.ebx >> 16) & 0xFF) as u8;
+    vendor_buf[3] = ((info.ebx >> 24) & 0xFF) as u8;
+
+    // EDX (bytes 4-7)
+    vendor_buf[4] = (info.edx & 0xFF) as u8;
+    vendor_buf[5] = ((info.edx >> 8) & 0xFF) as u8;
+    vendor_buf[6] = ((info.edx >> 16) & 0xFF) as u8;
+    vendor_buf[7] = ((info.edx >> 24) & 0xFF) as u8;
+
+    // ECX (bytes 8-11) - Note a ordem: EBX -> EDX -> ECX
+    vendor_buf[8] = (info.ecx & 0xFF) as u8;
+    vendor_buf[9] = ((info.ecx >> 8) & 0xFF) as u8;
+    vendor_buf[10] = ((info.ecx >> 16) & 0xFF) as u8;
+    vendor_buf[11] = ((info.ecx >> 24) & 0xFF) as u8;
+
+    if let Ok(vendor) = core::str::from_utf8(&vendor_buf) {
+        crate::kinfo!("(Arch) CPU Vendor: {}", vendor);
+    } else {
+        crate::kwarn!("(Arch) CPU Vendor: (Non-ASCII)");
+    }
+
+    // Leaf 1: Features (simples check de sanidade)
+    let features = Cpu::cpuid(1, 0);
+    crate::ktrace!("(Arch) CPU Family/Model: {:x}", features.eax);
+
+    crate::kinfo!("(Arch) ✓ CPU Info Retrieved");
 }

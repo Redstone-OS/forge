@@ -236,4 +236,7 @@ pub unsafe fn init() {
     );
 
     crate::kinfo!("(GDT) Inicializado");
+
+    // 4. Inicializar FPU/SSE (Essencial para Rust: memcpy/String)
+    crate::arch::x86_64::cpu::X64Cpu::init_sse();
 }

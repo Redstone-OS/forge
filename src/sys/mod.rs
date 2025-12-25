@@ -6,3 +6,5 @@ pub mod error;
 pub mod types;
 
 pub use error::Errno;
+
+pub mod test;

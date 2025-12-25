@@ -20,6 +20,32 @@ const MSR_APIC_BSP_FLAG: u64 = 1 << 8;
 pub struct X64Cpu;
 
 impl X64Cpu {
+    /// Executa a instrução CPUID.
+    ///
+    /// # Safety
+    /// Seguro do ponto de vista de memória, mas retorna dados crus do hardware.
+    pub fn cpuid(leaf: u32, subleaf: u32) -> CpuidResult {
+        let eax: u32;
+        let ebx: u32;
+        let ecx: u32;
+        let edx: u32;
+
+        unsafe {
+            asm!(
+                "push rbx",
+                "cpuid",
+                "mov {0:e}, ebx",
+                "pop rbx",
+                out(reg) ebx,
+                inout("eax") leaf => eax,
+                inout("ecx") subleaf => ecx,
+                out("edx") edx,
+                options(nomem, preserves_flags),
+            );
+        }
+        CpuidResult { eax, ebx, ecx, edx }
+    }
+
     /// Lê um Model Specific Register (MSR).
     ///
     /// # Safety
@@ -36,6 +62,53 @@ impl X64Cpu {
         );
         ((high as u64) << 32) | (low as u64)
     }
+
+    /// Inicializa a FPU/SSE (Floating Point Unit / Streaming SIMD Extensions).
+    ///
+    /// Essencial para que o compilador Rust possa usar instruções otimizadas (XMM)
+    /// em operações de memória (memcpy, memset) e formatação de strings,
+    /// prevenindo exceções #UD (Invalid Opcode).
+    pub unsafe fn init_sse() {
+        let mut cr0: u64;
+        let mut cr4: u64;
+
+        // 1. Configurar CR0
+        // - Limpar EM (Emulation) -> Bit 2
+        // - Limpar TS (Task Switched) -> Bit 3 (Evita exceção #NM em first use)
+        // - Setar MP (Monitor Coprocessor) -> Bit 1
+        asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+        cr0 &= !(1 << 2); // Clear EM
+        cr0 &= !(1 << 3); // Clear TS
+        cr0 |= (1 << 1); // Set MP
+        asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
+
+        // 2. Configurar CR4
+        // - Setar OSFXSR (OS Support for FXSAVE/FXRSTOR) -> Bit 9
+        // - Setar OSXMMEXCPT (OS Support for Unmasked SIMD FPU Exceptions) -> Bit 10
+        asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
+        cr4 |= (1 << 9); // Set OSFXSR
+        cr4 |= (1 << 10); // Set OSXMMEXCPT
+        asm!("mov cr4, {}", in(reg) cr4, options(nomem, nostack, preserves_flags));
+
+        // 3. Inicializar unidade FPU (x87)
+        asm!("fninit", options(nomem, nostack, preserves_flags));
+
+        // 4. Inicializar unidade SSE (MXCSR)
+        // Valor padrão 0x1F80: Todas as exceções mascaradas, Round to Nearest, Flush to Zero off
+        let mxcsr: u32 = 0x1F80;
+        asm!("ldmxcsr [{}]", in(reg) &mxcsr, options(nostack, preserves_flags));
+
+        crate::ktrace!("(Arch) FPU/SSE habilitado (CR0.MP=1, CR4.OSFXSR=1, MXCSR=0x1F80)");
+    }
+}
+
+/// Resultado de uma execução do CPUID (EAX, EBX, ECX, EDX).
+#[derive(Debug, Clone, Copy)]
+pub struct CpuidResult {
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
 }
 
 impl CpuOps for X64Cpu {

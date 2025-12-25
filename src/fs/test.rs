@@ -17,7 +17,6 @@ pub fn run_fs_tests() {
 }
 
 fn test_path_canonicalization() {
-    crate::kinfo!("┌─ Teste Path Clean ──────────────────────────");
     crate::kdebug!("(FS) Normalizando caminhos sujos...");
 
     // Simulando função 'clean_path'
@@ -28,12 +27,10 @@ fn test_path_canonicalization() {
     crate::ktrace!("(FS) In:  '{}'", input);
     crate::ktrace!("(FS) Out: '{}'", expected);
 
-    crate::kinfo!("│  ✓ Path Canonicalization OK              ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(FS) ✓ Path Canonicalization OK");
 }
 
 fn test_filename_constraints() {
-    crate::kinfo!("┌─ Teste Filename Limits ─────────────────────");
     crate::kdebug!("(FS) Verificando limites de nome...");
 
     let max_len = 255;
@@ -48,6 +45,5 @@ fn test_filename_constraints() {
         crate::ktrace!("(FS) Bad name (>255) rejected check");
     }
 
-    crate::kinfo!("│  ✓ Filename Constraints OK               ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(FS) ✓ Filename Constraints OK");
 }

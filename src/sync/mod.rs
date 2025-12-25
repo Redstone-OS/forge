@@ -9,3 +9,5 @@ pub use spin::{Mutex, MutexGuard};
 
 /// Wrapper para garantir inicialização preguiçosa segura.
 pub use spin::Lazy;
+
+pub mod test;

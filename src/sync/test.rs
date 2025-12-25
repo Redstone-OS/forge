@@ -17,7 +17,6 @@ pub fn run_sync_tests() {
 }
 
 fn test_spinlock_api() {
-    crate::kinfo!("┌─ Teste Spinlock API ────────────────────────");
     crate::kdebug!("(Sync) Simulando lock/unlock single-thread...");
 
     // Simula uma estrutura simples de Lock
@@ -32,13 +31,11 @@ fn test_spinlock_api() {
     crate::ktrace!("(Sync) Lock Released (State: free)");
 
     if !locked {
-        crate::kinfo!("│  ✓ Spinlock State Logic OK               ");
+        crate::kinfo!("(Sync) ✓ Spinlock State Logic OK");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_atomic_alignment() {
-    crate::kinfo!("┌─ Teste Atomic Align ────────────────────────");
     crate::kdebug!("(Sync) Verificando alinhamento natural...");
 
     use core::sync::atomic::AtomicU64;
@@ -47,9 +44,8 @@ fn test_atomic_alignment() {
     crate::ktrace!("(Sync) AtomicU64 Align: {} bytes", align);
 
     if align == 8 {
-        crate::kinfo!("│  ✓ Atomic 64-bit Alignment OK            ");
+        crate::kinfo!("(Sync) ✓ Atomic 64-bit Alignment OK");
     } else {
         crate::kwarn!("(Sync) Atomic Alignment Suboptimal: {}", align);
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }

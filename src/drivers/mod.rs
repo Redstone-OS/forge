@@ -6,6 +6,7 @@
 pub mod console; // Framebuffer Text Console
 pub mod pic;
 pub mod serial; // UART 16550 (Logs)
+pub mod test;
 pub mod timer; // PIT 8254 // 8259 PIC
 pub mod video;
 

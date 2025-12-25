@@ -17,7 +17,6 @@ pub fn run_sched_tests() {
 }
 
 fn test_task_stack_size() {
-    crate::kinfo!("┌─ Teste Stack Size ──────────────────────────");
     crate::kdebug!("(Sched) Validando constantes de pilha...");
 
     // Stack padrão de kernel geralmente é 16KiB ou 32KiB
@@ -26,15 +25,13 @@ fn test_task_stack_size() {
     crate::ktrace!("(Sched) Kernel Stack: {} bytes", stack_size);
 
     if stack_size % 4096 == 0 {
-        crate::kinfo!("│  ✓ Stack Size Page Aligned OK            ");
+        crate::kinfo!("(Sched) ✓ Stack Size Page Aligned OK");
     } else {
         crate::kwarn!("(Sched) Stack Size NOT Page Aligned");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_priority_ordering() {
-    crate::kinfo!("┌─ Teste Priorities ──────────────────────────");
     crate::kdebug!("(Sched) Verificando hierarquia de enum...");
 
     #[derive(PartialEq, PartialOrd)]
@@ -46,9 +43,8 @@ fn test_priority_ordering() {
 
     if Priority::High > Priority::Normal && Priority::Normal > Priority::Low {
         crate::ktrace!("(Sched) High > Normal > Low confirmed");
-        crate::kinfo!("│  ✓ Priority Ordering OK                  ");
+        crate::kinfo!("(Sched) ✓ Priority Ordering OK");
     } else {
         crate::kerror!("(Sched) Priority Enum Broken!");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }

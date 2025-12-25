@@ -16,3 +16,5 @@ pub use x86_64 as platform;
 // Exemplo: arch::cpu::halt();
 pub use platform::Cpu;
 pub use traits::*;
+
+pub mod test;

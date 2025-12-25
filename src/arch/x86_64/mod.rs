@@ -11,6 +11,7 @@ pub mod memory;
 pub mod ports;
 
 // Re-exporta a implementação concreta de CPU para uso genérico
+pub use cpu::CpuidResult;
 pub use cpu::X64Cpu as Cpu;
 
 // Incluir Assembly do Handler de Syscall

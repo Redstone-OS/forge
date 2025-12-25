@@ -17,7 +17,6 @@ pub fn run_ipc_tests() {
 }
 
 fn test_message_header_size() {
-    crate::kinfo!("┌─ Teste Msg Header ──────────────────────────");
     crate::kdebug!("(IPC) Verificando alinhamento do header...");
 
     // Struct fictícia
@@ -33,15 +32,13 @@ fn test_message_header_size() {
     crate::ktrace!("(IPC) Header Size: {} bytes", size);
 
     if size == 32 {
-        crate::kinfo!("│  ✓ IPC Header Packed/Aligned OK          ");
+        crate::kinfo!("(IPC) ✓ IPC Header Packed/Aligned OK");
     } else {
         crate::kerror!("(IPC) Unexpected Header Size: {}", size);
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_port_id_logic() {
-    crate::kinfo!("┌─ Teste Port IDs ────────────────────────────");
     crate::kdebug!("(IPC) Validando geração de IDs...");
 
     // IDs de porta não podem ser 0 (reservado/nulo)
@@ -49,9 +46,8 @@ fn test_port_id_logic() {
 
     if next_id != 0 {
         crate::ktrace!("(IPC) Generated ID {} (Valid)", next_id);
-        crate::kinfo!("│  ✓ Port ID Logic OK                      ");
+        crate::kinfo!("(IPC) ✓ Port ID Logic OK");
     } else {
         crate::kerror!("(IPC) Generated Null ID!");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }

@@ -17,7 +17,6 @@ pub fn run_driver_tests() {
 }
 
 fn test_pic_remap() {
-    crate::kinfo!("┌─ Teste PIC Remap ───────────────────────────");
     crate::kdebug!("(Driver) Verificando offsets do PIC...");
 
     // O PIC deve ser remapeado para não conflitar com exceções da CPU (0-31)
@@ -29,15 +28,13 @@ fn test_pic_remap() {
     crate::ktrace!("(Driver) Slave Offset:  {}", slave_offset);
 
     if master_offset >= 32 && slave_offset >= 32 {
-        crate::kinfo!("│  ✓ PIC Offsets OK (Safe Range)           ");
+        crate::kinfo!("(Driver) ✓ PIC Offsets OK (Safe Range)");
     } else {
         crate::kerror!("(Driver) PIC Offset CONFLICT with CPU Excs");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_vga_buffer_size() {
-    crate::kinfo!("┌─ Teste VGA Buffer ──────────────────────────");
     crate::kdebug!("(Driver) Validando cálculo de tamanho de buffer...");
 
     // Simulação de cálculo de tamanho de framebuffer
@@ -51,10 +48,8 @@ fn test_vga_buffer_size() {
     crate::ktrace!("(Driver) Calculated Size: {} bytes", total_size);
 
     if total_size > 0 {
-        crate::kinfo!("│  ✓ VGA Buffer Math OK                    ");
+        crate::kinfo!("(Driver) ✓ VGA Buffer Math OK");
     } else {
         crate::kerror!("(Driver) Invalid Buffer Size");
     }
-
-    crate::kinfo!("└───────────────────────────────────────────");
 }

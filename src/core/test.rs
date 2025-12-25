@@ -14,28 +14,24 @@ pub fn run_core_tests() {
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║  ✅ CORE VALIDADO!                     ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
+    crate::kinfo!("✅ Core Tests Passed!");
 }
 
 fn test_boot_magic() {
-    crate::kinfo!("┌─ Teste Boot Magic ──────────────────────────");
     use crate::core::handoff::BOOT_MAGIC;
-
     crate::kdebug!("(Core) Verificando constante mágica...");
 
     // Teste lógico: A constante deve ser consistente
-    if BOOT_MAGIC == 0xDEADBEEF {
-        crate::ktrace!("(Core) Magic matches 0xDEADBEEF");
-        crate::kinfo!("│  ✓ Boot Magic OK                         ");
+    if BOOT_MAGIC == 0x524544_53544F4E45 {
+        crate::ktrace!("(Core) Magic matches 'REDSTONE'");
+        crate::kinfo!("(Core) ✓ Boot Magic OK");
     } else {
         crate::kerror!("(Core) Magic MISMATCH: {:#x}", BOOT_MAGIC);
         panic!("Core integrity failure");
     }
-
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_kernel_address_space() {
-    crate::kinfo!("┌─ Teste Kernel Address Space ────────────────");
     crate::kdebug!("(Core) Validando layout de memória lógica...");
 
     // Simulação: Testar se KERNEL_START < KERNEL_END
@@ -49,10 +45,8 @@ fn test_kernel_address_space() {
             kernel_base,
             kernel_top_limit
         );
-        crate::kinfo!("│  ✓ Address Space Layout OK               ");
+        crate::kinfo!("(Core) ✓ Address Space Layout OK");
     } else {
         crate::kerror!("(Core) Address Space INVERTED");
     }
-
-    crate::kinfo!("└───────────────────────────────────────────");
 }

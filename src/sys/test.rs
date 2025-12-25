@@ -17,26 +17,23 @@ pub fn run_sys_tests() {
 }
 
 fn test_kernel_version_format() {
-    crate::kinfo!("┌─ Teste Version String ──────────────────────");
     crate::kdebug!("(Sys) Validando formato SemVer...");
 
     let version = "0.1.0";
 
     // Verificação simples se contém pontos
-    let has_dots = version.matches('.').count() >= 2;
+    let has_dots = version.as_bytes().iter().filter(|&&b| b == b'.').count() >= 2;
 
     crate::ktrace!("(Sys) Version: {}", version);
 
     if has_dots {
-        crate::kinfo!("│  ✓ Version Format (x.y.z) OK             ");
+        crate::kinfo!("(Sys) ✓ Version Format (x.y.z) OK");
     } else {
         crate::kwarn!("(Sys) Non-SemVer Version String");
     }
-    crate::kinfo!("└───────────────────────────────────────────");
 }
 
 fn test_build_constants() {
-    crate::kinfo!("┌─ Teste Build Consts ────────────────────────");
     crate::kdebug!("(Sys) Verificando profile de compilação...");
 
     #[cfg(debug_assertions)]
@@ -45,6 +42,5 @@ fn test_build_constants() {
     #[cfg(not(debug_assertions))]
     crate::ktrace!("(Sys) Build Mode: RELEASE");
 
-    crate::kinfo!("│  ✓ Build Constants Detected              ");
-    crate::kinfo!("└───────────────────────────────────────────");
+    crate::kinfo!("(Sys) ✓ Build Constants Detected");
 }

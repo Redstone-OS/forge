@@ -5,6 +5,7 @@
 
 pub mod message;
 pub mod port;
+pub mod test;
 
 pub use message::Message;
 pub use port::{Port, PortHandle, PortStatus};

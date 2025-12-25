@@ -4,6 +4,7 @@
 //! No futuro, conterá a lógica de CSpace (Capability Space) por processo.
 
 pub mod capability;
+pub mod test;
 
 pub use capability::{CapHandle, CapRights, CapType, Capability};
 

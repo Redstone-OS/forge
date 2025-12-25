@@ -3,6 +3,7 @@
 pub mod context;
 pub mod scheduler;
 pub mod task;
+pub mod test;
 
 // Importa o assembly de troca de contexto
 core::arch::global_asm!(include_str!("../arch/x86_64/switch.s"));

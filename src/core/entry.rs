@@ -29,7 +29,9 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 2. Inicializar Sistema de Logs
     // A partir daqui, podemos usar kinfo!, kwarn!, kerror!.
     // O driver serial é inicializado implicitamente na primeira chamada.
-    crate::kinfo!("Redstone OS Kernel (Forge) - Iniciando");
+    crate::kinfo!("╔════════════════════════════════════════╗");
+    crate::kinfo!("║ Redstone OS Kernel (Forge) - Iniciando ║");
+    crate::kinfo!("╚════════════════════════════════════════╝");
     crate::kinfo!("Protocolo de Boot v{}", boot_info.version);
 
     // 3. Inicializar Arquitetura (HAL)
@@ -41,11 +43,29 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::arch::platform::idt::init();
     }
 
+    #[cfg(feature = "verbose_logs")]
+    {
+        // Agora que temos GDT/IDT, podemos rodar testes com segurança de que exceções serão capturadas.
+        crate::arch::test::run_arch_tests();
+
+        crate::kinfo!("(SelfTest) Validando Core & Bibliotecas...");
+        crate::core::test::run_core_tests();
+        crate::klib::test::run_klib_tests();
+        crate::sys::test::run_sys_tests();
+        crate::sync::test::run_sync_tests();
+    }
+
     // 4. Gerenciamento de Memória (PMM, VMM, Heap)
     // Inicializa o alocador de frames físicos, paginação e o Heap do kernel.
     // Habilita o uso de `Box`, `Vec`, `Arc`, etc.
     crate::kinfo!("(Core) Inicializando subsistema de memória...");
     crate::mm::init(boot_info);
+
+    #[cfg(feature = "verbose_logs")]
+    {
+        crate::kinfo!("(MM) Executando testes de memória...");
+        crate::mm::test::run_memory_tests();
+    }
 
     // 5. Drivers Básicos (Hardware Timer & Interrupt Controller)
     // Configura o PIC (Programmable Interrupt Controller) para não conflitar com exceções da CPU
@@ -64,10 +84,18 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::kdebug!("(Core) Timer configurado para {}Hz", freq);
     }
 
+    #[cfg(feature = "verbose_logs")]
+    crate::drivers::test::run_driver_tests();
+
     // 6. Subsistemas Lógicos
     // Inicializa estruturas de IPC (Portas, Mensagens) e Filesystem (VFS).
     crate::ipc::init();
+    #[cfg(feature = "verbose_logs")]
+    crate::ipc::test::run_ipc_tests();
+
     crate::fs::init(boot_info);
+    #[cfg(feature = "verbose_logs")]
+    crate::fs::test::run_fs_tests();
 
     // Inicializar Vídeo (após memória e antes do console real)
     // Agora inicializamos o CONSOLE, que gerencia o vídeo + texto.
@@ -80,6 +108,13 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Inicializa a fila de processos e cria as tarefas iniciais (Kernel Tasks).
     crate::kinfo!("(Core) Ativando escalonador multitarefa...");
     crate::sched::scheduler::init();
+
+    #[cfg(feature = "verbose_logs")]
+    {
+        crate::sched::test::run_sched_tests();
+        crate::security::test::run_security_tests();
+        crate::syscall::test::run_syscall_tests();
+    }
 
     // Tenta carregar o processo de usuário (/init)
     spawn_init_process();

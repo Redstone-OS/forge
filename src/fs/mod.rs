@@ -7,6 +7,7 @@
 
 pub mod devfs;
 pub mod initramfs;
+pub mod test;
 pub mod vfs;
 
 use alloc::sync::Arc;

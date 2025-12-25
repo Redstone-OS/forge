@@ -9,3 +9,4 @@ pub mod handle;
 pub mod handoff;
 pub mod logging;
 pub mod panic;
+pub mod test;

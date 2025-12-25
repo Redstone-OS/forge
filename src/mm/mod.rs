@@ -191,11 +191,4 @@ pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
     drop(pmm_lock); // Liberar lock antes dos testes
 
     crate::kinfo!("(MM) Subsistema de memória inicializado com sucesso!");
-
-    // 4. Testes de memória (apenas quando verbose_logs está habilitado)
-    #[cfg(feature = "verbose_logs")]
-    {
-        crate::kinfo!("(MM) Executando testes de memória (verbose_logs)...");
-        test::run_memory_tests();
-    }
 }
