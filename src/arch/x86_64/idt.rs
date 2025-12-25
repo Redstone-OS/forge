@@ -110,6 +110,9 @@ pub unsafe fn init() {
     IDT.entries[13] = IdtEntry::new(interrupts::general_protection_fault_handler as usize);
     IDT.entries[14] = IdtEntry::new(interrupts::page_fault_handler as usize);
 
+    // Timer (PIC remapeia IRQ0 para vetor 0x20 = 32)
+    IDT.entries[32] = IdtEntry::new(interrupts::timer_handler as usize);
+
     // Carregar IDT
     let idt_ptr = IdtDescriptor {
         limit: (size_of::<Idt>() - 1) as u16,
