@@ -21,7 +21,8 @@ impl Initramfs {
         crate::kinfo!("Initramfs::new - criando struct...");
         let mut fs = Self {
             data,
-            files: Vec::new(),
+            // Pré-alocar para evitar realocação durante parse (que causa UD)
+            files: Vec::with_capacity(16),
         };
         // crate::kinfo!("Initramfs::new - struct OK, chamando parse...");
         fs.parse();
@@ -131,7 +132,8 @@ impl VfsNode for Initramfs {
     fn list(&self) -> Result<Vec<Arc<dyn VfsNode>>, VfsError> {
         // Retorna todos os arquivos (flat structure por enquanto)
         // TODO: Implementar hierarquia real de diretórios.
-        let mut nodes = Vec::new();
+        // Pré-alocar para evitar realocação que causa crash
+        let mut nodes = Vec::with_capacity(self.files.len());
         for f in &self.files {
             nodes.push(f.clone() as Arc<dyn VfsNode>);
         }

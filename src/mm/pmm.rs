@@ -24,9 +24,8 @@
 //! - Compactar / remover frames reservados por dispositivos (MMIO) ao construir mapa.
 //!
 
-use crate::core::handoff::{BootInfo, MemoryType};
+use crate::core::handoff::BootInfo;
 use crate::sync::Mutex;
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub const FRAME_SIZE: usize = 4096;
 
@@ -92,12 +91,19 @@ impl BitmapFrameAllocator {
     /// - A função colocará o bitmap físico numa região Usable grande o suficiente.
     /// - Assume que não há race com outras inicializações do PMM.
     pub unsafe fn init(&mut self, boot_info: &'static BootInfo) {
+        crate::kdebug!("(PMM) init: Iniciando...");
+        crate::ktrace!("(PMM) init: boot_info={:p}", boot_info);
+        crate::ktrace!("(PMM) init: memory_map_len={}", boot_info.memory_map_len);
+
         if boot_info.memory_map_len == 0 {
+            crate::kerror!("(PMM) init: ERRO FATAL - mapa de memória vazio!");
             panic!("BootInfo não contém mapa de memória válido!");
         }
 
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
         let map_len = boot_info.memory_map_len as usize;
+        crate::ktrace!("(PMM) init: map_ptr={:p}, map_len={}", map_ptr, map_len);
+
         let regions = core::slice::from_raw_parts(map_ptr, map_len);
 
         // 1. Calcular memória total (apenas RAM utilizável, ignora MMIO)
@@ -112,7 +118,7 @@ impl BitmapFrameAllocator {
         }
 
         crate::kinfo!(
-            "Memória máxima: {:#x} ({} MB)",
+            "(PMM) Memória máxima: {:#x} ({} MB)",
             max_phys_addr,
             max_phys_addr / 1024 / 1024
         );
@@ -142,12 +148,17 @@ impl BitmapFrameAllocator {
         }
 
         if bitmap_phys_addr == 0 {
-            panic!("PMM: Não foi possível encontrar região Usable para o bitmap!");
+            panic!("(PMM) Não foi possível encontrar região Usable para o bitmap!");
         }
 
-        crate::kinfo!("Bitmap em {:#x}, {} frames", bitmap_phys_addr, total_frames);
+        crate::kinfo!(
+            "(PMM) Bitmap em {:#x}, {} frames",
+            bitmap_phys_addr,
+            total_frames
+        );
 
-        let bitmap_ptr = bitmap_phys_addr as *mut u64;
+        // CRÍTICO: usar phys_to_virt para acessar o bitmap via identity map
+        let bitmap_ptr = crate::mm::addr::phys_to_virt::<u64>(bitmap_phys_addr);
         self.bitmap = core::slice::from_raw_parts_mut(bitmap_ptr, bitmap_size_u64);
         self.bitmap.fill(u64::MAX); // Marcar tudo como ocupado
 
@@ -189,7 +200,7 @@ impl BitmapFrameAllocator {
         }
 
         crate::kinfo!(
-            "Inicializado. Total Frames: {}, Free: {}",
+            "(PMM) Inicializado: {} frames totais, {} livres",
             self.total_frames,
             self.total_frames - self.used_frames
         );
@@ -206,8 +217,7 @@ impl BitmapFrameAllocator {
             if entry != u64::MAX {
                 // Se não está tudo cheio (todos 1s)
                 // Encontrar o bit 0 (livre)
-                let bit = entry.trailing_ones() as usize; // Retorna quantos 1s seguidos no final (LSB)
-                                                          // Se entry não é MAX, trailing_ones < 64.
+                let bit = entry.trailing_ones() as usize;
 
                 let frame_idx = idx * 64 + bit;
 
@@ -217,18 +227,30 @@ impl BitmapFrameAllocator {
                     self.used_frames += 1;
                     self.next_free = idx;
 
-                    return Some(PhysFrame {
-                        addr: frame_idx as u64 * FRAME_SIZE as u64,
-                    });
+                    let addr = frame_idx as u64 * FRAME_SIZE as u64;
+                    return Some(PhysFrame { addr });
                 }
             }
         }
 
-        None // OOM (Out of Memory)
+        // OOM (Out of Memory) - SEMPRE logar erros
+        crate::kerror!(
+            "(PMM) OOM! used={}/{} ({}% utilizado)",
+            self.used_frames,
+            self.total_frames,
+            (self.used_frames * 100) / self.total_frames
+        );
+
+        None
     }
 
     pub fn deallocate_frame(&mut self, frame_idx: usize) {
         if frame_idx >= self.total_frames {
+            crate::kwarn!(
+                "(PMM) deallocate: frame {} fora do range (max {})",
+                frame_idx,
+                self.total_frames
+            );
             return;
         }
 
@@ -237,7 +259,11 @@ impl BitmapFrameAllocator {
 
         // Verificar se já estava livre (Double Free)
         if (self.bitmap[idx] & (1 << bit)) == 0 {
-            // Log warning? Panic? Por enquanto ignora.
+            crate::kwarn!(
+                "(PMM) DOUBLE FREE! frame={} addr={:#x}",
+                frame_idx,
+                frame_idx as u64 * FRAME_SIZE as u64
+            );
             return;
         }
 
@@ -249,5 +275,14 @@ impl BitmapFrameAllocator {
         if idx < self.next_free {
             self.next_free = idx;
         }
+    }
+
+    /// Retorna estatísticas de uso de memória
+    pub fn stats(&self) -> (usize, usize, usize) {
+        (
+            self.used_frames,
+            self.total_frames,
+            self.total_frames - self.used_frames,
+        )
     }
 }

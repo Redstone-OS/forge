@@ -106,9 +106,17 @@
 //!
 //! ---------------------------------------------------------------------
 
+pub mod addr;
+pub mod error;
 pub mod heap;
 pub mod pmm;
+pub mod test;
 pub mod vmm;
+
+// Re-exports para conveniência
+pub use addr::{is_phys_accessible, phys_to_virt, try_phys_to_virt, virt_to_phys};
+pub use error::{MmError, MmResult};
+pub use test::run_memory_tests;
 
 /// Inicializa completamente o subsistema de memória do kernel.
 ///
@@ -156,13 +164,15 @@ pub mod vmm;
 /// - Executada em early-kernel (single core)
 ///
 pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
+    crate::kinfo!("(MM) Inicializando subsistema de memória...");
+
     // 1. Physical Memory Manager
     // Interpreta o memory map e configura o bitmap de frames
     unsafe {
         pmm::FRAME_ALLOCATOR.lock().init(boot_info);
     }
 
-    crate::kinfo!("MM: PMM OK, iniciando VMM...");
+    crate::kinfo!("(MM) PMM OK, iniciando VMM...");
 
     // 2. Virtual Memory Manager
     // Inicializa paginação e scratch slot
@@ -170,14 +180,22 @@ pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
         vmm::init(boot_info);
     }
 
-    crate::kinfo!("MM: VMM OK, iniciando Heap...");
+    crate::kinfo!("(MM) VMM OK, iniciando Heap...");
 
     // 3. Kernel Heap
     // Lock do PMM é adquirido aqui para evitar deadlock
     let mut pmm_lock = pmm::FRAME_ALLOCATOR.lock();
     if !heap::init_heap(&mut *pmm_lock) {
-        panic!("Falha crítica ao inicializar heap do kernel!");
+        panic!("(MM) Falha crítica ao inicializar heap!");
     }
+    drop(pmm_lock); // Liberar lock antes dos testes
 
-    crate::kinfo!("MM: Heap OK!");
+    crate::kinfo!("(MM) Subsistema de memória inicializado com sucesso!");
+
+    // 4. Testes de memória (apenas quando verbose_logs está habilitado)
+    #[cfg(feature = "verbose_logs")]
+    {
+        crate::kinfo!("(MM) Executando testes de memória (verbose_logs)...");
+        test::run_memory_tests();
+    }
 }

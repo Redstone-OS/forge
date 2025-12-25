@@ -34,10 +34,10 @@ use core::alloc::{GlobalAlloc, Layout};
 /// Deve ser consistente com o VMM. Alterações requerem ajustes no mapeamento.
 pub const HEAP_START: usize = 0xFFFF_9000_0000_0000;
 
-/// Tamanho inicial do heap (4 MiB)
+/// Tamanho inicial do heap (16 MiB)
 /// ---------------------------------
-/// Este valor define o heap "bootstrap". Pode crescer via `grow`.
-pub const HEAP_INITIAL_SIZE: usize = 4 * 1024 * 1024;
+/// Aumentado para suportar múltiplos serviços no initramfs.
+pub const HEAP_INITIAL_SIZE: usize = 16 * 1024 * 1024;
 
 /// Global allocator exposto a todo o kernel (Box, Vec, String)
 #[global_allocator]
@@ -65,7 +65,9 @@ impl LockedHeap {
     /// - Deve ser chamado apenas **uma vez** durante a inicialização do kernel
     /// - `heap_start` e `heap_size` devem estar mapeados em memória virtual válida
     pub unsafe fn init(&self, start: usize, size: usize) {
+        crate::kdebug!("(Heap) init: start={:#x} size={}", start, size);
         self.inner.lock().init(start, size);
+        crate::kdebug!("(Heap) init: OK");
     }
 
     /// Cresce o heap dinamicamente adicionando `extra_size` bytes
@@ -77,7 +79,14 @@ impl LockedHeap {
         extra_size: usize,
         pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
     ) -> bool {
-        self.inner.lock().grow(extra_size, pmm)
+        crate::kdebug!("(Heap) grow: extra_size={}", extra_size);
+        let result = self.inner.lock().grow(extra_size, pmm);
+        if result {
+            crate::kdebug!("(Heap) grow: OK");
+        } else {
+            crate::kerror!("(Heap) grow: FALHOU!");
+        }
+        result
     }
 }
 
@@ -87,14 +96,22 @@ unsafe impl GlobalAlloc for LockedHeap {
     /// Retorna `null_mut` em caso de OOM.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.lock().alloc(layout);
+
         if ptr.is_null() {
-            crate::kerror!("Heap OOM: falha ao alocar {} bytes", layout.size());
+            // SEMPRE logar OOM - é crítico
+            crate::kerror!(
+                "(Heap) OOM! size={} align={}",
+                layout.size(),
+                layout.align()
+            );
         }
+
         ptr
     }
 
     /// Libera memória (apenas decrementa contador lógico)
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // Sem log aqui - muito frequente
         self.inner.lock().dealloc(ptr, layout)
     }
 }
@@ -184,10 +201,7 @@ impl BumpAllocator {
                     }
                 }
                 None => {
-                    crate::kerror!(
-                        "Heap grow: sem frames suficientes para {} bytes extras",
-                        extra_size
-                    );
+                    crate::kerror!("(Heap) grow: sem frames para {} bytes extras", extra_size);
                     return false;
                 }
             }
@@ -215,7 +229,7 @@ fn align_up(addr: usize, align: usize) -> usize {
 pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
     let pages = HEAP_INITIAL_SIZE / 4096;
     crate::kinfo!(
-        "Heap: mapeando {} paginas ({} KiB)...",
+        "(Heap) Mapeando {} páginas ({} KiB)...",
         pages,
         HEAP_INITIAL_SIZE / 1024
     );
@@ -227,13 +241,13 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
         let frame = match pmm.allocate_frame() {
             Some(f) => f,
             None => {
-                crate::kerror!("Heap init: OOM");
+                crate::kerror!("(Heap) init: OOM");
                 return false;
             }
         };
 
         if unsafe { !crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr, flags, pmm) } {
-            crate::kerror!("Heap init: map falhou");
+            crate::kerror!("(Heap) init: mapeamento falhou");
             return false;
         }
     }
@@ -242,6 +256,6 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
         ALLOCATOR.init(HEAP_START, HEAP_INITIAL_SIZE);
     }
 
-    crate::kinfo!("Heap inicializado: {} KiB", HEAP_INITIAL_SIZE / 1024);
+    crate::kinfo!("(Heap) Inicializado: {} KiB", HEAP_INITIAL_SIZE / 1024);
     true
 }

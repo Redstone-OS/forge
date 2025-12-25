@@ -155,13 +155,18 @@
 //! ----------------------------------------------------------------------
 //! Abaixo deste ponto: implementação.
 //! Comentários locais explicam decisões específicas.
-use crate::mm::pmm::{BitmapFrameAllocator, FRAME_ALLOCATOR, FRAME_SIZE};
+use crate::mm::addr::phys_to_virt;
+use crate::mm::error::{MmError, MmResult};
+use crate::mm::pmm::{BitmapFrameAllocator, FRAME_ALLOCATOR};
 use core::arch::asm;
 
 // =============================================================================
 // FLAGS DE PAGINAÇÃO x86_64
 // =============================================================================
 // Flags usadas neste módulo. Consulte Intel SDM para significado detalhado.
+
+/// Máscara para extrair endereço físico de uma PTE (bits 12-51)
+pub const PAGE_MASK: u64 = 0x000F_FFFF_FFFF_F000;
 
 /// Página presente na memória física.
 pub const PAGE_PRESENT: u64 = 1 << 0;
@@ -218,17 +223,35 @@ static mut SCRATCH_READY: bool = false; // indica disponibilidade operacional
 /// - Deve ser invocado **uma única vez** em early-boot.
 /// - O caller deve garantir que o ambiente (CR3, boot_info) esteja consistente.
 pub unsafe fn init(boot_info: &crate::core::handoff::BootInfo) {
+    crate::kdebug!("(VMM) init: Iniciando...");
+
     // Lê CR3 (PML4 físico atual) e guarda para uso interno.
     let cr3: u64;
     asm!("mov {}, cr3", out(reg) cr3);
     ACTIVE_PML4_PHYS = cr3 & 0x000F_FFFF_FFFF_F000;
 
+    crate::kdebug!(
+        "(VMM) init: CR3={:#x}, PML4_PHYS={:#x}",
+        cr3,
+        ACTIVE_PML4_PHYS
+    );
+    crate::ktrace!("(VMM) init: SCRATCH_VIRT={:#x}", SCRATCH_VIRT);
+
     // Valida e inicializa o scratch slot para operações de zeragem.
     init_scratch_slot();
 
-    // (nota) O `boot_info` pode ser usado para logging adicional — mantido como parâmetro
-    // para futuras evoluções (ex.: validar RSDP, regiões MMIO, etc).
+    if SCRATCH_READY {
+        crate::kdebug!(
+            "(VMM) init: Scratch slot pronto em PT {:#x}",
+            SCRATCH_PT_PHYS
+        );
+    } else {
+        crate::kwarn!("(VMM) init: Scratch slot NÃO disponível - usando fallback");
+    }
+
+    // (nota) O `boot_info` pode ser usado para logging adicional
     let _ = boot_info;
+    crate::kdebug!("(VMM) init: OK");
 }
 
 /// Localiza e valida a Page Table do scratch slot criada pelo bootloader.
@@ -240,69 +263,112 @@ pub unsafe fn init(boot_info: &crate::core::handoff::BootInfo) {
 /// Se qualquer verificação falhar, a função registra o problema e marca
 /// `SCRATCH_READY = false` (fallback ou correção manual necessária).
 unsafe fn init_scratch_slot() {
+    crate::kdebug!("(VMM) Inicializando scratch slot...");
+
     let pml4_idx = ((SCRATCH_VIRT >> 39) & 0x1FF) as usize;
     let pdpt_idx = ((SCRATCH_VIRT >> 30) & 0x1FF) as usize;
     let pd_idx = ((SCRATCH_VIRT >> 21) & 0x1FF) as usize;
 
-    let pml4 = ACTIVE_PML4_PHYS as *const u64;
+    // Usar phys_to_virt para acessar PML4
+    let pml4: *const u64 = phys_to_virt(ACTIVE_PML4_PHYS);
     let pml4_entry = *pml4.add(pml4_idx);
 
     if pml4_entry & PAGE_PRESENT == 0 {
+        crate::kwarn!("(VMM) Scratch: PML4[{}] não presente", pml4_idx);
         SCRATCH_READY = false;
         return;
     }
 
-    let pdpt_phys = pml4_entry & 0x000F_FFFF_FFFF_F000;
-    let pdpt = pdpt_phys as *const u64;
+    let pdpt_phys = pml4_entry & PAGE_MASK;
+    let pdpt: *const u64 = phys_to_virt(pdpt_phys);
     let pdpt_entry = *pdpt.add(pdpt_idx);
 
     if pdpt_entry & PAGE_PRESENT == 0 {
+        crate::kwarn!("(VMM) Scratch: PDPT[{}] não presente", pdpt_idx);
         SCRATCH_READY = false;
         return;
     }
 
-    let pd_phys = pdpt_entry & 0x000F_FFFF_FFFF_F000;
-    let pd = pd_phys as *const u64;
+    let pd_phys = pdpt_entry & PAGE_MASK;
+    let pd: *const u64 = phys_to_virt(pd_phys);
     let pd_entry = *pd.add(pd_idx);
 
     if pd_entry & PAGE_PRESENT == 0 {
+        crate::kwarn!("(VMM) Scratch: PD[{}] não presente", pd_idx);
         SCRATCH_READY = false;
         return;
     }
 
     if pd_entry & PAGE_HUGE != 0 {
+        crate::kwarn!("(VMM) Scratch: PD[{}] é huge page!", pd_idx);
         SCRATCH_READY = false;
         return;
     }
 
-    SCRATCH_PT_PHYS = pd_entry & 0x000F_FFFF_FFFF_F000;
+    SCRATCH_PT_PHYS = pd_entry & PAGE_MASK;
     SCRATCH_READY = true;
+    crate::kdebug!("(VMM) Scratch slot OK: PT em {:#x}", SCRATCH_PT_PHYS);
 }
 
 // =============================================================================
-// ZERAGEM DE FRAMES FÍSICOS (USANDO SCRATCH)
+// ZERAGEM DE FRAMES FÍSICOS (USANDO SCRATCH OU IDENTITY MAP)
 // =============================================================================
 
-/// Zera um frame físico com segurança usando o scratch slot.
+/// Zera um frame físico com segurança.
 ///
-/// Fluxo:
-/// 1. Escreve PTE na PT do scratch apontando para `phys`.
-/// 2. Invalida TLB para o endereço virtual do scratch.
-/// 3. Executa memset(0) no endereço virtual do scratch.
-/// 4. Limpa a PTE e invalida TLB novamente.
+/// # Estratégia
 ///
-/// Falhas:
-/// - Se `SCRATCH_READY` for false, tentamos fallback escrevendo diretamente no físico
-///   (menos seguro e pode falhar em algumas configurações). Detecte e corrija no bootloader.
-unsafe fn zero_frame_via_scratch(phys: u64) {
-    // Zerar usando loop manual via identity map (phys < 4GiB)
-    // O identity map do bootloader mapeia 0-4GiB como virtual == físico
-    let ptr = phys as *mut u64;
+/// 1. Se SCRATCH_READY: usa scratch slot (mais seguro, funciona para qualquer endereço)
+/// 2. Se não: usa phys_to_virt via identity map (só funciona para phys < 4GB)
+///
+/// # Returns
+///
+/// - `Ok(())` se o frame foi zerado com sucesso
+/// - `Err(MmError::ScratchNotReady)` se scratch indisponível e phys >= 4GB
+unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
+    // Usar scratch slot se disponível (método preferido)
+    if SCRATCH_READY {
+        let pt_idx = ((SCRATCH_VIRT >> 12) & 0x1FF) as usize;
+        let pt_ptr: *mut u64 = phys_to_virt(SCRATCH_PT_PHYS);
+        let pte_ptr = pt_ptr.add(pt_idx);
 
-    // Zerar 4096 bytes = 512 u64s
+        // Salvar PTE original
+        let original_pte = core::ptr::read_volatile(pte_ptr);
+
+        // Mapear frame no scratch slot
+        let temp_pte = (phys & PAGE_MASK) | PAGE_PRESENT | PAGE_WRITABLE;
+        core::ptr::write_volatile(pte_ptr, temp_pte);
+        asm!("invlpg [{}]", in(reg) SCRATCH_VIRT, options(nostack, preserves_flags));
+
+        // Zerar via endereço virtual do scratch
+        let base = SCRATCH_VIRT as *mut u64;
+        for i in 0..512 {
+            core::ptr::write_volatile(base.add(i), 0u64);
+        }
+
+        // Restaurar PTE original
+        core::ptr::write_volatile(pte_ptr, original_pte);
+        asm!("invlpg [{}]", in(reg) SCRATCH_VIRT, options(nostack, preserves_flags));
+
+        return Ok(());
+    }
+
+    // Fallback: usar identity map via phys_to_virt (só funciona para < 4GB)
+    if !crate::mm::addr::is_phys_accessible(phys) {
+        crate::kerror!(
+            "(VMM) zero_frame: phys {:#x} inacessível sem scratch!",
+            phys
+        );
+        return Err(MmError::ScratchNotReady);
+    }
+
+    crate::ktrace!("(VMM) zero_frame: usando identity map para {:#x}", phys);
+    let ptr: *mut u64 = phys_to_virt(phys);
     for i in 0..512 {
         core::ptr::write_volatile(ptr.add(i), 0u64);
     }
+
+    Ok(())
 }
 
 // =============================================================================
@@ -342,39 +408,42 @@ pub unsafe fn map_page_with_pmm(
     let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
     let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
 
-    // Ponteiro para a PML4 atual (fisicamente endereçada)
-    let pml4_ptr = ACTIVE_PML4_PHYS as *mut u64;
+    // Ponteiro para a PML4 atual via phys_to_virt
+    let pml4_ptr: *mut u64 = phys_to_virt(ACTIVE_PML4_PHYS);
     let pml4_entry = &mut *pml4_ptr.add(pml4_idx);
 
     // Garantir PDPT existe
     let pdpt_phys = ensure_table_entry_with_pmm(pml4_entry, pmm);
     if pdpt_phys == 0 {
+        crate::kerror!("(VMM) map_page: falha ao criar PDPT para {:#x}", virt_addr);
         return false;
     }
 
-    let pdpt_ptr = pdpt_phys as *mut u64;
+    let pdpt_ptr: *mut u64 = phys_to_virt(pdpt_phys);
     let pdpt_entry = &mut *pdpt_ptr.add(pdpt_idx);
 
     // Garantir PD existe
     let pd_phys = ensure_table_entry_with_pmm(pdpt_entry, pmm);
     if pd_phys == 0 {
+        crate::kerror!("(VMM) map_page: falha ao criar PD para {:#x}", virt_addr);
         return false;
     }
 
-    let pd_ptr = pd_phys as *mut u64;
+    let pd_ptr: *mut u64 = phys_to_virt(pd_phys);
     let pd_entry = &mut *pd_ptr.add(pd_idx);
 
     // Garantir PT existe (pode exigir split de huge page)
     let pt_phys = ensure_table_entry_with_pmm(pd_entry, pmm);
     if pt_phys == 0 {
+        crate::kerror!("(VMM) map_page: falha ao criar PT para {:#x}", virt_addr);
         return false;
     }
 
-    let pt_ptr = pt_phys as *mut u64;
+    let pt_ptr: *mut u64 = phys_to_virt(pt_phys);
     let pt_entry = &mut *pt_ptr.add(pt_idx);
 
     // Escrever PTE final (endereço físico + flags + PRESENT)
-    *pt_entry = (phys_addr & 0x000F_FFFF_FFFF_F000) | flags | PAGE_PRESENT;
+    *pt_entry = (phys_addr & PAGE_MASK) | flags | PAGE_PRESENT;
 
     // Invalida TLB para o endereço mapeado
     asm!("invlpg [{}]", in(reg) virt_addr, options(nostack, preserves_flags));
@@ -405,6 +474,8 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
         // Se for uma huge page, precisamos converter para uma PT de 4 KiB (split)
         if *entry & PAGE_HUGE != 0 {
             // --- SPLIT DE HUGE PAGE ---
+            crate::kdebug!("(VMM) Splitting huge page...");
+
             // Extraímos a base física da huge page (alinhada a 2 MiB).
             let huge_base = *entry & 0x000F_FFFF_FFE0_0000;
 
@@ -412,18 +483,23 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
             let old_flags = *entry & 0xFFF;
 
             // Aloca frame para a nova PT (4 KiB)
-            let frame = pmm.allocate_frame();
-            if frame.is_none() {
-                crate::kerror!("VMM: OOM ao fazer split de huge page!");
-                return 0;
-            }
-            let pt_phys = frame.unwrap().addr;
+            let frame = match pmm.allocate_frame() {
+                Some(f) => f,
+                None => {
+                    crate::kerror!("(VMM) OOM ao fazer split de huge page!");
+                    return 0;
+                }
+            };
+            let pt_phys = frame.addr;
 
             // Zera a página que conterá a nova PT antes de escrever entradas.
-            zero_frame_via_scratch(pt_phys);
+            if let Err(e) = zero_frame_via_scratch(pt_phys) {
+                crate::kerror!("(VMM) Falha ao zerar PT para split: {}", e);
+                return 0;
+            }
 
             // Preenche a PT replicando o mapeamento da huge page em 512 entradas.
-            let pt = pt_phys as *mut u64;
+            let pt: *mut u64 = phys_to_virt(pt_phys);
             let new_flags = (old_flags & !PAGE_HUGE) | PAGE_PRESENT | PAGE_WRITABLE;
 
             for i in 0..512usize {
@@ -435,30 +511,35 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
             *entry = pt_phys | PAGE_PRESENT | PAGE_WRITABLE;
 
             // Invalidar TLB para toda a região anteriormente mapeada como huge page.
-            // Nota: invlpg opera em página por página, por isso iteramos.
             for i in 0..512u64 {
                 let vaddr = huge_base + (i * 4096);
                 asm!("invlpg [{}]", in(reg) vaddr, options(nostack, preserves_flags));
             }
 
+            crate::kdebug!("(VMM) Huge page split OK: nova PT em {:#x}", pt_phys);
             return pt_phys;
         }
 
         // Entrada presente e não-huge: garantir flags de acesso e retornar endereço.
-        // É seguro marcar diretórios como USER/WRITABLE pois a proteção final é feita na PTE.
         *entry |= PAGE_USER | PAGE_WRITABLE;
-        return *entry & 0x000F_FFFF_FFFF_F000;
+        return *entry & PAGE_MASK;
     }
 
     // Caso: entrada ausente — aloca nova tabela (frame de 4 KiB)
-    let frame = pmm.allocate_frame();
-    if frame.is_none() {
-        return 0;
-    }
-    let phys = frame.unwrap().addr;
+    let frame = match pmm.allocate_frame() {
+        Some(f) => f,
+        None => {
+            crate::kerror!("(VMM) OOM ao alocar page table!");
+            return 0;
+        }
+    };
+    let phys = frame.addr;
 
     // Zera a nova tabela (crítico para evitar leitura de lixo).
-    zero_frame_via_scratch(phys);
+    if let Err(e) = zero_frame_via_scratch(phys) {
+        crate::kerror!("(VMM) Falha ao zerar nova page table: {}", e);
+        return 0;
+    }
 
     // Configura a entrada para apontar para a nova tabela: PRESENT | WRITABLE | USER.
     *entry = phys | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
@@ -471,14 +552,14 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
 pub fn translate_addr(virt_addr: u64) -> Option<u64> {
     unsafe {
         let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
-        let pml4_ptr = ACTIVE_PML4_PHYS as *const u64;
+        let pml4_ptr: *const u64 = phys_to_virt(ACTIVE_PML4_PHYS);
         let pml4_entry = *pml4_ptr.add(pml4_idx);
         if pml4_entry & PAGE_PRESENT == 0 {
             return None;
         }
 
-        let pdpt_phys = pml4_entry & 0x000F_FFFF_FFFF_F000;
-        let pdpt_ptr = pdpt_phys as *const u64;
+        let pdpt_phys = pml4_entry & PAGE_MASK;
+        let pdpt_ptr: *const u64 = phys_to_virt(pdpt_phys);
         let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
         let pdpt_entry = *pdpt_ptr.add(pdpt_idx);
         if pdpt_entry & PAGE_PRESENT == 0 {
@@ -492,8 +573,8 @@ pub fn translate_addr(virt_addr: u64) -> Option<u64> {
             return Some(base + offset);
         }
 
-        let pd_phys = pdpt_entry & 0x000F_FFFF_FFFF_F000;
-        let pd_ptr = pd_phys as *const u64;
+        let pd_phys = pdpt_entry & PAGE_MASK;
+        let pd_ptr: *const u64 = phys_to_virt(pd_phys);
         let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
         let pd_entry = *pd_ptr.add(pd_idx);
         if pd_entry & PAGE_PRESENT == 0 {
@@ -507,15 +588,15 @@ pub fn translate_addr(virt_addr: u64) -> Option<u64> {
             return Some(base + offset);
         }
 
-        let pt_phys = pd_entry & 0x000F_FFFF_FFFF_F000;
-        let pt_ptr = pt_phys as *const u64;
+        let pt_phys = pd_entry & PAGE_MASK;
+        let pt_ptr: *const u64 = phys_to_virt(pt_phys);
         let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
         let pt_entry = *pt_ptr.add(pt_idx);
         if pt_entry & PAGE_PRESENT == 0 {
             return None;
         }
 
-        let phys_base = pt_entry & 0x000F_FFFF_FFFF_F000;
+        let phys_base = pt_entry & PAGE_MASK;
         Some(phys_base + (virt_addr & 0xFFF))
     }
 }
@@ -524,14 +605,14 @@ pub fn translate_addr(virt_addr: u64) -> Option<u64> {
 pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
     unsafe {
         let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
-        let pml4_ptr = ACTIVE_PML4_PHYS as *const u64;
+        let pml4_ptr: *const u64 = phys_to_virt(ACTIVE_PML4_PHYS);
         let pml4_entry = *pml4_ptr.add(pml4_idx);
         if pml4_entry & PAGE_PRESENT == 0 {
             return None;
         }
 
-        let pdpt_phys = pml4_entry & 0x000F_FFFF_FFFF_F000;
-        let pdpt_ptr = pdpt_phys as *const u64;
+        let pdpt_phys = pml4_entry & PAGE_MASK;
+        let pdpt_ptr: *const u64 = phys_to_virt(pdpt_phys);
         let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
         let pdpt_entry = *pdpt_ptr.add(pdpt_idx);
         if pdpt_entry & PAGE_PRESENT == 0 {
@@ -544,8 +625,8 @@ pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
             return Some((base + offset, pdpt_entry & 0xFFF));
         }
 
-        let pd_phys = pdpt_entry & 0x000F_FFFF_FFFF_F000;
-        let pd_ptr = pd_phys as *const u64;
+        let pd_phys = pdpt_entry & PAGE_MASK;
+        let pd_ptr: *const u64 = phys_to_virt(pd_phys);
         let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
         let pd_entry = *pd_ptr.add(pd_idx);
         if pd_entry & PAGE_PRESENT == 0 {
@@ -558,15 +639,15 @@ pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
             return Some((base + offset, pd_entry & 0xFFF));
         }
 
-        let pt_phys = pd_entry & 0x000F_FFFF_FFFF_F000;
-        let pt_ptr = pt_phys as *const u64;
+        let pt_phys = pd_entry & PAGE_MASK;
+        let pt_ptr: *const u64 = phys_to_virt(pt_phys);
         let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
         let pt_entry = *pt_ptr.add(pt_idx);
         if pt_entry & PAGE_PRESENT == 0 {
             return None;
         }
 
-        let phys_base = pt_entry & 0x000F_FFFF_FFFF_F000;
+        let phys_base = pt_entry & PAGE_MASK;
         Some((phys_base + (virt_addr & 0xFFF), pt_entry & 0xFFF))
     }
 }

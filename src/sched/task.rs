@@ -11,7 +11,9 @@
 use crate::arch::x86_64::gdt::{KERNEL_CODE_SEL, KERNEL_DATA_SEL, USER_CODE_SEL, USER_DATA_SEL};
 use crate::core::handle::HandleTable;
 use crate::sched::context::Context;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::pin::Pin;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 // REMOVIDO: extern "C" { fn user_entry_trampoline(); }
@@ -66,12 +68,20 @@ pub struct Task {
     pub handles: HandleTable,
 }
 
+/// Tipo alias para Task pinada - nunca pode mover após criação.
+/// Isso garante que kstack_top sempre aponta para memória válida.
+pub type PinnedTask = Pin<Box<Task>>;
+
 impl Task {
     /// Cria uma nova tarefa de Kernel (Ring 0).
-    pub fn new_kernel(entry: extern "C" fn()) -> Self {
-        let mut task = Self::create_base();
-        // Configura stack para execução direta no Kernel
-        task.setup_stack(entry as u64, KERNEL_CODE_SEL, KERNEL_DATA_SEL, 0);
+    pub fn new_kernel(entry: extern "C" fn()) -> PinnedTask {
+        let mut task = Box::pin(Self::create_base());
+        // SAFETY: Task pinada, só mutamos campos internos
+        unsafe {
+            let t = task.as_mut().get_unchecked_mut();
+            t.setup_stack(entry as u64, KERNEL_CODE_SEL, KERNEL_DATA_SEL, 0);
+        }
+        crate::kdebug!("[Task] new_kernel OK: entry={:#x}", entry as usize);
         task
     }
 
@@ -81,13 +91,34 @@ impl Task {
     /// * `entry_point`: Endereço virtual (RIP) no userspace.
     /// * `user_stack_top`: Endereço virtual (RSP) da stack no userspace.
     /// * `cr3`: Endereço físico da tabela de páginas do processo.
-    pub fn new_user(entry_point: u64, user_stack_top: u64, cr3: u64) -> Self {
-        let mut task = Self::create_base();
-        task.cr3 = cr3;
+    pub fn new_user(entry_point: u64, user_stack_top: u64, cr3: u64) -> PinnedTask {
+        crate::kinfo!(
+            "[Task] new_user INICIO: entry={:#x} stack={:#x} cr3={:#x}",
+            entry_point,
+            user_stack_top,
+            cr3
+        );
 
-        // Configura stack para retorno ao Userspace via IRETQ
-        task.setup_stack(entry_point, USER_CODE_SEL, USER_DATA_SEL, user_stack_top);
+        crate::kinfo!("[Task] new_user: chamando create_base()...");
+        let base = Self::create_base();
+        crate::kinfo!("[Task] new_user: create_base() OK, fazendo Box::pin...");
+        let mut task = Box::pin(base);
+        crate::kinfo!("[Task] new_user: Box::pin OK");
 
+        // SAFETY: Task pinada, só mutamos campos internos
+        unsafe {
+            crate::kinfo!("[Task] new_user: get_unchecked_mut...");
+            let t = task.as_mut().get_unchecked_mut();
+            crate::kinfo!("[Task] new_user: t={:p}", t);
+            t.cr3 = cr3;
+            crate::kinfo!("[Task] new_user: cr3 OK, chamando setup_stack...");
+            t.setup_stack(entry_point, USER_CODE_SEL, USER_DATA_SEL, user_stack_top);
+            crate::kinfo!("[Task] new_user: setup_stack OK");
+        }
+        crate::kinfo!(
+            "[Task] Processo de usuário criado: PID {}",
+            task.id.as_u64()
+        );
         task
     }
 
@@ -95,108 +126,123 @@ impl Task {
     fn create_base() -> Self {
         const STACK_SIZE: usize = 32 * 1024; // 32KB
 
-        // DEBUG: Log antes de alocar
-        crate::kinfo!("[Task] Alocando {} bytes para stack...", STACK_SIZE);
+        crate::kinfo!(
+            "[Task] create_base: alocando {} bytes para stack...",
+            STACK_SIZE
+        );
 
+        // SEGURO: Vec::resize inicializa memória sem unsafe
         let mut kstack = Vec::with_capacity(STACK_SIZE);
-
-        // DEBUG: Log após alocar, antes de set_len
-        crate::kinfo!("[Task] Vec criado. Capacity: {}", kstack.capacity());
-
-        // Inicialização segura da memória e ajuste de tamanho
-        unsafe {
-            kstack.set_len(STACK_SIZE);
-
-            // DEBUG: Log antes de zerar
-            crate::kinfo!(
-                "[Task] set_len ok. Zerando memória em {:p}...",
-                kstack.as_mut_ptr()
-            );
-
-            // Usar loop manual (write_bytes causa GPF 0x32)
-            let ptr = kstack.as_mut_ptr() as *mut u64;
-            for i in 0..(STACK_SIZE / 8) {
-                core::ptr::write_volatile(ptr.add(i), 0u64);
-            }
-
-            // DEBUG: Log após zerar
-            crate::kinfo!("[Task] Memória zerada com sucesso.");
-        }
+        crate::kinfo!("[Task] create_base: Vec::with_capacity OK, resize...");
+        kstack.resize(STACK_SIZE, 0u8);
+        crate::kinfo!("[Task] create_base: resize OK, len={}", kstack.len());
 
         // Calcular topo da stack com alinhamento de 16 bytes (System V ABI)
         let stack_start = kstack.as_ptr() as u64;
         let stack_end = stack_start + STACK_SIZE as u64;
         let kstack_top = stack_end & !0xF;
 
-        // DEBUG: Log do endereço da stack
         crate::kinfo!(
-            "[Task] Stack: {:#x} - {:#x}, top: {:#x}",
+            "[Task] create_base: stack={:#x}-{:#x}, top={:#x}",
             stack_start,
             stack_end,
             kstack_top
         );
 
-        Self {
-            id: TaskId::new(),
+        crate::kinfo!("[Task] create_base: criando TaskId...");
+        let id = TaskId::new();
+        crate::kinfo!("[Task] create_base: TaskId={}", id.as_u64());
+
+        crate::kinfo!("[Task] create_base: criando Context::empty...");
+        let context = Context::empty();
+
+        crate::kinfo!("[Task] create_base: criando HandleTable::empty...");
+        let handles = HandleTable::empty();
+        crate::kinfo!("[Task] create_base: HandleTable OK");
+
+        crate::kinfo!("[Task] create_base: montando struct Task...");
+        let task = Self {
+            id,
             state: TaskState::Ready,
-            context: Context::empty(),
+            context,
             kstack,
             kstack_top,
             cr3: 0,
-            handles: HandleTable::new(),
-        }
+            handles,
+        };
+        crate::kinfo!("[Task] create_base: struct Task OK");
+        task
     }
 
     /// Prepara a stack para o primeiro Context Switch.
     /// Constrói um stack frame artificial que simula uma tarefa interrompida.
     fn setup_stack(&mut self, rip: u64, cs: u16, ss: u16, user_rsp: u64) {
+        // Bounds check: validar kstack_top está dentro da região válida
+        let stack_start = self.kstack.as_ptr() as u64;
+        let stack_end = stack_start + self.kstack.len() as u64;
+
+        assert!(
+            self.kstack_top >= stack_start && self.kstack_top <= stack_end,
+            "kstack_top ({:#x}) fora dos limites [{:#x} - {:#x}]",
+            self.kstack_top,
+            stack_start,
+            stack_end
+        );
+
+        crate::kdebug!(
+            "[Task] setup_stack: rip={:#x} cs={:#x} kstack_top={:#x}",
+            rip,
+            cs,
+            self.kstack_top
+        );
+
         unsafe {
             let mut ptr = self.kstack_top as *mut u64;
+
+            // Macro para bounds check em cada operação
+            macro_rules! stack_push {
+                ($val:expr) => {{
+                    ptr = ptr.sub(1);
+                    // Validar que ainda estamos dentro da stack
+                    assert!(
+                        (ptr as u64) >= stack_start,
+                        "Stack overflow em setup_stack: ptr={:p} < start={:#x}",
+                        ptr,
+                        stack_start
+                    );
+                    *ptr = $val;
+                }};
+            }
 
             // 1. Se for tarefa de usuário, empilhar frame IRETQ
             if cs == USER_CODE_SEL {
                 // Layout: [SS, RSP, RFLAGS, CS, RIP]
-                ptr = ptr.sub(1);
-                *ptr = ss as u64; // SS
-                ptr = ptr.sub(1);
-                *ptr = user_rsp; // RSP (User)
-                ptr = ptr.sub(1);
-                // RFLAGS: Bit 9 (IF) + IOPL=3 (bits 12-13 = 11b)
-                // 0x3202 = Interrupts Enabled + IOPL=3 (permite I/O em Ring 3)
-                *ptr = 0x3202;
-                ptr = ptr.sub(1);
-                *ptr = cs as u64; // CS
-                ptr = ptr.sub(1);
-                *ptr = rip; // RIP (User Entry)
+                stack_push!(ss as u64);
+                stack_push!(user_rsp);
+                // RFLAGS: IF + IOPL=3
+                stack_push!(0x3202);
+                stack_push!(cs as u64);
+                stack_push!(rip);
 
-                // Endereço de retorno do 'ret' no switch.s: Trampolim
-                // CORREÇÃO: Usamos o símbolo importado do módulo Rust diretamente.
-                ptr = ptr.sub(1);
-                *ptr = user_entry_trampoline as usize as u64;
+                // Endereço de retorno: Trampolim
+                stack_push!(user_entry_trampoline as usize as u64);
+                crate::ktrace!("[Task] IRETQ frame criado, trampoline={:#x}", *ptr);
             } else {
                 // Tarefa de Kernel: Endereço de retorno direto
-                ptr = ptr.sub(1);
-                *ptr = rip;
+                stack_push!(rip);
             }
 
             // 2. Empilhar registradores Callee-Saved (RBX, RBP, R12-R15)
-            // O switch.s vai dar 'pop' nestes valores.
-            // Inicializamos com 0 para evitar lixo.
-            ptr = ptr.sub(1);
-            *ptr = 0; // RBP
-            ptr = ptr.sub(1);
-            *ptr = 0; // RBX
-            ptr = ptr.sub(1);
-            *ptr = 0; // R12
-            ptr = ptr.sub(1);
-            *ptr = 0; // R13
-            ptr = ptr.sub(1);
-            *ptr = 0; // R14
-            ptr = ptr.sub(1);
-            *ptr = 0; // R15
+            stack_push!(0); // RBP
+            stack_push!(0); // RBX
+            stack_push!(0); // R12
+            stack_push!(0); // R13
+            stack_push!(0); // R14
+            stack_push!(0); // R15
 
             // 3. Salvar o novo topo da stack
             self.kstack_top = ptr as u64;
+            crate::kdebug!("[Task] setup_stack OK: kstack_top={:#x}", self.kstack_top);
         }
     }
 }

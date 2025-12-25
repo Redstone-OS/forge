@@ -185,11 +185,15 @@ fn spawn_init_process() {
                         let cr3 = unsafe { crate::arch::platform::memory::cr3() };
 
                         // Cria a tarefa Ring 3
+                        crate::kinfo!("[Init] Criando Task::new_user...");
                         let task =
                             crate::sched::task::Task::new_user(entry_point, user_stack_top, cr3);
+                        crate::kinfo!("[Init] Task::new_user OK");
 
                         // Adiciona ao Scheduler
+                        crate::kinfo!("[Init] Chamando add_task...");
                         crate::sched::scheduler::SCHEDULER.lock().add_task(task);
+                        crate::kinfo!("[Init] Processo PID 1 iniciado!");
                         crate::kinfo!("[Init] Processo PID 1 iniciado!");
                     }
                     Err(e) => crate::kerror!("[Init] Falha ao carregar ELF: {:?}", e),

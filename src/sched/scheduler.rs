@@ -13,7 +13,7 @@
 //! Usamos Box em vez de Arc porque Arc::new causa GPF 0x32 (Invalid Opcode)
 //! devido a problemas com a inicialização do contador atômico em bare-metal.
 
-use super::task::{Task, TaskState};
+use super::task::{PinnedTask, Task, TaskState};
 use crate::sync::Mutex;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
@@ -21,9 +21,9 @@ use alloc::collections::VecDeque;
 /// Estrutura do Scheduler Global.
 pub struct Scheduler {
     /// Fila de tarefas prontas para rodar (Ready).
-    tasks: VecDeque<Box<Mutex<Task>>>,
+    tasks: VecDeque<Box<Mutex<PinnedTask>>>,
     /// Tarefa atualmente em execução na CPU.
-    current_task: Option<Box<Mutex<Task>>>,
+    current_task: Option<Box<Mutex<PinnedTask>>>,
 }
 
 /// Instância global do Scheduler, protegida por Mutex.
@@ -41,13 +41,12 @@ impl Scheduler {
 
     /// Adiciona uma tarefa à fila de prontos.
     /// A tarefa será agendada na próxima oportunidade.
-    pub fn add_task(&mut self, task: Task) {
-        crate::kinfo!("[Sched] add_task: Mutex::new...");
-        let wrapped = Mutex::new(task);
-        crate::kinfo!("[Sched] add_task: Box::new...");
-        let boxed = Box::new(wrapped);
+    pub fn add_task(&mut self, task: PinnedTask) {
+        crate::kinfo!("[Sched] add_task...");
+        // Mutex envolve o Pin - Task NUNCA move
+        let wrapped = Box::new(Mutex::new(task));
         crate::kinfo!("[Sched] add_task: push_back...");
-        self.tasks.push_back(boxed);
+        self.tasks.push_back(wrapped);
         crate::kinfo!("[Sched] add_task: OK");
     }
 
@@ -71,7 +70,9 @@ impl Scheduler {
 
         // Calcular old_rsp_ptr ANTES de re-enfileirar (senão perdemos a referência!)
         let old_rsp_ptr = if let Some(ref old) = old_task_ref {
-            let mut t = old.lock();
+            let mut pinned = old.lock();
+            // SAFETY: Acessando campos internos do Pin<Box<Task>>
+            let t = unsafe { pinned.as_mut().get_unchecked_mut() };
             // Se estava rodando, volta para o estado Ready.
             if t.state == TaskState::Running {
                 t.state = TaskState::Ready;
@@ -89,14 +90,16 @@ impl Scheduler {
 
         // 2. Escolher a próxima tarefa (Next)
         if let Some(next) = self.tasks.pop_front() {
-            let mut t = next.lock();
+            let mut pinned = next.lock();
+            // SAFETY: Acessando campos internos do Pin<Box<Task>>
+            let t = unsafe { pinned.as_mut().get_unchecked_mut() };
             t.state = TaskState::Running;
 
             // Obter o valor do Stack Pointer onde a tarefa parou.
             let next_rsp = t.kstack_top;
             let next_id = t.id;
 
-            drop(t); // Liberar lock
+            drop(pinned); // Liberar lock
 
             // Atualizar referência global
             self.current_task = Some(next);

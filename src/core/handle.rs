@@ -108,7 +108,15 @@ impl HandleTable {
     /// Capacidade máxima.
     pub const MAX_CAPACITY: usize = 4096;
 
-    /// Cria nova tabela vazia.
+    /// Cria tabela vazia sem alocação inicial (lazy).
+    pub fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+            next_free: 0,
+        }
+    }
+
+    /// Cria nova tabela pré-alocada.
     pub fn new() -> Self {
         let mut entries = Vec::with_capacity(Self::INITIAL_CAPACITY);
         for _ in 0..Self::INITIAL_CAPACITY {

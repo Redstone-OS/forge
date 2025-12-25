@@ -25,13 +25,19 @@ linked_list_allocator = "0.10.5"
 # - pc-keyboard (Vamos implementar driver nativo PS/2)
 
 [features]
-default = ["serial_debug"]
-serial_debug = []          # Habilita logs na porta serial
+default = [
+    "serial_debug",
+    "verbose_logs",
+] # verbose_logs habilita todos os níveis de log
+serial_debug = [] # Habilita logs na porta serial
+verbose_logs = [] # Habilita DEBUG/TRACE logs (desabilitar em release)
 
 [profile.dev]
 panic = "abort"
 opt-level = 0
 debug = true
+# NOTA: debug-assertions habilitado por padrão em dev
+# Isso permite que cfg(debug_assertions) funcione para logs verbose
 
 [profile.release]
 panic = "abort"
