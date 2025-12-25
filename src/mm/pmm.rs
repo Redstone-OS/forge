@@ -63,16 +63,21 @@ pub static FRAME_ALLOCATOR: Mutex<BitmapFrameAllocator> = Mutex::new(BitmapFrame
 /// BitmapFrameAllocator
 ///
 /// Layout interno:
-/// - `bitmap` é uma fatia de u64; cada bit (LSB = bit 0) representa um frame.
+/// - `bitmap_ptr` e `bitmap_len` representam o bitmap; cada bit (LSB = bit 0) representa um frame.
 /// - `total_frames` é o número total de frames representados no bitmap.
 /// - `memory_base` é o endereço físico base considerado para frame index 0.
 ///   (por simplicidade aqui usamos base = 0; poderia ser ajustado para offsets)
+///
+/// IMPORTANTE: Usamos ponteiro raw em vez de slice para evitar código SSE
+/// que o Rust gera ao manipular fat pointers (16 bytes).
 pub struct BitmapFrameAllocator {
     /// Início da região de memória gerenciada pelo bitmap.
     memory_base: u64,
-    /// Bitmap onde cada bit representa um frame de 4KiB.
+    /// Ponteiro para o bitmap onde cada bit representa um frame de 4KiB.
     /// 0 = Livre, 1 = Usado.
-    bitmap: &'static mut [u64],
+    bitmap_ptr: *mut u64,
+    /// Tamanho do bitmap em u64s.
+    bitmap_len: usize,
     /// Total de frames gerenciados.
     total_frames: usize,
     /// Dica para a próxima alocação (round-robin simples).
@@ -81,12 +86,17 @@ pub struct BitmapFrameAllocator {
     used_frames: usize,
 }
 
+// SAFETY: O PMM é protegido por Mutex, então Send/Sync são seguros
+unsafe impl Send for BitmapFrameAllocator {}
+unsafe impl Sync for BitmapFrameAllocator {}
+
 impl BitmapFrameAllocator {
     /// Cria um alocador vazio — usado para inicialização estática.
     const fn empty() -> Self {
         Self {
             memory_base: 0,
-            bitmap: &mut [],
+            bitmap_ptr: core::ptr::null_mut(),
+            bitmap_len: 0,
             total_frames: 0,
             next_free: 0,
             used_frames: 0,
@@ -113,22 +123,87 @@ impl BitmapFrameAllocator {
             panic!("BootInfo não contém mapa de memória válido!");
         }
 
+        // 1. Calcular memória total usando acesso direto (evita código SSE do slice iterator)
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
         let map_len = boot_info.memory_map_len as usize;
         crate::ktrace!("(PMM) init: map_ptr={:p}, map_len={}", map_ptr, map_len);
+        crate::ktrace!("(PMM) init: Calculando memória máxima...");
 
-        let regions = core::slice::from_raw_parts(map_ptr, map_len);
+        // Verificar se o memory map está acessível
+        if !crate::mm::addr::is_phys_accessible(boot_info.memory_map_addr) {
+            crate::kerror!(
+                "(PMM) ERRO: memory_map em {:#x} fora do identity map!",
+                boot_info.memory_map_addr
+            );
+            panic!("Memory map inacessível!");
+        }
+        crate::ktrace!("(PMM) init: Memory map acessível, iniciando leitura...");
+        crate::ktrace!(
+            "(PMM) init: sizeof(MemoryMapEntry) = {} bytes",
+            core::mem::size_of::<crate::core::handoff::MemoryMapEntry>()
+        );
 
-        // 1. Calcular memória total (apenas RAM utilizável, ignora MMIO)
-        let mut max_phys_addr = 0;
-        for region in regions {
-            if region.typ == crate::core::handoff::MemoryType::Usable {
-                let end = region.base + region.len;
+        let mut max_phys_addr = 0u64;
+
+        // DEBUG: Tentar ler primeiro byte via inline assembly puro
+        let addr = boot_info.memory_map_addr;
+        crate::ktrace!("(PMM) DEBUG: Tentando ler byte em {:#x}...", addr);
+
+        let first_byte: u64;
+        core::arch::asm!(
+            "movzx {0}, byte ptr [{1}]",
+            out(reg) first_byte,
+            in(reg) addr,
+            options(nostack, preserves_flags, readonly)
+        );
+        crate::ktrace!("(PMM) DEBUG: Primeiro byte = {:#x}", first_byte as u8);
+        crate::ktrace!("(PMM) Leitura OK! Continuando...");
+
+        // Usar while loop com índice manual para evitar otimizações do compilador
+        let entry_size = 24u64; // MemoryMapEntry = u64 + u64 + u32 + padding = 24 bytes
+        let mut i = 0usize;
+
+        while i < map_len {
+            // Calcular endereço da entry atual
+            let entry_addr = boot_info.memory_map_addr + (i as u64 * entry_size);
+
+            // Ler campos via inline assembly (evita SSE)
+            let base: u64;
+            let len: u64;
+            let typ_raw: u32;
+
+            core::arch::asm!(
+                "mov {0}, [{3}]",        // base = *entry_addr
+                "mov {1}, [{3} + 8]",    // len = *(entry_addr + 8)
+                "mov {2:e}, [{3} + 16]", // typ = *(entry_addr + 16) (32-bit)
+                out(reg) base,
+                out(reg) len,
+                out(reg) typ_raw,
+                in(reg) entry_addr,
+                options(nostack, preserves_flags, readonly)
+            );
+
+            if i < 5 {
+                crate::ktrace!(
+                    "(PMM) region[{}]: base={:#x} len={:#x} typ={}",
+                    i,
+                    base,
+                    len,
+                    typ_raw
+                );
+            }
+
+            // MemoryType::Usable = 1
+            if typ_raw == 1 {
+                let end = base + len;
                 if end > max_phys_addr {
                     max_phys_addr = end;
                 }
             }
+
+            i += 1;
         }
+        crate::ktrace!("(PMM) init: Iteração completa, {} regiões", map_len);
 
         crate::kinfo!(
             "(PMM) Memória máxima: {:#x} ({} MB)",
@@ -145,19 +220,35 @@ impl BitmapFrameAllocator {
         let mut bitmap_phys_addr: u64 = 0;
         let mut best_region_size: u64 = 0;
 
-        for region in regions.iter() {
-            if region.typ == crate::core::handoff::MemoryType::Usable {
-                if region.len >= bitmap_total_size as u64 && region.len > best_region_size {
-                    let region_end = region.base + region.len;
+        let mut j = 0usize;
+        while j < map_len {
+            let entry_addr = boot_info.memory_map_addr + (j as u64 * entry_size);
+            let base: u64;
+            let len: u64;
+            let typ_raw: u32;
+            core::arch::asm!(
+                "mov {0}, [{3}]",
+                "mov {1}, [{3} + 8]",
+                "mov {2:e}, [{3} + 16]",
+                out(reg) base,
+                out(reg) len,
+                out(reg) typ_raw,
+                in(reg) entry_addr,
+                options(nostack, preserves_flags, readonly)
+            );
+            // MemoryType::Usable = 1
+            if typ_raw == 1 {
+                if len >= bitmap_total_size as u64 && len > best_region_size {
+                    let region_end = base + len;
                     let aligned_start =
                         (region_end - bitmap_total_size as u64) & !(FRAME_SIZE as u64 - 1);
-
-                    if aligned_start >= region.base {
+                    if aligned_start >= base {
                         bitmap_phys_addr = aligned_start;
-                        best_region_size = region.len;
+                        best_region_size = len;
                     }
                 }
             }
+            j += 1;
         }
 
         if bitmap_phys_addr == 0 {
@@ -171,9 +262,35 @@ impl BitmapFrameAllocator {
         );
 
         // CRÍTICO: usar phys_to_virt para acessar o bitmap via identity map
+        crate::ktrace!("(PMM) Convertendo phys_addr para virt...");
         let bitmap_ptr = crate::mm::addr::phys_to_virt::<u64>(bitmap_phys_addr);
-        self.bitmap = core::slice::from_raw_parts_mut(bitmap_ptr, bitmap_size_u64);
-        self.bitmap.fill(u64::MAX); // Marcar tudo como ocupado
+        crate::ktrace!("(PMM) bitmap_ptr = {:p}", bitmap_ptr);
+
+        // Atribuir ponteiro e tamanho diretamente (evita fat pointer = SSE)
+        self.bitmap_ptr = bitmap_ptr;
+        self.bitmap_len = bitmap_size_u64;
+        crate::ktrace!(
+            "(PMM) Bitmap configurado: ptr={:p}, len={}",
+            self.bitmap_ptr,
+            self.bitmap_len
+        );
+
+        // Preencher bitmap com 0xFFFFFFFFFFFFFFFF (tudo ocupado) usando assembly
+        // para evitar instruções SSE geradas pelo fill()
+        crate::ktrace!("(PMM) Zerando bitmap ({} u64s)...", bitmap_size_u64);
+        let mut fill_idx = 0usize;
+        let fill_value = u64::MAX;
+        while fill_idx < bitmap_size_u64 {
+            let ptr = bitmap_ptr.add(fill_idx);
+            core::arch::asm!(
+                "mov [{0}], {1}",
+                in(reg) ptr,
+                in(reg) fill_value,
+                options(nostack, preserves_flags)
+            );
+            fill_idx += 1;
+        }
+        crate::ktrace!("(PMM) Bitmap preenchido OK");
 
         self.memory_base = 0;
         self.total_frames = total_frames;
@@ -184,32 +301,43 @@ impl BitmapFrameAllocator {
         let bitmap_end = bitmap_phys_addr + (bitmap_size_u64 * 8) as u64;
         const MIN_USABLE_ADDR: u64 = 0x1000000; // 16 MB
 
-        for region in regions {
-            if region.typ == crate::core::handoff::MemoryType::Usable {
-                let start_frame = region.base / FRAME_SIZE as u64;
-                let end_frame = (region.base + region.len) / FRAME_SIZE as u64;
+        let mut k = 0usize;
+        while k < map_len {
+            let entry_addr = boot_info.memory_map_addr + (k as u64 * entry_size);
+            let base: u64;
+            let len: u64;
+            let typ_raw: u32;
+            core::arch::asm!(
+                "mov {0}, [{3}]",
+                "mov {1}, [{3} + 8]",
+                "mov {2:e}, [{3} + 16]",
+                out(reg) base,
+                out(reg) len,
+                out(reg) typ_raw,
+                in(reg) entry_addr,
+                options(nostack, preserves_flags, readonly)
+            );
+            // MemoryType::Usable = 1
+            if typ_raw == 1 {
+                let start_frame = base / FRAME_SIZE as u64;
+                let end_frame = (base + len) / FRAME_SIZE as u64;
 
-                for frame_idx in start_frame..end_frame {
+                let mut frame_idx = start_frame;
+                while frame_idx < end_frame {
                     let addr = frame_idx * FRAME_SIZE as u64;
 
-                    if addr == 0 {
-                        continue;
-                    }
-                    if addr < MIN_USABLE_ADDR {
-                        continue;
-                    }
-                    if addr >= boot_info.kernel_phys_addr && addr < kernel_end {
-                        continue;
-                    }
-                    if addr >= bitmap_phys_addr && addr < bitmap_end {
-                        continue;
-                    }
-
-                    if frame_idx < total_frames as u64 {
+                    if addr != 0
+                        && addr >= MIN_USABLE_ADDR
+                        && !(addr >= boot_info.kernel_phys_addr && addr < kernel_end)
+                        && !(addr >= bitmap_phys_addr && addr < bitmap_end)
+                        && frame_idx < total_frames as u64
+                    {
                         self.deallocate_frame(frame_idx as usize);
                     }
+                    frame_idx += 1;
                 }
             }
+            k += 1;
         }
 
         crate::kinfo!(
@@ -223,9 +351,21 @@ impl BitmapFrameAllocator {
         // Busca linear simples com "next_free" optimization
         let start_search = self.next_free;
 
-        for i in 0..self.bitmap.len() {
-            let idx = (start_search + i) % self.bitmap.len();
-            let entry = self.bitmap[idx];
+        let mut i = 0usize;
+        while i < self.bitmap_len {
+            let idx = (start_search + i) % self.bitmap_len;
+
+            // Ler entry via ponteiro (evita indexação de slice que pode gerar SSE)
+            let entry: u64;
+            unsafe {
+                let ptr = self.bitmap_ptr.add(idx);
+                core::arch::asm!(
+                    "mov {0}, [{1}]",
+                    out(reg) entry,
+                    in(reg) ptr,
+                    options(nostack, preserves_flags, readonly)
+                );
+            }
 
             if entry != u64::MAX {
                 // Se não está tudo cheio (todos 1s)
@@ -236,7 +376,16 @@ impl BitmapFrameAllocator {
 
                 if frame_idx < self.total_frames {
                     // Marcar como usado
-                    self.bitmap[idx] |= 1 << bit;
+                    let new_value = entry | (1u64 << bit);
+                    unsafe {
+                        let ptr = self.bitmap_ptr.add(idx);
+                        core::arch::asm!(
+                            "mov [{0}], {1}",
+                            in(reg) ptr,
+                            in(reg) new_value,
+                            options(nostack, preserves_flags)
+                        );
+                    }
                     self.used_frames += 1;
                     self.next_free = idx;
 
@@ -244,6 +393,7 @@ impl BitmapFrameAllocator {
                     return Some(PhysFrame { addr });
                 }
             }
+            i += 1;
         }
 
         // OOM (Out of Memory) - SEMPRE logar erros
@@ -270,8 +420,20 @@ impl BitmapFrameAllocator {
         let idx = frame_idx / 64;
         let bit = frame_idx % 64;
 
+        // Ler valor atual via ponteiro
+        let entry: u64;
+        unsafe {
+            let ptr = self.bitmap_ptr.add(idx);
+            core::arch::asm!(
+                "mov {0}, [{1}]",
+                out(reg) entry,
+                in(reg) ptr,
+                options(nostack, preserves_flags, readonly)
+            );
+        }
+
         // Verificar se já estava livre (Double Free)
-        if (self.bitmap[idx] & (1 << bit)) == 0 {
+        if (entry & (1 << bit)) == 0 {
             crate::kwarn!(
                 "(PMM) DOUBLE FREE! frame={} addr={:#x}",
                 frame_idx,
@@ -281,7 +443,16 @@ impl BitmapFrameAllocator {
         }
 
         // Marcar como livre (0)
-        self.bitmap[idx] &= !(1 << bit);
+        let new_value = entry & !(1u64 << bit);
+        unsafe {
+            let ptr = self.bitmap_ptr.add(idx);
+            core::arch::asm!(
+                "mov [{0}], {1}",
+                in(reg) ptr,
+                in(reg) new_value,
+                options(nostack, preserves_flags)
+            );
+        }
         self.used_frames -= 1;
 
         // Otimização: se liberamos algo antes do next_free, atualizamos

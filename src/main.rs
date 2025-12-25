@@ -13,7 +13,7 @@
 #![feature(asm_const)]
 
 // Importar a biblioteca do kernel.
-use forge::{core as kernel_core};
+use forge::core as kernel_core;
 
 // Habilitar alocação
 extern crate alloc;
@@ -53,7 +53,13 @@ pub unsafe extern "C" fn _start(boot_info_addr: u64) -> ! {
         "or ax, 0x600",
         "mov cr4, rax",
 
-        // 5. Restaurar argumento e chamar kernel_main
+        // 5. Garantir alinhamento de 16 bytes para SSE (System V ABI)
+        // RSP deve estar em (16n) antes de 'call' para que após push return addr fique (16n+8)
+        // Na verdade, SSE requer stack 16-aligned no entry da função, então precisamos
+        // garantir RSP = 16n antes de qualquer call
+        "and rsp, -16",
+
+        // 6. Restaurar argumento e chamar kernel_main
         "mov rdi, r15",
         "call {kernel_main}",
 

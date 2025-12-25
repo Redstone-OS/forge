@@ -243,20 +243,39 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
     let page_range = HEAP_START..(HEAP_START + HEAP_INITIAL_SIZE);
     let flags = crate::mm::vmm::PAGE_PRESENT | crate::mm::vmm::PAGE_WRITABLE;
 
-    for page_addr in (page_range).step_by(4096) {
+    // Usar while loop em vez de for+step_by para evitar código SSE do iterador
+    let mut page_addr = HEAP_START;
+    let heap_end = HEAP_START + HEAP_INITIAL_SIZE;
+    let mut pages_mapped = 0usize;
+
+    crate::ktrace!("(Heap) Iniciando loop de mapeamento...");
+
+    while page_addr < heap_end {
+        if pages_mapped == 0 {
+            crate::ktrace!("(Heap) Alocando primeiro frame...");
+        }
+
         let frame = match pmm.allocate_frame() {
             Some(f) => f,
             None => {
-                crate::kerror!("(Heap) init: OOM");
+                crate::kerror!("(Heap) init: OOM após {} páginas", pages_mapped);
                 return false;
             }
         };
 
+        if pages_mapped == 0 {
+            crate::ktrace!("(Heap) Primeiro frame: {:#x}, mapeando...", frame.addr);
+        }
+
         if unsafe { !crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr, flags, pmm) } {
-            crate::kerror!("(Heap) init: mapeamento falhou");
+            crate::kerror!("(Heap) init: mapeamento falhou em {:#x}", page_addr);
             return false;
         }
+
+        pages_mapped += 1;
+        page_addr += 4096;
     }
+    crate::ktrace!("(Heap) {} páginas mapeadas OK", pages_mapped);
 
     unsafe {
         ALLOCATOR.init(HEAP_START, HEAP_INITIAL_SIZE);

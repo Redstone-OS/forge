@@ -25,6 +25,11 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         Cpu::hang();
     }
 
+    // 1.5. Garantir SSE/FPU inicializado (redundante com _start, mas seguro)
+    unsafe {
+        crate::arch::x86_64::cpu::X64Cpu::init_sse();
+    }
+
     // 2. Inicializar Sistema de Logs
     // A partir daqui, podemos usar kinfo!, kwarn!, kerror!.
     // O driver serial é inicializado implicitamente na primeira chamada.

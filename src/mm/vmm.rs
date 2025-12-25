@@ -356,10 +356,19 @@ unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
         core::ptr::write_volatile(pte_ptr, temp_pte);
         asm!("invlpg [{}]", in(reg) SCRATCH_VIRT, options(nostack, preserves_flags));
 
-        // Zerar via endereço virtual do scratch
+        // Zerar via endereço virtual do scratch usando while + assembly
         let base = SCRATCH_VIRT as *mut u64;
-        for i in 0..512 {
-            core::ptr::write_volatile(base.add(i), 0u64);
+        let mut i = 0usize;
+        let zero_val = 0u64;
+        while i < 512 {
+            let ptr = base.add(i);
+            core::arch::asm!(
+                "mov [{0}], {1}",
+                in(reg) ptr,
+                in(reg) zero_val,
+                options(nostack, preserves_flags)
+            );
+            i += 1;
         }
 
         // Restaurar PTE original
@@ -380,8 +389,17 @@ unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
 
     crate::ktrace!("(VMM) zero_frame: usando identity map para {:#x}", phys);
     let ptr: *mut u64 = phys_to_virt(phys);
-    for i in 0..512 {
-        core::ptr::write_volatile(ptr.add(i), 0u64);
+    let mut i = 0usize;
+    let zero_val = 0u64;
+    while i < 512 {
+        let entry_ptr = ptr.add(i);
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) entry_ptr,
+            in(reg) zero_val,
+            options(nostack, preserves_flags)
+        );
+        i += 1;
     }
 
     Ok(())
@@ -418,15 +436,49 @@ pub unsafe fn map_page_with_pmm(
     flags: u64,
     pmm: &mut BitmapFrameAllocator,
 ) -> bool {
+    // DEBUG: Log de entrada apenas na primeira página
+    static mut FIRST_MAP: bool = true;
+    let is_first = FIRST_MAP;
+    if is_first {
+        FIRST_MAP = false;
+        crate::ktrace!(
+            "(VMM) map_page_with_pmm: virt={:#x} phys={:#x}",
+            virt_addr,
+            phys_addr
+        );
+    }
+
     // Índices da hierarquia (9 bits cada)
     let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
     let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
     let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
     let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
 
+    if is_first {
+        crate::ktrace!(
+            "(VMM) indices: pml4={} pdpt={} pd={} pt={}",
+            pml4_idx,
+            pdpt_idx,
+            pd_idx,
+            pt_idx
+        );
+    }
+
     // Ponteiro para a PML4 atual via phys_to_virt
     let pml4_ptr: *mut u64 = phys_to_virt(ACTIVE_PML4_PHYS);
+
+    if is_first {
+        crate::ktrace!("(VMM) pml4_ptr = {:p}", pml4_ptr);
+    }
+
     let pml4_entry = &mut *pml4_ptr.add(pml4_idx);
+
+    if is_first {
+        crate::ktrace!(
+            "(VMM) pml4_entry = {:#x}, chamando ensure_table...",
+            *pml4_entry
+        );
+    }
 
     // Garantir PDPT existe
     let pdpt_phys = ensure_table_entry_with_pmm(pml4_entry, pmm);
@@ -518,18 +570,29 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
             let pt: *mut u64 = phys_to_virt(pt_phys);
             let new_flags = (old_flags & !PAGE_HUGE) | PAGE_PRESENT | PAGE_WRITABLE;
 
-            for i in 0..512usize {
-                let page_phys = huge_base + (i as u64 * 4096);
-                core::ptr::write_volatile(pt.add(i), page_phys | new_flags);
+            let mut j = 0usize;
+            while j < 512 {
+                let page_phys = huge_base + (j as u64 * 4096);
+                let entry_val = page_phys | new_flags;
+                let entry_ptr = pt.add(j);
+                core::arch::asm!(
+                    "mov [{0}], {1}",
+                    in(reg) entry_ptr,
+                    in(reg) entry_val,
+                    options(nostack, preserves_flags)
+                );
+                j += 1;
             }
 
             // Atualiza a entrada do PD para apontar para a nova PT (removendo HUGE).
             *entry = pt_phys | PAGE_PRESENT | PAGE_WRITABLE;
 
             // Invalidar TLB para toda a região anteriormente mapeada como huge page.
-            for i in 0..512u64 {
-                let vaddr = huge_base + (i * 4096);
+            let mut k = 0u64;
+            while k < 512 {
+                let vaddr = huge_base + (k * 4096);
                 asm!("invlpg [{}]", in(reg) vaddr, options(nostack, preserves_flags));
+                k += 1;
             }
 
             crate::kdebug!("(VMM) Huge page split OK: nova PT em {:#x}", pt_phys);
