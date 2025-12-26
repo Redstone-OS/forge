@@ -19,26 +19,42 @@ impl Initramfs {
     /// Cria o FS a partir de um slice de memória contendo o TAR.
     pub fn new(data: &'static [u8]) -> Self {
         crate::kdebug!("(Initramfs) Parsing arquivo TAR. bytes=", data.len() as u64);
-        let mut fs = Self {
-            data,
-            // Pré-alocar para evitar realocação durante parse (que causa UD)
-            files: Vec::with_capacity(16),
-        };
+        crate::ktrace!("(Initramfs) [1] Criando Vec...");
+
+        // Criar Vec vazio primeiro, sem pré-alocação para evitar SSE
+        let files: Vec<Arc<TarFile>> = Vec::new();
+
+        crate::ktrace!("(Initramfs) [2] Vec criado, construindo struct...");
+
+        let mut fs = Self { data, files };
+
+        crate::ktrace!("(Initramfs) [3] Struct pronta, chamando parse...");
         fs.parse();
+        crate::ktrace!("(Initramfs) [4] Parse concluído");
         fs
     }
 
     fn parse(&mut self) {
-        // crate::kinfo!("parse: inicio, data.len={}", self.data.len());
+        crate::ktrace!("(Initramfs) parse: Iniciando...");
 
         // Parsing simplificado de TAR (USTAR)
-        let mut offset = 0;
+        let mut offset = 0usize;
 
         while offset + 512 <= self.data.len() {
             let header = &self.data[offset..offset + 512];
 
-            // Verificar fim do arquivo (bloco de zeros)
-            if header.iter().all(|&b| b == 0) {
+            // Verificar fim do arquivo (bloco de zeros) usando while manual
+            let mut all_zero = true;
+            let mut check_idx = 0usize;
+            while check_idx < 512 {
+                if header[check_idx] != 0 {
+                    all_zero = false;
+                    break;
+                }
+                check_idx += 1;
+            }
+
+            if all_zero {
                 crate::ktrace!("(Initramfs) parse: EOD (End of Data) encontrado");
                 break;
             }
@@ -48,7 +64,7 @@ impl Initramfs {
 
             // Parse tamanho (offset 124, 12 bytes octal)
             let size_str = parse_null_term_str(&header[124..136]);
-            let size = u64::from_str_radix(size_str.trim(), 8).unwrap_or(0);
+            let size = parse_octal(size_str);
 
             // Parse tipo (offset 156, 1 byte)
             let type_flag = header[156];
@@ -63,27 +79,36 @@ impl Initramfs {
             let next_header = (data_end + 511) & !511;
 
             if kind == NodeType::File {
-                crate::ktrace!("(Initramfs) parse: ");
-                crate::klog!(name);
-                crate::klog!(" size=", size, " em=", data_start as u64);
-                crate::knl!();
+                crate::ktrace!("(Initramfs) parse: [A] arquivo encontrado");
                 let file_data = &self.data[data_start..data_end];
 
-                // Criar String manualmente (evita String::from que causa GPF)
+                crate::ktrace!("(Initramfs) parse: [B1] name.as_bytes()...");
                 let name_bytes = name.as_bytes();
-                let mut name_vec: Vec<u8> = Vec::with_capacity(name_bytes.len());
-                for &b in name_bytes {
-                    name_vec.push(b);
+
+                crate::ktrace!("(Initramfs) parse: [B2] Vec::new()...");
+                let mut name_vec: Vec<u8> = Vec::new();
+
+                crate::ktrace!("(Initramfs) parse: [B3] loop push...");
+                let mut i = 0usize;
+                while i < name_bytes.len() {
+                    name_vec.push(name_bytes[i]);
+                    i += 1;
                 }
+                crate::ktrace!("(Initramfs) parse: [B4] loop concluído");
+
+                crate::ktrace!("(Initramfs) parse: [C] convertendo para String...");
                 let name_str = unsafe { String::from_utf8_unchecked(name_vec) };
 
+                crate::ktrace!("(Initramfs) parse: [D] criando Arc<TarFile>...");
                 let tar_file = Arc::new(TarFile {
                     name: name_str,
                     size,
                     data: file_data,
                 });
 
+                crate::ktrace!("(Initramfs) parse: [E] push para files...");
                 self.files.push(tar_file);
+                crate::ktrace!("(Initramfs) parse: [F] arquivo processado OK");
             }
 
             offset = next_header;
@@ -94,6 +119,30 @@ impl Initramfs {
             self.files.len() as u64
         );
     }
+}
+
+/// Parse octal string manualmente para evitar from_str_radix que pode gerar SSE
+fn parse_octal(s: &str) -> u64 {
+    let bytes = s.as_bytes();
+    let mut result = 0u64;
+    let mut i = 0usize;
+
+    // Pular espaços iniciais
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'0') {
+        i += 1;
+    }
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b >= b'0' && b <= b'7' {
+            result = result * 8 + (b - b'0') as u64;
+        } else {
+            break;
+        }
+        i += 1;
+    }
+
+    result
 }
 
 // Implementação do VfsNode para a raiz do Initramfs
@@ -110,11 +159,13 @@ impl VfsNode for Initramfs {
 
     fn list(&self) -> Result<Vec<Arc<dyn VfsNode>>, VfsError> {
         // Retorna todos os arquivos (flat structure por enquanto)
-        // TODO: Implementar hierarquia real de diretórios.
         // Pré-alocar para evitar realocação que causa crash
         let mut nodes = Vec::with_capacity(self.files.len());
-        for f in &self.files {
-            nodes.push(f.clone() as Arc<dyn VfsNode>);
+        // Usar while ao invés de for para evitar SSE
+        let mut i = 0usize;
+        while i < self.files.len() {
+            nodes.push(self.files[i].clone() as Arc<dyn VfsNode>);
+            i += 1;
         }
         Ok(nodes)
     }
@@ -156,9 +207,11 @@ impl VfsHandle for TarFileHandle {
         let available = self.data.len() - offset;
         let to_read = core::cmp::min(available, buf.len());
 
-        // Cópia manual byte a byte (evitar copy_from_slice que usa memcpy e causa GPF)
-        for i in 0..to_read {
+        // Cópia manual byte a byte usando while
+        let mut i = 0usize;
+        while i < to_read {
             buf[i] = self.data[offset + i];
+            i += 1;
         }
         Ok(to_read)
     }
@@ -168,7 +221,17 @@ impl VfsHandle for TarFileHandle {
     }
 }
 
+/// Parse null-terminated string usando while manual
 fn parse_null_term_str(bytes: &[u8]) -> &str {
-    let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    str::from_utf8(&bytes[..len]).unwrap_or("")
+    // Encontrar posição do null usando while
+    let mut len = 0usize;
+    while len < bytes.len() && bytes[len] != 0 {
+        len += 1;
+    }
+
+    // Converter para str (assumindo UTF-8 válido)
+    match str::from_utf8(&bytes[..len]) {
+        Ok(s) => s,
+        Err(_) => "",
+    }
 }

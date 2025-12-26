@@ -35,15 +35,46 @@ impl SizeClass {
         }
     }
 
+    /// NOTA: Usa assembly para evitar SSE
     unsafe fn push(&mut self, ptr: *mut u8) {
-        let mut obj = NonNull::new_unchecked(ptr as *mut FreeObject);
-        obj.as_mut().next = self.free_list;
-        self.free_list = Some(obj);
+        let obj_ptr = ptr as *mut usize; // Ponteiro para o campo 'next'
+        let next_val = match self.free_list {
+            Some(p) => p.as_ptr() as usize,
+            None => 0, // null
+        };
+
+        // Escrever usando assembly
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) obj_ptr,
+            in(reg) next_val,
+            options(nostack, preserves_flags)
+        );
+
+        self.free_list = NonNull::new(ptr as *mut FreeObject);
     }
 
+    /// NOTA: Usa assembly para evitar SSE na leitura
     unsafe fn pop(&mut self) -> Option<*mut u8> {
         if let Some(obj) = self.free_list {
-            self.free_list = obj.as_ref().next;
+            let obj_ptr = obj.as_ptr() as *const usize;
+
+            // Ler o campo 'next' usando assembly
+            let next_val: usize;
+            core::arch::asm!(
+                "mov {0}, [{1}]",
+                out(reg) next_val,
+                in(reg) obj_ptr,
+                options(nostack, preserves_flags, readonly)
+            );
+
+            // Converter o valor lido para Option<NonNull<FreeObject>>
+            if next_val == 0 {
+                self.free_list = None;
+            } else {
+                self.free_list = NonNull::new(next_val as *mut FreeObject);
+            }
+
             return Some(obj.as_ptr() as *mut u8);
         }
         None
@@ -88,6 +119,8 @@ impl SlabAllocator {
     /// # Layout em Memória
     /// `[ CANARY_START (8B) | PADDING (Align) | DADOS USUÁRIO | CANARY_END (8B) ]`
     pub unsafe fn alloc(&mut self, layout: Layout, buddy: &mut BuddyAllocator) -> *mut u8 {
+        crate::ktrace!("(Slab) alloc: [S1] entrada");
+
         // Calcular tamanho total necessário incluindo Canaries e alinhamento
         let header_size = Self::align_up(CANARY_SIZE, layout.align());
         let footer_size = CANARY_SIZE;
@@ -95,71 +128,60 @@ impl SlabAllocator {
 
         let total_size = header_size + payload_size + footer_size;
 
-        // Verificar se ainda cabe nos slabs (senão, repassa para Buddy direto?)
-        // Nota: Se ficar grande demais, podemos simplesmente não usar canary ou deixar o HeapAllocator decidir.
-        // Por simplicidade aqui, se estourar 2048, falhamos ou tentamos alocar do slab maior?
-        // O HeapAllocator chama slab.alloc só se size <= 2048. Mas size AQUI cresceu.
-        // Vamos assumir que HeapAllocator verifica o tamanho *original*.
-        // Se `total_size` > 2048, allocamos do SlabIndex 7 (2048) ? Não vai caber.
-        // ERRO DE DESIGN: Se o usuáiro pede 2048, +16 bytes = 2064. O SlabAllocator só tem slots de 2048.
-        // SOLUÇÃO: O HeapAllocator deve considerar o overhead *antes* de decidir Slab vs Buddy.
-        // MAS como o canary é implementação interna do Slab...
-        // AJUSTE: O SlabAllocator vai tentar achar um slot que caiba `total_size`.
-        // Se `total_size` > MAX_BLOCK_SIZE, retornamos null indicando que Slab não serve,
-        // mas HeapAllocator já decidiu Slab...
-        // FIX RÁPIDO: Se total_size > MAX_BLOCK_SIZE, delegamos pro Buddy (como fallback) ou panicamos?
-        // Melhor delegar ao Buddy se ficar grande demais.
+        crate::ktrace!("(Slab) alloc: [S2] total_size=", total_size as u64);
+
         if total_size > MAX_BLOCK_SIZE {
-            // Caso especial: overflow do tamanho máximo do slab.
-            // Para não quebrar, vamos alocar diretamente do Buddy "raw" (sem canary do slab, ou implementamos canary lá tbm).
-            // Por consistência, vamos alocar do Buddy MAS retornar sem canary para esses limiares,
-            // OU (melhor) implementamos canary manual on-top do buddy aqui.
-            // Vamos simplificar: se estourar, aloca do buddy diretamente (sem proteção).
-            // TODO: Mover lógica de canary para camada superior (HeapAllocator)?
+            crate::ktrace!("(Slab) alloc: [S2a] -> buddy fallback");
             return buddy.alloc(layout);
         }
 
+        crate::ktrace!("(Slab) alloc: [S3] index_for...");
         let idx = self.index_for(total_size);
+
+        crate::ktrace!("(Slab) alloc: [S4] alloc_block idx=", idx as u64);
 
         // --- Início da lógica de alocação de bloco (Inner Alloc) ---
         let ptr = self.alloc_block(idx, buddy);
         if ptr.is_null() {
+            crate::kerror!("(Slab) alloc: [S5] OOM!");
             return core::ptr::null_mut();
         }
+
+        crate::ktrace!("(Slab) alloc: [S5] ptr=", ptr as u64);
         // --- Fim Inner Alloc ---
 
         // Escrever Canaries
         let user_ptr = ptr.add(header_size);
 
-        // Header
-        // let header_ptr = user_ptr.sub(CANARY_SIZE) as *mut u64; // Removido (unused)
-        // ptr (início do bloco) -> ... -> user_ptr
-        // Escrevemos CANARY_START logo antes de user_ptr? E se o padding for grande?
-        // O Canary deve ficar FIXO em relação ao user_ptr ou ao bloco?
-        // Melhor: Canary no início do BLOCO ALOCADO.
-        // Mas user data precisa estar alinhado.
-
-        // Reboot lógica de pointers:
         // Bloco: [ H | P | User | F ]
         // H = ptr (block start)
         // User = ptr + header_size (header_size ajustado para alinhar User)
         // F = User + payload_size
 
-        // 1. Escrever Start Canary
-        // Nota: ptr pode não estar alinhado para u64? O Slab garante alinhamento mínimo (ex: 16)?
-        // MIN_BLOCK_SIZE=16, endereços de página 4096. Sim, estão alinhados a 8 pelo menos.
-        (ptr as *mut u64).write(CANARY_START);
+        // 1. Escrever Start Canary usando assembly
+        let canary_start_ptr = ptr as *mut u64;
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) canary_start_ptr,
+            in(reg) CANARY_START,
+            options(nostack, preserves_flags)
+        );
 
-        // 2. Escrever End Canary
+        // 2. Escrever End Canary usando assembly
         let footer_ptr = user_ptr.add(payload_size) as *mut u64;
-        // O footer pode estar desalinhado se payload_size não for múltiplo de 8.
-        // write_unaligned é seguro aqui.
-        footer_ptr.write_unaligned(CANARY_END);
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) footer_ptr,
+            in(reg) CANARY_END,
+            options(nostack, preserves_flags)
+        );
 
         user_ptr
     }
 
     /// Helper interno p/ obter bloco bruto
+    ///
+    /// NOTA: Usa while loops para evitar SSE
     unsafe fn alloc_block(&mut self, idx: usize, buddy: &mut BuddyAllocator) -> *mut u8 {
         // Tenta alocar da free list existente
         if let Some(obj) = self.size_classes[idx].pop() {
@@ -174,14 +196,16 @@ impl SlabAllocator {
             return core::ptr::null_mut(); // OOM no Buddy
         }
 
-        // Dividir a página
+        // Dividir a página usando while
         let block_size = self.size_classes[idx].block_size;
         let blocks = 4096 / block_size;
 
         let mut current_ptr = page_ptr;
-        for _ in 0..blocks {
+        let mut i = 0usize;
+        while i < blocks {
             self.size_classes[idx].push(current_ptr);
             current_ptr = current_ptr.add(block_size);
+            i += 1;
         }
 
         self.size_classes[idx]

@@ -128,13 +128,8 @@ fn test_heap_basic() {
     let heap_start = crate::mm::heap::heap_start();
     let heap_size = crate::mm::heap::HEAP_INITIAL_SIZE;
 
-    crate::klog!(
-        "(Heap) Teste: HEAP_START=",
-        heap_start,
-        " SIZE=",
-        heap_size as u64
-    );
-    crate::knl!();
+    crate::kdebug!("(Heap) Teste: HEAP_START=", heap_start);
+    crate::kdebug!("(Heap) Teste: HEAP_SIZE =", heap_size as u64);
 
     // Verificar que podemos ler/escrever no heap via ponteiro raw
     let heap_ptr = heap_start as *mut u64;

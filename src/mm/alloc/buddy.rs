@@ -108,6 +108,8 @@ impl BuddyAllocator {
     }
 
     /// Aloca memória
+    ///
+    /// NOTA: Usa while loops para evitar SSE de iteradores
     pub unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
         let size = max(layout.size(), size_of::<FreeBlock>());
         let align = max(layout.align(), size_of::<FreeBlock>());
@@ -117,23 +119,34 @@ impl BuddyAllocator {
         let target_order = self.size_to_order(pages_needed);
 
         // Tentar encontrar bloco na ordem alvo ou maior
-        for order in target_order..=MAX_ORDER {
+        let mut order = target_order;
+        while order <= MAX_ORDER {
             if let Some(block_ptr) = self.pop(order) {
                 // Bloco encontrado!
                 let ptr = block_ptr.as_ptr() as usize;
 
                 // Dividir (split) até chegar na ordem desejada
-                for curr_order in (target_order..order).rev() {
-                    let buddy_size = 1 << (curr_order + 12);
-                    let buddy_addr = ptr + buddy_size;
+                // Itera de (order-1) até target_order inclusive, em ordem decrescente
+                if order > target_order {
+                    let mut curr_order = order - 1;
+                    loop {
+                        let buddy_size = 1 << (curr_order + 12);
+                        let buddy_addr = ptr + buddy_size;
 
-                    // O bloco "superior" (buddy) vai para a free list da ordem menor
-                    self.push(buddy_addr, curr_order);
+                        // O bloco "superior" (buddy) vai para a free list da ordem menor
+                        self.push(buddy_addr, curr_order);
+
+                        if curr_order == target_order {
+                            break;
+                        }
+                        curr_order -= 1;
+                    }
                 }
 
                 self.allocated_bytes += 1 << (target_order + 12);
                 return ptr as *mut u8;
             }
+            order += 1;
         }
 
         core::ptr::null_mut()
@@ -185,20 +198,30 @@ impl BuddyAllocator {
     }
 
     /// Insere um bloco na free list de uma ordem
+    ///
+    /// NOTA: Usa assembly para evitar SSE em write_volatile
     unsafe fn push(&mut self, addr: usize, order: usize) {
         use core::sync::atomic::{compiler_fence, Ordering};
 
         compiler_fence(Ordering::SeqCst);
 
-        let block_ptr = addr as *mut FreeBlock;
-        let next = self.free_lists[order];
+        let block_ptr = addr as *mut usize; // Ponteiro para o campo 'next'
+        let next_val = match self.free_lists[order] {
+            Some(ptr) => ptr.as_ptr() as usize,
+            None => 0, // null
+        };
 
-        // Usar volatile write para garantir que a escrita aconteça
-        core::ptr::write_volatile(block_ptr, FreeBlock { next });
+        // Escrever usando assembly em vez de write_volatile
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) block_ptr,
+            in(reg) next_val,
+            options(nostack, preserves_flags)
+        );
 
         compiler_fence(Ordering::SeqCst);
 
-        self.free_lists[order] = NonNull::new(block_ptr);
+        self.free_lists[order] = NonNull::new(addr as *mut FreeBlock);
     }
 
     /// Remove o primeiro bloco da free list de uma ordem

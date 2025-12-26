@@ -39,7 +39,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 2. Inicializar Sistema de Logs
     crate::kinfo!("╔════════════════════════════════════════╗");
-    crate::kinfo!("║   Kernel Redstone OS (Forge) - V0.1.0  ║");
+    crate::kinfo!("║   Kernel Redstone OS (Forge) - v0.0.3  ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 
     crate::kinfo!("Protocolo de Boot v", boot_info.version as u64);

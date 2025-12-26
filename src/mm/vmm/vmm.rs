@@ -451,13 +451,8 @@ pub unsafe fn map_page_with_pmm(
     let is_first = FIRST_MAP;
     if is_first {
         FIRST_MAP = false;
-        crate::klog!(
-            "[TRAC] (VMM) map_page_with_pmm: virt=",
-            virt_addr,
-            " phys=",
-            phys_addr
-        );
-        crate::knl!();
+        crate::ktrace!("(VMM) map_page_with_pmm: virt=", virt_addr);
+        crate::ktrace!("(VMM)                    phys=", phys_addr);
     }
 
     // Índices da hierarquia (9 bits cada)
@@ -467,14 +462,10 @@ pub unsafe fn map_page_with_pmm(
     let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
 
     if is_first {
-        crate::klog!(
-            "(VMM) índices: pml4=",
-            pml4_idx as u64,
-            " pdpt=",
-            pdpt_idx as u64
-        );
-        crate::klog!(" pd=", pd_idx as u64, " pt=", pt_idx as u64);
-        crate::knl!();
+        crate::ktrace!("(VMM) índices: pml4=", pml4_idx as u64);
+        crate::ktrace!("(VMM)          pdpt=", pdpt_idx as u64);
+        crate::ktrace!("(VMM)          pd  =", pd_idx as u64);
+        crate::ktrace!("(VMM)          pt  =", pt_idx as u64);
     }
 
     // Ponteiro para a PML4 atual via phys_to_virt
@@ -625,11 +616,10 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
         // Entrada presente e não-huge: garantir flags de acesso e retornar endereço.
         *entry |= PAGE_USER | PAGE_WRITABLE;
         if should_log {
-            crate::klog!(
+            crate::ktrace!(
                 "(VMM) ensure_table: entry presente, phys=",
                 *entry & PAGE_MASK
             );
-            crate::knl!();
         }
         return *entry & PAGE_MASK;
     }
@@ -867,13 +857,8 @@ pub unsafe fn unmap_page(virt_addr: u64) -> MmResult<PhysAddr> {
         options(nostack, preserves_flags)
     );
 
-    crate::klog!(
-        "[TRAC] (VMM) unmap_page: virt=",
-        virt_addr,
-        " -> phys=",
-        phys
-    );
-    crate::knl!();
+    crate::ktrace!("(VMM) unmap_page: virt=", virt_addr);
+    crate::ktrace!("(VMM)             phys=", phys);
 
     Ok(PhysAddr::new(phys))
 }

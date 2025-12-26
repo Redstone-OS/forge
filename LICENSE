@@ -1,32 +1,21 @@
-Redstone OS Open License (RSO-OL) — 2025
+Redstone OS Open License (MIT)
 
 Copyright (c) 2025 João Victor P.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to:
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-- Use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-  copies of the Software, and/or make derivative works of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Conditions:
-
-1. Any derivative work or fork of this Software must also be released as open source
-   under the same terms as this license. You cannot take a modified version private or closed source.
-
-2. The above copyright notice and this permission notice must be included in all copies
-   or substantial portions of the Software.
-
-3. This Software is provided "as is", without warranty of any kind, express or implied,
-   including but not limited to the warranties of merchantability, fitness for a particular
-   purpose, and non-infringement. In no event shall the authors be liable for any claim,
-   damages, or other liability, whether in an action of contract, tort, or otherwise,
-   arising from, out of, or in connection with the Software or the use or other dealings in the Software.
-
----
-
-Summary:
-
-- You can do **anything** with the code.  
-- You **must** keep your changes open if you distribute them.  
-- You **must** keep my name and this license in the code.  
-- I am **not responsible** for anything you do with it.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

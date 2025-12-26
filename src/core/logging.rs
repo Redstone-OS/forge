@@ -282,7 +282,7 @@ macro_rules! knl {
 #[macro_export]
 macro_rules! kok {
     ($msg:expr) => {{
-        $crate::drivers::serial::emit_str("\x1b[32m[OK]\x1b[0m ");
+        $crate::drivers::serial::emit_str("\x1b[32m[OK]  \x1b[0m ");
         $crate::drivers::serial::emit_str($msg);
         $crate::drivers::serial::emit_nl();
     }};

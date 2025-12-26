@@ -80,8 +80,7 @@ impl Pit {
 
         let actual_freq = BASE_FREQUENCY / divisor;
         crate::ktrace!("(PIT) set_frequency: Divisor=", divisor as u64);
-        crate::klog!(" Freq real=", actual_freq as u64, " Hz");
-        crate::knl!();
+        crate::ktrace!("(PIT) set_frequency: Freq real=", actual_freq as u64);
 
         unsafe {
             // Modo de Operação:

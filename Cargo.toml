@@ -18,7 +18,7 @@
 
 [package]
 name = "forge"
-version = "0.0.3"                                            # Bump para Log Refactor
+version = "0.0.3"
 edition = "2021"
 authors = ["Redstone OS Team"]
 description = "Industrial-Grade Microkernel for Redstone OS"

@@ -72,6 +72,29 @@ const MAX_MEMORY_MAP_ENTRIES: usize = 128;
 const MAX_PROBING_ATTEMPTS: usize = 20;
 
 // ============================================================================
+// FUNÇÕES AUXILIARES SEM SSE
+// ============================================================================
+
+/// Encontra o primeiro bit zero em um u64 (equivalente a trailing_ones())
+///
+/// NOTA: Implementação manual usando while loop para evitar SSE
+#[inline]
+fn find_first_zero_bit(val: u64) -> usize {
+    if val == u64::MAX {
+        return 64; // Todos os bits estão setados
+    }
+
+    let mut bit = 0usize;
+    while bit < 64 {
+        if (val & (1u64 << bit)) == 0 {
+            return bit;
+        }
+        bit += 1;
+    }
+    64 // Não encontrado (todos setados)
+}
+
+// ============================================================================
 // ESTRUTURA PRINCIPAL
 // ============================================================================
 
@@ -397,22 +420,46 @@ impl BitmapFrameAllocator {
 
 impl BitmapFrameAllocator {
     /// Aloca um frame físico
+    /// Aloca um frame físico
+    ///
+    /// NOTA: Usa while loops e assembly para evitar SSE
     pub fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let start_search = self.next_free;
         let limit = self.bitmap_len;
 
-        for i in 0..limit {
+        // Usar while ao invés de for
+        let mut i: usize = 0;
+        while i < limit {
             let idx = (start_search + i) % limit;
             unsafe {
                 let entry_ptr = self.bitmap_ptr.add(idx);
-                let entry = core::ptr::read_volatile(entry_ptr);
+
+                // Ler usando assembly
+                let entry: u64;
+                core::arch::asm!(
+                    "mov {0}, [{1}]",
+                    out(reg) entry,
+                    in(reg) entry_ptr,
+                    options(nostack, preserves_flags, readonly)
+                );
 
                 if entry != u64::MAX {
-                    let bit = entry.trailing_ones() as usize;
+                    // Encontrar primeiro bit zero manualmente (evita trailing_ones que pode usar SSE)
+                    let bit = find_first_zero_bit(entry);
                     if bit < 64 {
                         let frame_idx = idx * 64 + bit;
                         if frame_idx < self.total_frames {
-                            core::ptr::write_volatile(entry_ptr, entry | (1 << bit));
+                            // Calcular nova entrada com bit setado
+                            let new_entry = entry | (1u64 << bit);
+
+                            // Escrever usando assembly
+                            core::arch::asm!(
+                                "mov [{0}], {1}",
+                                in(reg) entry_ptr,
+                                in(reg) new_entry,
+                                options(nostack, preserves_flags)
+                            );
+
                             compiler_fence(Ordering::SeqCst);
                             self.stats.inc_alloc();
                             self.next_free = idx;
@@ -423,11 +470,14 @@ impl BitmapFrameAllocator {
                     }
                 }
             }
+            i += 1;
         }
         None
     }
 
     /// Desaloca um frame físico
+    ///
+    /// NOTA: Usa assembly puro para evitar SSE
     pub fn deallocate_frame(&mut self, frame: PhysFrame) {
         let start_addr = frame.start_address().as_u64();
         let frame_idx = (start_addr / PAGE_SIZE as u64) as usize;
@@ -440,11 +490,29 @@ impl BitmapFrameAllocator {
 
         unsafe {
             let ptr = self.bitmap_ptr.add(idx);
-            let entry = core::ptr::read_volatile(ptr);
+
+            // Ler usando assembly
+            let entry: u64;
+            core::arch::asm!(
+                "mov {0}, [{1}]",
+                out(reg) entry,
+                in(reg) ptr,
+                options(nostack, preserves_flags, readonly)
+            );
+
             let mask = 1u64 << bit;
 
             if (entry & mask) != 0 {
-                core::ptr::write_volatile(ptr, entry & !mask);
+                let new_entry = entry & !mask;
+
+                // Escrever usando assembly
+                core::arch::asm!(
+                    "mov [{0}], {1}",
+                    in(reg) ptr,
+                    in(reg) new_entry,
+                    options(nostack, preserves_flags)
+                );
+
                 compiler_fence(Ordering::SeqCst);
                 self.stats.inc_free();
                 if idx < self.next_free {
@@ -455,49 +523,69 @@ impl BitmapFrameAllocator {
     }
 
     /// Libera frames em regiões Usable
+    ///
+    /// NOTA: Usa while loops ao invés de for para evitar SSE
     unsafe fn init_free_regions(
         &mut self,
         boot_info: &BootInfo,
         bitmap_start: PhysAddr,
         bitmap_size: u64,
     ) {
+        crate::ktrace!("(PMM) init_free_regions: Iniciando...");
+
         let kernel_start = boot_info.kernel_phys_addr;
         let kernel_end = kernel_start + boot_info.kernel_size;
         let bitmap_end = bitmap_start.as_u64() + bitmap_size;
 
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
-        let map_len = core::cmp::min(boot_info.memory_map_len as usize, MAX_MEMORY_MAP_ENTRIES);
+        let map_len = if boot_info.memory_map_len as usize > MAX_MEMORY_MAP_ENTRIES {
+            MAX_MEMORY_MAP_ENTRIES
+        } else {
+            boot_info.memory_map_len as usize
+        };
 
         compiler_fence(Ordering::SeqCst);
 
-        for i in 0..map_len {
+        // Usar while ao invés de for para evitar iteradores SSE
+        let mut i: usize = 0;
+        while i < map_len {
             let entry = &*map_ptr.add(i);
             if entry.typ == MemoryType::Usable {
                 let start_frame = entry.base / PAGE_SIZE as u64;
                 let end_frame = (entry.base + entry.len) / PAGE_SIZE as u64;
 
-                for f in start_frame..end_frame {
+                // Usar while ao invés de for
+                let mut f = start_frame;
+                while f < end_frame {
                     let addr = f * PAGE_SIZE as u64;
 
                     if addr < MIN_ALLOC_ADDR {
+                        f += 1;
                         continue;
                     }
                     if addr >= kernel_start && addr < kernel_end {
+                        f += 1;
                         continue;
                     }
                     if addr >= bitmap_start.as_u64() && addr < bitmap_end {
+                        f += 1;
                         continue;
                     }
 
                     self.deallocate_frame_internal(f as usize);
+                    f += 1;
                 }
             }
+            i += 1;
         }
 
         compiler_fence(Ordering::SeqCst);
+        crate::ktrace!("(PMM) init_free_regions: Concluído");
     }
 
     /// Desaloca frame internamente
+    ///
+    /// NOTA: Usa assembly puro para evitar SSE
     fn deallocate_frame_internal(&mut self, frame_idx: usize) {
         if frame_idx >= self.total_frames {
             return;
@@ -506,8 +594,27 @@ impl BitmapFrameAllocator {
         let bit = frame_idx % 64;
         unsafe {
             let ptr = self.bitmap_ptr.add(idx);
-            let entry = core::ptr::read_volatile(ptr);
-            core::ptr::write_volatile(ptr, entry & !(1u64 << bit));
+
+            // Ler usando assembly
+            let entry: u64;
+            core::arch::asm!(
+                "mov {0}, [{1}]",
+                out(reg) entry,
+                in(reg) ptr,
+                options(nostack, preserves_flags, readonly)
+            );
+
+            // Calcular nova entrada (limpar bit)
+            let mask = !(1u64 << bit);
+            let new_entry = entry & mask;
+
+            // Escrever usando assembly
+            core::arch::asm!(
+                "mov [{0}], {1}",
+                in(reg) ptr,
+                in(reg) new_entry,
+                options(nostack, preserves_flags)
+            );
         }
         self.stats.used_frames.fetch_sub(1, Ordering::SeqCst);
     }
@@ -552,6 +659,8 @@ impl BitmapFrameAllocator {
     }
 
     /// Verifica se um frame está ocupado
+    ///
+    /// NOTA: Usa assembly puro para evitar que o compilador gere instruções SSE
     pub fn is_frame_used(&self, phys_addr: u64) -> bool {
         let frame_idx = (phys_addr / PAGE_SIZE as u64) as usize;
 
@@ -564,8 +673,32 @@ impl BitmapFrameAllocator {
 
         unsafe {
             let ptr = self.bitmap_ptr.add(idx);
-            let entry = core::ptr::read_volatile(ptr);
-            (entry & (1u64 << bit)) != 0
+
+            // Ler o valor usando assembly para evitar SSE
+            let entry: u64;
+            core::arch::asm!(
+                "mov {0}, [{1}]",
+                out(reg) entry,
+                in(reg) ptr,
+                options(nostack, preserves_flags, readonly)
+            );
+
+            // Calcular máscara e verificar bit usando assembly
+            let mask: u64 = 1u64 << bit;
+            let result: u64;
+            core::arch::asm!(
+                "and {0}, {1}",
+                inout(reg) mask => result,
+                in(reg) entry,
+                options(nostack, preserves_flags, nomem)
+            );
+
+            result != 0
         }
+    }
+
+    /// Retorna o número total de frames gerenciados
+    pub fn total_frames(&self) -> usize {
+        self.total_frames
     }
 }

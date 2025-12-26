@@ -63,17 +63,27 @@ static mut SCAN_STATS: ScanStats = ScanStats::new();
 /// - O CR3 deve conter page tables válidas do bootloader
 /// - O PMM deve estar parcialmente inicializado (bitmap alocado)
 pub unsafe fn mark_bootloader_page_tables(pmm: &mut BitmapFrameAllocator) {
+    crate::ktrace!("(PTScanner) [1] Entrando na funcao...");
+
     let cr3: u64;
     asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
 
+    crate::ktrace!("(PTScanner) [2] CR3 lido=", cr3);
+
     let pml4_phys = cr3 & PAGE_MASK;
+
+    crate::ktrace!("(PTScanner) [3] PML4 phys=", pml4_phys);
 
     crate::kinfo!(
         "(PTScanner) Escaneando tabelas de página a partir de CR3=",
         pml4_phys
     );
 
+    crate::ktrace!("(PTScanner) [4] Resetando SCAN_STATS...");
+
     SCAN_STATS = ScanStats::new();
+
+    crate::ktrace!("(PTScanner) [5] Chamando mark_frame para PML4...");
 
     if mark_frame(pmm, pml4_phys, "PML4") {
         SCAN_STATS.pml4_frames += 1;
@@ -81,15 +91,19 @@ pub unsafe fn mark_bootloader_page_tables(pmm: &mut BitmapFrameAllocator) {
         SCAN_STATS.already_marked += 1;
     }
 
+    crate::ktrace!("(PTScanner) [6] PML4 marcado, chamando scan_pml4...");
+
     scan_pml4(pmm, pml4_phys);
 
     // Log de resumo
     crate::kdebug!("(PTScanner) Resumo: PML4=", SCAN_STATS.pml4_frames as u64);
-    crate::kdebug!("(PTScanner) PDPT=", SCAN_STATS.pdpt_frames as u64);
-    crate::kdebug!("(PTScanner) PD  =", SCAN_STATS.pd_frames as u64);
-    crate::kdebug!(" PT=", SCAN_STATS.pt_frames as u64);
-    crate::kdebug!(" (já marcados: ", SCAN_STATS.already_marked as u64);
-    crate::knl!();
+    crate::kdebug!("(PTScanner)         PDPT=", SCAN_STATS.pdpt_frames as u64);
+    crate::kdebug!("(PTScanner)         PD  =", SCAN_STATS.pd_frames as u64);
+    crate::kdebug!("(PTScanner)         PT  =", SCAN_STATS.pt_frames as u64);
+    crate::kdebug!(
+        "(PTScanner) Já marcados  =",
+        SCAN_STATS.already_marked as u64
+    );
 
     crate::kinfo!(
         "(PTScanner) Total quadros protegidos=",
@@ -103,11 +117,29 @@ pub unsafe fn mark_bootloader_page_tables(pmm: &mut BitmapFrameAllocator) {
 ///
 /// NOTA: Evita macros de formatação (ktrace!) para não gerar SSE/#UD
 unsafe fn mark_frame(pmm: &mut BitmapFrameAllocator, phys: u64, _level: &str) -> bool {
-    if pmm.is_frame_used(phys) {
+    // Diagnóstico: log antes de is_frame_used
+    crate::ktrace!("(PTScanner) mark_frame: phys=", phys);
+
+    // Calcular índices manualmente para evitar chamar método que pode gerar SSE
+    let frame_idx = (phys / 4096) as usize;
+    crate::ktrace!("(PTScanner) mark_frame: frame_idx=", frame_idx as u64);
+
+    // Verificar se está no range válido
+    if frame_idx >= pmm.total_frames() {
+        crate::ktrace!("(PTScanner) mark_frame: fora do range, retornando false");
         return false;
     }
 
+    crate::ktrace!("(PTScanner) mark_frame: chamando is_frame_used...");
+
+    if pmm.is_frame_used(phys) {
+        crate::ktrace!("(PTScanner) mark_frame: já marcado, retornando false");
+        return false;
+    }
+
+    crate::ktrace!("(PTScanner) mark_frame: chamando mark_frame_used...");
     let marked = pmm.mark_frame_used(phys);
+    crate::ktrace!("(PTScanner) mark_frame: OK");
 
     marked
 }
