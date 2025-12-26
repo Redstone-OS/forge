@@ -32,6 +32,7 @@
 //!   - *Risco:* Detectar Heap Overflow antes que corrompa dados vizinhos.
 //! - [ ] **TODO: (Safety)** Implementar **Randomization (ASLR-like)** para o heap base.
 
+use crate::drivers::serial;
 use crate::mm::alloc::{BuddyAllocator, SlabAllocator};
 use crate::sync::Mutex;
 use core::alloc::{GlobalAlloc, Layout};
@@ -109,9 +110,6 @@ impl HeapAllocator {
         _pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
     ) -> bool {
         crate::kwarn!("(HeapAllocator) grow: Não implementado para Buddy/Slab ainda.");
-        // Implementar growth no Buddy requer:
-        // 1. Mapear frames (similar ao Bump)
-        // 2. Chamar buddy.add_to_free_list(novo_range)
         false
     }
 }
@@ -138,7 +136,9 @@ impl LockedHeap {
     /// - Deve ser chamado apenas **uma vez** durante a inicialização do kernel
     /// - `heap_start` e `heap_size` devem estar mapeados em memória virtual válida
     pub unsafe fn init(&self, start: usize, size: usize) {
-        crate::kdebug!("(Heap) init: start={:#x} size={}", start, size);
+        crate::klog!("[DEBG] (Heap) init: início=", start, " tamanho=");
+        serial::emit_dec(size);
+        serial::emit_nl();
         self.inner.lock().init(start, size);
         crate::kdebug!("(Heap) init: OK");
     }
@@ -152,7 +152,9 @@ impl LockedHeap {
         extra_size: usize,
         pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
     ) -> bool {
-        crate::kdebug!("(Heap) grow: extra_size={}", extra_size);
+        serial::emit_str("[DEBG] (Heap) grow: extra_size=");
+        serial::emit_dec(extra_size);
+        serial::emit_nl();
         let result = self.inner.lock().grow(extra_size, pmm);
         if result {
             crate::kdebug!("(Heap) grow: OK");
@@ -174,25 +176,27 @@ unsafe impl GlobalAlloc for LockedHeap {
         ALLOC_COUNT += 1;
 
         if count < 5 {
-            crate::ktrace!(
-                "(Heap) alloc[{}]: size={} align={}",
-                count,
-                layout.size(),
-                layout.align()
-            );
+            serial::emit_str("[TRAC] (Heap) alloc[");
+            serial::emit_dec(count);
+            serial::emit_str("]: size=");
+            serial::emit_dec(layout.size());
+            serial::emit_str(" alinhamento=");
+            serial::emit_dec(layout.align());
+            serial::emit_nl();
         }
 
         let ptr = self.inner.lock().alloc(layout);
 
         if ptr.is_null() {
             // SEMPRE logar OOM - é crítico
-            crate::kerror!(
-                "(Heap) OOM! size={} align={}",
-                layout.size(),
-                layout.align()
-            );
+            serial::emit_str("[ERRO] (Heap) OOM! size=");
+            serial::emit_dec(layout.size());
+            serial::emit_str(" alinhamento=");
+            serial::emit_dec(layout.align());
+            serial::emit_nl();
         } else if count < 5 {
-            crate::ktrace!("(Heap) alloc[{}]: OK, ptr={:p}", count, ptr);
+            crate::klog!("[TRAC] (Heap) alloc: OK, ptr=", ptr as u64);
+            serial::emit_nl();
         }
 
         ptr
@@ -229,19 +233,22 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
     // Atualiza a global atomic para que outros módulos (testes) saibam onde começa
     HEAP_START_ADDR.store(heap_start, core::sync::atomic::Ordering::Relaxed);
 
-    crate::kinfo!(
-        "(Heap) Base: {:#x}, Offset ASLR: {:#x} -> Start: {:#x}",
+    crate::klog!(
+        "[INFO] (Heap) Base: ",
         base_addr,
-        random_offset,
-        heap_start
+        " Offset ASLR: ",
+        random_offset
     );
+    crate::klog!(" -> Início: ", heap_start);
+    crate::knl!();
 
     let pages = heap_size / 4096;
-    crate::kinfo!(
-        "(Heap) Mapeando {} páginas ({} KiB)...",
-        pages,
-        heap_size / 1024
-    );
+    serial::emit_str("[INFO] (Heap) Mapeando ");
+    serial::emit_dec(pages);
+    serial::emit_str(" páginas (");
+    serial::emit_dec(heap_size / 1024);
+    serial::emit_str(" KiB)...");
+    serial::emit_nl();
 
     let flags = crate::mm::config::PAGE_PRESENT | crate::mm::config::PAGE_WRITABLE;
 
@@ -259,27 +266,33 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
         let frame = match pmm.allocate_frame() {
             Some(f) => f,
             None => {
-                crate::kerror!("(Heap) init: OOM após {} páginas", pages_mapped);
+                serial::emit_str("[ERRO] (Heap) init: OOM após ");
+                serial::emit_dec(pages_mapped);
+                serial::emit_str(" páginas");
+                serial::emit_nl();
                 return false;
             }
         };
 
         if pages_mapped == 0 {
-            crate::ktrace!("(Heap) Primeiro frame: {:#x}, mapeando...", frame.addr());
+            crate::kdebug!("(Heap) Primeiro frame=", frame.addr());
         }
 
         // Importante: map_page_with_pmm está no módulo VMM
-        if let Err(e) =
+        if let Err(_e) =
             unsafe { crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr(), flags, pmm) }
         {
-            crate::kerror!("(Heap) init: mapeamento falhou em {:#x}: {}", page_addr, e);
+            crate::kerror!("(Heap) init: mapeamento falhou em=", page_addr);
             return false;
         }
 
         pages_mapped += 1;
         page_addr += 4096;
     }
-    crate::ktrace!("(Heap) {} páginas mapeadas OK", pages_mapped);
+    serial::emit_str("[TRAC] (Heap) ");
+    serial::emit_dec(pages_mapped);
+    serial::emit_str(" páginas mapeadas OK");
+    serial::emit_nl();
 
     unsafe {
         ALLOCATOR.init(heap_start, heap_size);

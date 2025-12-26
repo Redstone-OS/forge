@@ -53,12 +53,12 @@ impl VfsHandle for ConsoleHandle {
     }
 
     fn write(&self, buf: &[u8], _offset: u64) -> Result<usize, VfsError> {
-        // Escrever no Logger do Kernel (kprint!)
+        // Escrever no Logger do Kernel (klog!)
         if let Ok(s) = core::str::from_utf8(buf) {
-            crate::kprint!("{}", s);
+            crate::klog!(s);
         } else {
             for &b in buf {
-                crate::kprint!("{}", b as char);
+                crate::drivers::serial::emit(b);
             }
         }
         Ok(buf.len())

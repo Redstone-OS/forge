@@ -20,6 +20,7 @@
 //!
 //! Em sistemas NUMA, cada nodo tem suas próprias zonas.
 
+use crate::drivers::serial;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 // =============================================================================
@@ -162,13 +163,16 @@ impl Zone {
         self.stats.total_frames.store(total, Ordering::Relaxed);
         self.stats.free_frames.store(total, Ordering::Relaxed);
 
-        crate::kdebug!(
-            "(Zones) {} iniciada: frames {}-{} ({} frames)",
-            self.zone_type.name(),
-            start,
-            end,
-            total
-        );
+        serial::emit_str("[DEBG] (Zones) ");
+        serial::emit_str(self.zone_type.name());
+        serial::emit_str(" iniciada: quadros ");
+        serial::emit_dec(start);
+        serial::emit_str("-");
+        serial::emit_dec(end);
+        serial::emit_str(" (");
+        serial::emit_dec(total);
+        serial::emit_str(" quadros)");
+        serial::emit_nl();
     }
 
     /// Verifica se frame pertence a esta zona
@@ -250,11 +254,13 @@ impl ZoneManager {
         }
 
         self.initialized = true;
-        crate::kinfo!(
-            "(Zones) Inicializado com {} zonas até {}MB",
-            NUM_ZONES,
-            max_phys / (1024 * 1024)
-        );
+
+        serial::emit_str("[INFO] (Zones) Inicializado com ");
+        serial::emit_dec(NUM_ZONES);
+        serial::emit_str(" zonas até ");
+        serial::emit_dec((max_phys / (1024 * 1024)) as usize);
+        serial::emit_str("MB");
+        serial::emit_nl();
     }
 
     /// Obtém zona para um frame
@@ -274,11 +280,16 @@ impl ZoneManager {
 
     /// Imprime estatísticas
     pub fn print_stats(&self) {
-        crate::kinfo!("╔═══════════════════════════════════════════╗");
-        crate::kinfo!("║          ESTATÍSTICAS DE ZONAS            ║");
-        crate::kinfo!("╠════════════╦═══════════╦═══════════╦══════╣");
-        crate::kinfo!("║   Zona     ║   Total   ║   Livres  ║  %   ║");
-        crate::kinfo!("╠════════════╬═══════════╬═══════════╬══════╣");
+        serial::emit_str("╔═══════════════════════════════════════════╗");
+        serial::emit_nl();
+        serial::emit_str("║          ESTATÍSTICAS DE ZONAS            ║");
+        serial::emit_nl();
+        serial::emit_str("╠════════════╦═══════════╦═══════════╦══════╣");
+        serial::emit_nl();
+        serial::emit_str("║   Zona     ║   Total   ║   Livres  ║  %   ║");
+        serial::emit_nl();
+        serial::emit_str("╠════════════╬═══════════╬═══════════╬══════╣");
+        serial::emit_nl();
 
         for zone in &self.zones {
             let total = zone.total_frames();
@@ -286,17 +297,29 @@ impl ZoneManager {
 
             if total > 0 {
                 let pct = (free * 100) / total;
-                crate::kinfo!(
-                    "║ {:10} ║ {:>9} ║ {:>9} ║ {:>3}% ║",
-                    zone.zone_type.name(),
-                    total,
-                    free,
-                    pct
-                );
+                serial::emit_str("║ ");
+                let name = zone.zone_type.name();
+                serial::emit_str(name);
+                // Padding manual para 10 caracteres
+                let mut p = name.len();
+                while p < 10 {
+                    serial::emit_str(" ");
+                    p += 1;
+                }
+
+                serial::emit_str(" ║ ");
+                serial::emit_dec(total);
+                serial::emit_str(" ║ ");
+                serial::emit_dec(free);
+                serial::emit_str(" ║ ");
+                serial::emit_dec(pct);
+                serial::emit_str("% ║");
+                serial::emit_nl();
             }
         }
 
-        crate::kinfo!("╚════════════╩═══════════╩═══════════╩══════╝");
+        serial::emit_str("╚════════════╩═══════════╩═══════════╩══════╝");
+        serial::emit_nl();
     }
 }
 

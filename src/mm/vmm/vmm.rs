@@ -234,23 +234,20 @@ pub unsafe fn init(boot_info: &crate::core::handoff::BootInfo) {
     asm!("mov {}, cr3", out(reg) cr3);
     ACTIVE_PML4_PHYS = cr3 & 0x000F_FFFF_FFFF_F000;
 
-    crate::kdebug!(
-        "(VMM) init: CR3={:#x}, PML4_PHYS={:#x}",
-        cr3,
-        ACTIVE_PML4_PHYS
-    );
-    crate::ktrace!("(VMM) init: SCRATCH_VIRT={:#x}", SCRATCH_VIRT);
+    crate::ktrace!("(VMM) init: CR3=", cr3);
+    crate::ktrace!("(VMM) init: PML4_PHYS=", ACTIVE_PML4_PHYS);
+    crate::ktrace!("(VMM) init: SCRATCH_VIRT=", SCRATCH_VIRT);
 
     // Valida e inicializa o scratch slot para operações de zeragem.
     init_scratch_slot();
 
     if SCRATCH_READY {
-        crate::kdebug!(
-            "(VMM) init: Scratch slot pronto em PT {:#x}",
+        crate::ktrace!(
+            "(VMM) init: Slot de rascunho (scratch) pronto em PT=",
             SCRATCH_PT_PHYS
         );
     } else {
-        crate::kwarn!("(VMM) init: Scratch slot NÃO disponível - usando fallback");
+        crate::kwarn!("(VMM) init: Slot de rascunho NÃO disponível - usando fallback");
     }
 
     // (nota) O `boot_info` pode ser usado para logging adicional
@@ -267,7 +264,7 @@ pub unsafe fn init(boot_info: &crate::core::handoff::BootInfo) {
 /// Se qualquer verificação falhar, a função registra o problema e marca
 /// `SCRATCH_READY = false` (fallback ou correção manual necessária).
 unsafe fn init_scratch_slot() {
-    crate::kdebug!("(VMM) Inicializando scratch slot...");
+    crate::kdebug!("(VMM) Inicializando slot de rascunho...");
 
     let pml4_idx = ((SCRATCH_VIRT >> 39) & 0x1FF) as usize;
     let pdpt_idx = ((SCRATCH_VIRT >> 30) & 0x1FF) as usize;
@@ -278,7 +275,10 @@ unsafe fn init_scratch_slot() {
     let pml4_entry = *pml4.add(pml4_idx);
 
     if pml4_entry & PAGE_PRESENT == 0 {
-        crate::kwarn!("(VMM) Scratch: PML4[{}] não presente", pml4_idx);
+        crate::kwarn!(
+            "(VMM) Scratch: PML4 index não presente index=",
+            pml4_idx as u64
+        );
         SCRATCH_READY = false;
         return;
     }
@@ -288,7 +288,10 @@ unsafe fn init_scratch_slot() {
     let pdpt_entry = *pdpt.add(pdpt_idx);
 
     if pdpt_entry & PAGE_PRESENT == 0 {
-        crate::kwarn!("(VMM) Scratch: PDPT[{}] não presente", pdpt_idx);
+        crate::kwarn!(
+            "(VMM) Scratch: PDPT index não presente index=",
+            pdpt_idx as u64
+        );
         SCRATCH_READY = false;
         return;
     }
@@ -298,20 +301,23 @@ unsafe fn init_scratch_slot() {
     let pd_entry = *pd.add(pd_idx);
 
     if pd_entry & PAGE_PRESENT == 0 {
-        crate::kwarn!("(VMM) Scratch: PD[{}] não presente", pd_idx);
+        crate::kwarn!("(VMM) Scratch: PD index não presente index=", pd_idx as u64);
         SCRATCH_READY = false;
         return;
     }
 
     if pd_entry & PAGE_HUGE != 0 {
-        crate::kwarn!("(VMM) Scratch: PD[{}] é huge page!", pd_idx);
+        crate::kwarn!(
+            "(VMM) Scratch: PD index é uma huge page index=",
+            pd_idx as u64
+        );
         SCRATCH_READY = false;
         return;
     }
 
     SCRATCH_PT_PHYS = pd_entry & PAGE_MASK;
     SCRATCH_READY = true;
-    crate::kdebug!("(VMM) Scratch slot OK: PT em {:#x}", SCRATCH_PT_PHYS);
+    crate::kdebug!("(VMM) Slot de rascunho OK: PT em=", SCRATCH_PT_PHYS);
 }
 
 // =============================================================================
@@ -384,14 +390,14 @@ unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
 
     // Fallback: usar identity map via phys_to_virt (só funciona para < 4GB)
     if !crate::mm::addr::is_phys_accessible(PhysAddr::new(phys)) {
-        crate::kerror!(
-            "(VMM) zero_frame: phys {:#x} inacessível sem scratch!",
-            phys
-        );
+        crate::kerror!("(VMM) zero_frame: phys inacessível sem scratch=", phys);
         return Err(MmError::ScratchNotReady);
     }
 
-    crate::ktrace!("(VMM) zero_frame: usando identity map para {:#x}", phys);
+    crate::ktrace!(
+        "(VMM) zero_frame: usando mapeamento de identidade para=",
+        phys
+    );
     let ptr: *mut u64 = phys_to_virt(PhysAddr::new(phys)).as_mut_ptr();
     let mut i = 0usize;
     let zero_val = 0u64;
@@ -445,11 +451,13 @@ pub unsafe fn map_page_with_pmm(
     let is_first = FIRST_MAP;
     if is_first {
         FIRST_MAP = false;
-        crate::ktrace!(
-            "(VMM) map_page_with_pmm: virt={:#x} phys={:#x}",
+        crate::klog!(
+            "[TRAC] (VMM) map_page_with_pmm: virt=",
             virt_addr,
+            " phys=",
             phys_addr
         );
+        crate::knl!();
     }
 
     // Índices da hierarquia (9 bits cada)
@@ -459,35 +467,33 @@ pub unsafe fn map_page_with_pmm(
     let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
 
     if is_first {
-        crate::ktrace!(
-            "(VMM) indices: pml4={} pdpt={} pd={} pt={}",
-            pml4_idx,
-            pdpt_idx,
-            pd_idx,
-            pt_idx
+        crate::klog!(
+            "(VMM) índices: pml4=",
+            pml4_idx as u64,
+            " pdpt=",
+            pdpt_idx as u64
         );
+        crate::klog!(" pd=", pd_idx as u64, " pt=", pt_idx as u64);
+        crate::knl!();
     }
 
     // Ponteiro para a PML4 atual via phys_to_virt
     let pml4_ptr: *mut u64 = phys_to_virt(PhysAddr::new(ACTIVE_PML4_PHYS)).as_mut_ptr();
 
     if is_first {
-        crate::ktrace!("(VMM) pml4_ptr = {:p}", pml4_ptr);
+        crate::ktrace!("(VMM) pml4_ptr=", pml4_ptr as u64);
     }
 
     let pml4_entry = &mut *pml4_ptr.add(pml4_idx);
 
     if is_first {
-        crate::ktrace!(
-            "(VMM) pml4_entry = {:#x}, chamando ensure_table...",
-            *pml4_entry
-        );
+        crate::ktrace!("(VMM) pml4_entry=", *pml4_entry);
     }
 
     // Garantir PDPT existe
     let pdpt_phys = ensure_table_entry_with_pmm(pml4_entry, pmm);
     if pdpt_phys == 0 {
-        crate::kerror!("(VMM) map_page: falha ao criar PDPT para {:#x}", virt_addr);
+        crate::kerror!("(VMM) map_page: falha ao criar PDPT para=", virt_addr);
         return Err(MmError::OutOfMemory);
     }
 
@@ -497,7 +503,7 @@ pub unsafe fn map_page_with_pmm(
     // Garantir PD existe
     let pd_phys = ensure_table_entry_with_pmm(pdpt_entry, pmm);
     if pd_phys == 0 {
-        crate::kerror!("(VMM) map_page: falha ao criar PD para {:#x}", virt_addr);
+        crate::kerror!("(VMM) map_page: falha ao criar PD para=", virt_addr);
         return Err(MmError::OutOfMemory);
     }
 
@@ -507,7 +513,7 @@ pub unsafe fn map_page_with_pmm(
     // Garantir PT existe (pode exigir split de huge page)
     let pt_phys = ensure_table_entry_with_pmm(pd_entry, pmm);
     if pt_phys == 0 {
-        crate::kerror!("(VMM) map_page: falha ao criar PT para {:#x}", virt_addr);
+        crate::kerror!("(VMM) map_page: falha ao criar PT para=", virt_addr);
         return Err(MmError::OutOfMemory);
     }
 
@@ -551,7 +557,7 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
     let should_log = count < 5;
 
     if should_log {
-        crate::ktrace!("(VMM) ensure_table[{}]: entry={:#x}", count, *entry);
+        crate::ktrace!("(VMM) ensure_table: entry=", *entry);
     }
 
     // Caso: entrada já existe
@@ -559,7 +565,7 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
         // Se for uma huge page, precisamos converter para uma PT de 4 KiB (split)
         if *entry & PAGE_HUGE != 0 {
             // --- SPLIT DE HUGE PAGE ---
-            crate::kdebug!("(VMM) Splitting huge page...");
+            crate::kdebug!("(VMM) Dividindo huge page (split)...");
 
             // Extraímos a base física da huge page (alinhada a 2 MiB).
             let huge_base = *entry & 0x000F_FFFF_FFE0_0000;
@@ -571,15 +577,15 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
             let frame = match pmm.allocate_frame() {
                 Some(f) => f,
                 None => {
-                    crate::kerror!("(VMM) OOM ao fazer split de huge page!");
+                    crate::kerror!("(VMM) OOM ao fazer split de huge page");
                     return 0;
                 }
             };
             let pt_phys = frame.addr();
 
             // Zera a página que conterá a nova PT antes de escrever entradas.
-            if let Err(e) = zero_frame_via_scratch(pt_phys) {
-                crate::kerror!("(VMM) Falha ao zerar PT para split: {}", e);
+            if let Err(_e) = zero_frame_via_scratch(pt_phys) {
+                crate::kerror!("(VMM) Falha ao zerar PT para split");
                 return 0;
             }
 
@@ -612,47 +618,43 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
                 k += 1;
             }
 
-            crate::kdebug!("(VMM) Huge page split OK: nova PT em {:#x}", pt_phys);
+            crate::kdebug!("(VMM) Split de huge page OK: nova PT em=", pt_phys);
             return pt_phys;
         }
 
         // Entrada presente e não-huge: garantir flags de acesso e retornar endereço.
         *entry |= PAGE_USER | PAGE_WRITABLE;
         if should_log {
-            crate::ktrace!(
-                "(VMM) ensure_table[{}]: entry presente, phys={:#x}",
-                count,
+            crate::klog!(
+                "(VMM) ensure_table: entry presente, phys=",
                 *entry & PAGE_MASK
             );
+            crate::knl!();
         }
         return *entry & PAGE_MASK;
     }
 
     // Caso: entrada ausente — aloca nova tabela (frame de 4 KiB)
     if should_log {
-        crate::ktrace!("(VMM) ensure_table[{}]: alocando nova tabela...", count);
+        crate::ktrace!("(VMM) ensure_table: alocando nova tabela");
     }
 
     let frame = match pmm.allocate_frame() {
         Some(f) => f,
         None => {
-            crate::kerror!("(VMM) OOM ao alocar page table!");
+            crate::kerror!("(VMM) OOM ao alocar page table");
             return 0;
         }
     };
     let phys = frame.addr();
 
     if should_log {
-        crate::ktrace!(
-            "(VMM) ensure_table[{}]: frame={:#x}, zerando...",
-            count,
-            phys
-        );
+        crate::ktrace!("(VMM) ensure_table: frame alocado phys=", phys);
     }
 
     // Zera a nova tabela (crítico para evitar leitura de lixo).
-    if let Err(e) = zero_frame_via_scratch(phys) {
-        crate::kerror!("(VMM) Falha ao zerar nova page table: {}", e);
+    if let Err(_e) = zero_frame_via_scratch(phys) {
+        crate::kerror!("(VMM) Falha ao zerar nova tabela de páginas");
         return 0;
     }
 
@@ -865,11 +867,13 @@ pub unsafe fn unmap_page(virt_addr: u64) -> MmResult<PhysAddr> {
         options(nostack, preserves_flags)
     );
 
-    crate::ktrace!(
-        "(VMM) unmap_page: virt={:#x} -> phys={:#x}",
+    crate::klog!(
+        "[TRAC] (VMM) unmap_page: virt=",
         virt_addr,
+        " -> phys=",
         phys
     );
+    crate::knl!();
 
     Ok(PhysAddr::new(phys))
 }

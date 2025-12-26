@@ -60,7 +60,9 @@ pub extern "C" fn syscall_dispatcher(context: &mut ContextFrame) {
             let ptr = arg2 as *const u8;
             let len = arg3 as usize;
 
-            crate::ktrace!("(Sys) sys_write: fd={} ptr={:p} len={}", fd, ptr, len);
+            crate::ktrace!("(Sys) sys_write: fd=", fd);
+            crate::klog!(" ptr=", ptr as u64, " len=", len as u64);
+            crate::knl!();
 
             if fd == 1 {
                 // STDOUT
@@ -74,16 +76,16 @@ pub extern "C" fn syscall_dispatcher(context: &mut ContextFrame) {
 
                 // Tenta converter para UTF-8 string
                 if let Ok(s) = core::str::from_utf8(slice) {
-                    crate::kprint!("{}", s);
+                    crate::klog!(s);
                 } else {
                     for &b in slice {
-                        crate::kprint!("{}", b as char);
+                        crate::drivers::serial::emit(b);
                     }
                 }
 
                 context.rax = len as u64; // Retorna bytes escritos
             } else {
-                crate::kdebug!("(Sys) sys_write: FD {} não suportado", fd);
+                crate::kdebug!("(Sys) sys_write: FD não suportado FD=", fd);
                 context.rax = -1i64 as u64; // EBADF
             }
         }
@@ -93,10 +95,7 @@ pub extern "C" fn syscall_dispatcher(context: &mut ContextFrame) {
             context.rax = 0;
         }
         _ => {
-            crate::kwarn!(
-                "(Sys) Chamada inesperada: syscall {} não implementada",
-                syscall_num
-            );
+            crate::kwarn!("(Sys) Chamada inesperada: syscall num=", syscall_num);
             context.rax = -1i64 as u64; // ENOSYS
         }
     }

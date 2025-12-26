@@ -38,12 +38,11 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
 
     // 2. Inicializar Sistema de Logs
-    // A partir daqui, podemos usar kinfo!, kwarn!, kerror!.
-    // O driver serial é inicializado implicitamente na primeira chamada.
     crate::kinfo!("╔════════════════════════════════════════╗");
-    crate::kinfo!("║ Redstone OS Kernel (Forge) - Iniciando ║");
+    crate::kinfo!("║   Kernel Redstone OS (Forge) - V0.1.0  ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
-    crate::kinfo!("Protocolo de Boot v{}", boot_info.version);
+
+    crate::kinfo!("Protocolo de Boot v", boot_info.version as u64);
 
     // 3. Inicializar Arquitetura (HAL)
     // Configura GDT (segmentação) e IDT (tratamento de interrupções/exceções).
@@ -94,7 +93,10 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         let mut pit = crate::drivers::timer::PIT.lock();
         // Configura frequência para 100Hz (10ms por tick).
         let freq = pit.set_frequency(100).expect("Falha ao configurar timer");
-        crate::kdebug!("(Core) Timer configurado para {}Hz", freq);
+        crate::kdebug!(
+            "(Core) Temporizador configurado para frequencia=",
+            freq as u64
+        );
     }
 
     #[cfg(feature = "verbose_logs")]
@@ -114,8 +116,8 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Agora inicializamos o CONSOLE, que gerencia o vídeo + texto.
     crate::drivers::console::init_console(boot_info.framebuffer);
 
-    crate::kprintln!("\x1b[36m[Video]\x1b[0m Video ativado"); // Ciano
-    crate::kprintln!("\x1b[35m[Console]\x1b[0m Redstone OS v0.1.0 - Console Ativado!"); // Rosa
+    crate::kinfo!("[Video] Video ativado");
+    crate::kinfo!("[Console] Redstone OS v0.1.0 - Console Ativado!");
 
     // 7. Scheduler (Multitarefa)
     // Inicializa a fila de processos e cria as tarefas iniciais (Kernel Tasks).
@@ -159,9 +161,9 @@ fn spawn_init_process() {
     crate::kinfo!("[Init] spawn_init_process iniciando...");
 
     // Tenta obter acesso exclusivo ao VFS
-    crate::kinfo!("[Init] Obtendo lock do VFS...");
+    crate::kinfo!("[Init] Obtendo acesso ao VFS...");
     let vfs = ROOT_VFS.lock();
-    crate::kinfo!("[Init] VFS lock OK");
+    crate::kinfo!("[Init] Acesso ao VFS OK");
 
     // Procura pelo arquivo "/system/core/init" (estrutura moderna Redstone)
     if let Ok(node) = vfs.lookup("/system/core/init") {
@@ -175,21 +177,19 @@ fn spawn_init_process() {
             }
 
             if let Ok(bytes_read) = handle.read(&mut buffer, 0) {
-                crate::kdebug!(
-                    "(Init) Arquivo lido ({} bytes), iniciando parsing ELF...",
-                    bytes_read
-                );
+                crate::kdebug!("(Init) Arquivo lido. Tamanho=", bytes_read as u64);
+                crate::kdebug!("(Init) Iniciando análise ELF...");
                 // Tenta parsear e carregar o ELF na memória
                 match unsafe { crate::core::elf::load(&buffer[..bytes_read]) } {
                     Ok(entry_point) => {
-                        crate::kdebug!("(Init) ELF carregado em {:#x}", entry_point);
+                        crate::kdebug!("(Init) ELF carregado em=", entry_point);
 
                         // Mapear User Stack (16KB em 0x80000000 - 0x80004000)
                         let user_stack_size = 16 * 1024; // 16KB
                         let user_stack_base = 0x8000_0000 - user_stack_size as u64;
                         let user_stack_top = 0x8000_0000;
 
-                        crate::ktrace!("(Init) Mapeando user stack em {:#x}", user_stack_base);
+                        crate::ktrace!("(Init) Mapeando pilha de usuário em=", user_stack_base);
 
                         {
                             use crate::mm::pmm::FRAME_ALLOCATOR;
@@ -214,7 +214,7 @@ fn spawn_init_process() {
                                 addr += 4096;
                             }
                         }
-                        crate::kdebug!("(Init) Stack de usuário preparada");
+                        crate::kdebug!("(Init) Pilha de usuário preparada");
 
                         // Usa a Page Table atual (CR3) - Em produção, clonaríamos o espaço do kernel.
                         let cr3 = unsafe { crate::arch::platform::memory::cr3() };
@@ -227,7 +227,7 @@ fn spawn_init_process() {
                         crate::sched::scheduler::SCHEDULER.lock().add_task(task);
                         crate::kinfo!("(Init) Processo PID 1 (init) disparado!");
                     }
-                    Err(e) => crate::kerror!("(Init) Erro fatal ao carregar ELF: {:?}", e),
+                    Err(_e) => crate::kerror!("(Init) Erro fatal ao carregar ELF!"),
                 }
             }
         }
@@ -243,7 +243,7 @@ fn spawn_init_process() {
 /// Tarefa de teste (Kernel Mode) para quando não há userspace.
 extern "C" fn dummy_init() {
     loop {
-        crate::kprint!("A");
+        crate::klog!("A");
         // Spin loop para gastar tempo (simula trabalho)
         for _ in 0..10000000 {
             core::hint::spin_loop();

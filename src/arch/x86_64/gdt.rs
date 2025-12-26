@@ -185,11 +185,11 @@ struct GdtDescriptor {
 /// Deve ser chamado apenas uma vez durante o boot do processador (BSP).
 /// Em SMP, cada AP terá sua própria GDT/TSS.
 pub unsafe fn init() {
-    crate::kdebug!("(GDT) init: Configurando GDT e TSS...");
+    crate::ktrace!("(GDT) Configurando GDT e TSS...");
 
     // 1. Configurar entrada do TSS na GDT com o endereço real
     GDT.tss = SystemSegmentEntry::new_tss(core::ptr::addr_of!(TSS));
-    crate::ktrace!("(GDT) init: TSS configurado em GDT");
+    crate::ktrace!("(GDT) TSS configurado na GDT");
 
     // 2. Carregar GDTR
     let gdt_ptr = GdtDescriptor {
@@ -199,10 +199,10 @@ pub unsafe fn init() {
     // Copiar campos packed para variáveis locais (evita E0793)
     let gdt_base = gdt_ptr.base;
     let gdt_limit = gdt_ptr.limit;
-    crate::ktrace!("(GDT) init: GDTR base={:#x} limit={}", gdt_base, gdt_limit);
+    crate::ktrace!("(GDT) GDTR base=", gdt_base);
 
     asm!("lgdt [{}]", in(reg) &gdt_ptr, options(readonly, nostack, preserves_flags));
-    crate::kdebug!("(GDT) init: GDT carregada");
+    crate::ktrace!("(GDT) GDT carregada com sucesso");
 
     // 3. Recarregar Segmentos
     // CORREÇÃO E0658: Usamos registradores (in(reg)) para passar os seletores,
@@ -235,7 +235,7 @@ pub unsafe fn init() {
         tmp = lateout(reg) _,
     );
 
-    crate::kinfo!("(GDT) Inicializado");
+    crate::kinfo!("(GDT) Inicializada com sucesso");
 
     // 4. Inicializar FPU/SSE (Essencial para Rust: memcpy/String)
     crate::arch::x86_64::cpu::X64Cpu::init_sse();

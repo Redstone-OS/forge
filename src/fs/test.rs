@@ -24,8 +24,12 @@ fn test_path_canonicalization() {
     let expected = "/system/bin";
 
     // Lógica fictícia de teste (em um teste real chamariamos fs::clean_path)
-    crate::ktrace!("(FS) In:  '{}'", input);
-    crate::ktrace!("(FS) Out: '{}'", expected);
+    crate::ktrace!("(FS) In:  ");
+    crate::klog!(input);
+    crate::knl!();
+    crate::ktrace!("(FS) Out: ");
+    crate::klog!(expected);
+    crate::knl!();
 
     crate::kinfo!("(FS) ✓ Path Canonicalization OK");
 }
@@ -38,7 +42,9 @@ fn test_filename_constraints() {
     let good_name = "kernel.elf";
 
     if good_name.len() <= max_len {
-        crate::ktrace!("(FS) Good name '{}' accepted", good_name);
+        crate::ktrace!("(FS) Good name accepted: ");
+        crate::klog!(good_name);
+        crate::knl!();
     }
 
     if bad_name.len() > max_len {

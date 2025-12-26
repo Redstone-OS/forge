@@ -26,7 +26,7 @@ fn test_boot_magic() {
         crate::ktrace!("(Core) Magic matches 'REDSTONE'");
         crate::kinfo!("(Core) ✓ Boot Magic OK");
     } else {
-        crate::kerror!("(Core) Magic MISMATCH: {:#x}", BOOT_MAGIC);
+        crate::kerror!("(Core) Magic MISMATCH: ", BOOT_MAGIC);
         panic!("Core integrity failure");
     }
 }
@@ -40,11 +40,8 @@ fn test_kernel_address_space() {
     let kernel_top_limit = 0xffffffffffffffffu64;
 
     if kernel_base < kernel_top_limit {
-        crate::ktrace!(
-            "(Core) Base {:#x} < Top {:#x}",
-            kernel_base,
-            kernel_top_limit
-        );
+        crate::ktrace!("(Core) Kernel base=", kernel_base);
+        crate::ktrace!("(Core) Kernel top=", kernel_top_limit);
         crate::kinfo!("(Core) ✓ Address Space Layout OK");
     } else {
         crate::kerror!("(Core) Address Space INVERTED");

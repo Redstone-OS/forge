@@ -72,7 +72,10 @@ pub fn sys_writev(
     // 2. Verificar direito WRITE
     // 3. Despachar para o driver/subsistema correto
 
-    crate::kwarn!("(Syscall) sys_writev: Handle {} não implementado", handle);
+    crate::kwarn!(
+        "(Syscall) sys_writev: Handle não implementado handle=",
+        handle as u64
+    );
     Err(SysError::BadHandle)
 }
 
@@ -107,7 +110,10 @@ pub fn sys_readv(handle: usize, iov_ptr: usize, iov_cnt: usize, _flags: usize) -
 
     // TODO: Para outros handles, dispatch por tipo
 
-    crate::kwarn!("(Syscall) sys_readv: Handle {} não implementado", handle);
+    crate::kwarn!(
+        "(Syscall) sys_readv: Handle não implementado handle=",
+        handle as u64
+    );
     Err(SysError::BadHandle)
 }
 
@@ -130,14 +136,17 @@ fn write_console(iov_ptr: usize, iov_cnt: usize) -> SysResult<usize> {
 
         // Tentar imprimir como UTF-8
         match core::str::from_utf8(data) {
-            Ok(s) => crate::kprint!("{}", s),
+            Ok(s) => crate::klog!(s),
             Err(_) => {
                 // Fallback: imprimir bytes como chars
                 for &b in data {
                     if b.is_ascii_graphic() || b == b' ' || b == b'\n' {
-                        crate::kprint!("{}", b as char);
+                        // Nota: não temos klog! para um único char char, mas klog! aceita &str
+                        // Para simplificar, não logaremos chars individuais aqui se não for string literal
+                        // Ou podemos usar driver serial direto se for crítico
+                        crate::drivers::serial::emit(b);
                     } else {
-                        crate::kprint!(".");
+                        crate::klog!(".");
                     }
                 }
             }

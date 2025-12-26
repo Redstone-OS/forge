@@ -61,11 +61,11 @@ impl Scheduler {
     /// A tarefa será agendada na próxima oportunidade.
     pub fn add_task(&mut self, task: PinnedTask) {
         let id = task.id.as_u64();
-        crate::ktrace!("(Sched) add_task: Adicionando PID {}...", id);
+        crate::ktrace!("(Sched) add_task: Adicionando PID=", id);
         // Mutex envolve o Pin - Task NUNCA move
         let wrapped = Box::new(Mutex::new(task));
         self.tasks.push_back(wrapped);
-        crate::kdebug!("(Sched) Tarefa PID {} adicionada ao escalonador", id);
+        crate::kdebug!("(Sched) Tarefa PID adicionada ao escalonador: PID=", id);
     }
 
     /// Executa o algoritmo de agendamento (Round-Robin).
@@ -127,12 +127,9 @@ impl Scheduler {
             unsafe {
                 TICK_COUNT += 1;
                 if TICK_COUNT % 100 == 1 {
-                    crate::ktrace!(
-                        "(Sched) switch: [{:#x} -> {:#x}] task={:?}",
-                        old_rsp_ptr,
-                        next_rsp,
-                        next_id
-                    );
+                    crate::klog!("[TRAC] (Sched) switch: [", old_rsp_ptr, " -> ", next_rsp);
+                    crate::klog!("] tarefa=", next_id.as_u64());
+                    crate::knl!();
                 }
             };
 
@@ -182,7 +179,7 @@ pub fn yield_now() {
 #[allow(dead_code)]
 extern "C" fn task_a() {
     loop {
-        crate::kprint!("A");
+        crate::klog!("A");
         spin_delay(500000);
     }
 }
@@ -190,7 +187,7 @@ extern "C" fn task_a() {
 #[allow(dead_code)]
 extern "C" fn task_b() {
     loop {
-        crate::kprint!("B");
+        crate::klog!("B");
         spin_delay(500000);
     }
 }
@@ -198,7 +195,7 @@ extern "C" fn task_b() {
 #[allow(dead_code)]
 extern "C" fn task_c() {
     loop {
-        crate::kprint!("C");
+        crate::klog!("C");
         spin_delay(500000);
     }
 }

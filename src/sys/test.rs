@@ -31,7 +31,9 @@ fn test_kernel_version_format() {
     // Verificação simples se contém pontos
     let has_dots = version.as_bytes().iter().filter(|&&b| b == b'.').count() >= 2;
 
-    crate::ktrace!("(Sys) Version: {}", version);
+    crate::ktrace!("(Sys) Version: ");
+    crate::klog!(version);
+    crate::knl!();
 
     if has_dots {
         crate::kinfo!("(Sys) ✓ Version Format (x.y.z) OK");

@@ -53,10 +53,10 @@ pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
     // 1. Procurar Initramfs no BootInfo
     if boot_info.initramfs_addr != 0 && boot_info.initramfs_size > 0 {
         crate::kdebug!(
-            "(VFS) Encontrado disco inicial 'initfs' em {:#x} ({} bytes)",
-            boot_info.initramfs_addr,
-            boot_info.initramfs_size
+            "(VFS) Encontrado disco inicial 'initfs' em=",
+            boot_info.initramfs_addr
         );
+        crate::kdebug!("(VFS) Tamanho do initfs=", boot_info.initramfs_size as u64);
 
         // Criar slice unsafe para a memória do initramfs
         let data = unsafe {

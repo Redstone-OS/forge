@@ -83,12 +83,10 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
         let ph = &*(data.as_ptr().add(offset) as *const ProgramHeader);
 
         if ph.typ == PT_LOAD {
-            crate::ktrace!(
-                "(Elf) PT_LOAD: vaddr={:#x} memsz={} filesz={}",
-                ph.vaddr,
-                ph.memsz,
-                ph.filesz
-            );
+            crate::ktrace!("(Elf) PT_LOAD: vaddr=", ph.vaddr);
+            crate::klog!(" (memsz=", ph.memsz, " filesz=", ph.filesz);
+            crate::klog!(")");
+            crate::knl!();
 
             if ph.memsz == 0 {
                 continue;
@@ -114,7 +112,8 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
             let start_page = start_addr & !0xFFF;
             let end_page = (end_addr + 0xFFF) & !0xFFF;
 
-            crate::ktrace!("(Elf) Mapeando páginas {:#x} - {:#x}", start_page, end_page);
+            crate::ktrace!("(Elf) Mapeando páginas start=", start_page);
+            crate::ktrace!("(Elf) Mapeando páginas end=", end_page);
 
             // TODO: VMM deveria ter função map_range
             let mut curr = start_page;
@@ -123,7 +122,7 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                 if let Some((_phys, flags)) = vmm::translate_addr_with_flags(curr) {
                     // Se já estiver mapeada como USER, é um overlap legítimo de segmentos ELF.
                     if flags & vmm::PAGE_USER != 0 {
-                        crate::ktrace!("(Elf) Slot {:#x} já mapeado como USER (overlap ELF)", curr);
+                        crate::ktrace!("(Elf) Slot já mapeado como USER (overlap ELF): ", curr);
                         // IMPORTANTE: Não zerar a página se já existe e é USER!
                         curr += 4096;
                         continue;
@@ -137,14 +136,10 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                     .allocate_frame()
                     .ok_or(Errno::ENOMEM)?;
 
-                crate::ktrace!(
-                    "(Elf) map_page: virt={:#x} phys={:#x} flags={:#x}",
-                    curr,
-                    frame.addr(),
-                    page_flags
-                );
+                crate::ktrace!("(Elf) map_page: virt=", curr);
+                crate::ktrace!("(Elf) map_page: phys=", frame.addr());
                 if let Err(e) = vmm::map_page(curr, frame.addr(), page_flags) {
-                    crate::kerror!("(Elf) map_page failed: {}", e);
+                    crate::kerror!("(Elf) map_page failed at curr=", curr);
                     return Err(Errno::ENOMEM);
                 }
 
@@ -163,7 +158,7 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
 
             // Copiar dados do arquivo - loop manual para evitar copy_nonoverlapping
             if ph.filesz > 0 {
-                crate::ktrace!("(Elf) Copiando {} bytes para {:#x}", ph.filesz, start_addr);
+                crate::ktrace!("(Elf) Copiando bytes para start_addr=", start_addr);
                 let dest = start_addr as *mut u8;
                 let src_offset = ph.offset as usize;
                 let src_len = ph.filesz as usize;

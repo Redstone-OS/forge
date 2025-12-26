@@ -23,8 +23,6 @@ pub fn run_arch_tests() {
 fn test_gdt_structure() {
     crate::kdebug!("(Arch) Validando limites e seletores da GDT...");
 
-    
-
     // Em x86_64, a GDT tem tamanhos fixos.
     // O Selector 0 (Null) deve ser sempre 0.
     // O Kernel Code deve ser 8.
@@ -66,7 +64,7 @@ fn test_rflags_state() {
     unsafe { core::arch::asm!("pushfq; pop {}", out(reg) rflags) };
 
     let if_bit = (rflags >> 9) & 1;
-    crate::ktrace!("(Arch) RFLAGS = {:#x}", rflags);
+    crate::ktrace!("(Arch) RFLAGS=", rflags);
 
     if if_bit == 0 {
         crate::ktrace!("(Arch) Interrupts DISABLED (OK)");
@@ -108,14 +106,16 @@ fn test_cpu_info() {
     vendor_buf[11] = ((info.ecx >> 24) & 0xFF) as u8;
 
     if let Ok(vendor) = core::str::from_utf8(&vendor_buf) {
-        crate::kinfo!("(Arch) CPU Vendor: {}", vendor);
+        crate::kinfo!("(Arch) CPU Vendor: ");
+        crate::klog!(vendor);
+        crate::knl!();
     } else {
         crate::kwarn!("(Arch) CPU Vendor: (Non-ASCII)");
     }
 
     // Leaf 1: Features (simples check de sanidade)
     let features = Cpu::cpuid(1, 0);
-    crate::ktrace!("(Arch) CPU Family/Model: {:x}", features.eax);
+    crate::ktrace!("(Arch) CPU Family/Model=", features.eax as u64);
 
     crate::kinfo!("(Arch) ✓ CPU Info Retrieved");
 }

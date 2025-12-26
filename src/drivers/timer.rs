@@ -59,7 +59,7 @@ impl Pit {
     /// * `Ok(u32)`: Frequência real configurada (devido à precisão do divisor).
     /// * `Err(Errno)`: Se a frequência for inválida (0 ou muito alta).
     pub fn set_frequency(&mut self, freq: u32) -> Result<u32, Errno> {
-        crate::kdebug!("(PIT) set_frequency: Desejado {} Hz", freq);
+        crate::kdebug!("(PIT) set_frequency: Desejado freq=", freq as u64);
 
         if freq == 0 || freq > BASE_FREQUENCY {
             crate::kwarn!("(PIT) set_frequency: Frequência inválida");
@@ -71,16 +71,17 @@ impl Pit {
 
         // O divisor deve caber em 16 bits (exceto 0 que significa 65536)
         if divisor > 65535 {
-            crate::kwarn!("(PIT) set_frequency: Divisor muito grande para {} Hz", freq);
+            crate::kwarn!(
+                "(PIT) set_frequency: Divisor muito grande para freq=",
+                freq as u64
+            );
             return Err(Errno::EINVAL); // Frequência muito baixa (< 18.2 Hz)
         }
 
         let actual_freq = BASE_FREQUENCY / divisor;
-        crate::ktrace!(
-            "(PIT) set_frequency: Divisor calculado: {} (Freq real: {} Hz)",
-            divisor,
-            actual_freq
-        );
+        crate::ktrace!("(PIT) set_frequency: Divisor=", divisor as u64);
+        crate::klog!(" Freq real=", actual_freq as u64, " Hz");
+        crate::knl!();
 
         unsafe {
             // Modo de Operação:
@@ -94,7 +95,7 @@ impl Pit {
         }
 
         self.frequency = actual_freq;
-        crate::kinfo!("(PIT) Frequência configurada para {} Hz", actual_freq);
+        crate::kinfo!("(PIT) Frequência configurada para Hz=", actual_freq as u64);
         Ok(actual_freq)
     }
 

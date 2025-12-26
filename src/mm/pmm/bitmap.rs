@@ -102,25 +102,13 @@ impl BitmapFrameAllocator {
 
     /// Inicializa o alocador
     pub unsafe fn init(&mut self, boot_info: &'static BootInfo) {
-        crate::kinfo!("(PMM) Inicializando BitmapFrameAllocator...");
-
-        // Checkpoint 1: Após kinfo
-        crate::drivers::serial::write_str_raw("[PMM] CP1: pos-kinfo\r\n");
+        crate::kinfo!("(PMM) Inicializando o Alocador de Quadros por Bitmap...");
 
         // Barreira: Garante que a leitura do boot_info está completa
         compiler_fence(Ordering::SeqCst);
 
-        // Checkpoint 2: Após barreira
-        crate::drivers::serial::write_str_raw("[PMM] CP2: pos-fence\r\n");
-
-        // Checkpoint 3: Antes de scan_memory_map_safe
-        crate::drivers::serial::write_str_raw("[PMM] CP3: pre-scan\r\n");
-
         // 1. Escanear Memory Map
         let (max_phys, _) = self.scan_memory_map_safe(boot_info);
-
-        // Checkpoint 4: Após scan
-        crate::drivers::serial::write_str_raw("[PMM] CP4: pos-scan\r\n");
 
         // Barreira: Garante que max_phys está computado antes de usar
         compiler_fence(Ordering::SeqCst);
@@ -137,24 +125,25 @@ impl BitmapFrameAllocator {
         self.bitmap_len = bitmap_size_u64;
         let req_size_bytes = self.bitmap_len * 8;
 
-        crate::kdebug!(
-            "(PMM) total_frames={}, bitmap_size={}KB",
-            self.total_frames,
-            req_size_bytes / 1024
+        crate::ktrace!("(PMM) Total de quadros=", self.total_frames as u64);
+        crate::ktrace!(
+            "(PMM) Tamanho do bitmap KB=",
+            (req_size_bytes / 1024) as u64
         );
 
         // Barreira: Garante que cálculos estão completos
         compiler_fence(Ordering::SeqCst);
 
         // ------- DIAGNÓSTICO: Logar campos críticos do BootInfo -------
-        crate::kdebug!("(PMM) Preparando busca por regiao para bitmap...");
-        crate::kdebug!("(PMM) kernel_phys_addr={:#x}", boot_info.kernel_phys_addr);
-        crate::kdebug!("(PMM) kernel_size={:#x}", boot_info.kernel_size);
-        crate::kdebug!(
-            "(PMM) memory_map_addr={:#x}, memory_map_len={}",
-            boot_info.memory_map_addr,
-            boot_info.memory_map_len
+        crate::kdebug!("(PMM) Preparando busca por região para o bitmap...");
+        crate::ktrace!(
+            "(PMM) Endereço físico do kernel=",
+            boot_info.kernel_phys_addr
         );
+        crate::ktrace!("(PMM) Tamanho do kernel=", boot_info.kernel_size);
+
+        crate::ktrace!("(PMM) Endereço do mapa=", boot_info.memory_map_addr);
+        crate::ktrace!("(PMM) Comprimento map=", boot_info.memory_map_len as u64);
 
         // Validação do memory_map (Opção 3)
         if boot_info.memory_map_addr == 0 {
@@ -167,11 +156,11 @@ impl BitmapFrameAllocator {
             );
         }
 
-        crate::kdebug!("(PMM) Chamando find_bitmap_region_center_out...");
+        crate::ktrace!("(PMM) Chamando busca centralizada por região...");
 
         // 3. Encontrar região segura para o bitmap
         let bitmap_phys = self.find_bitmap_region_center_out(boot_info, req_size_bytes);
-        crate::kdebug!("(PMM) bitmap_phys={:#x}", bitmap_phys.as_u64());
+        crate::ktrace!("(PMM) Endereço físico do bitmap=", bitmap_phys.as_u64());
 
         // Barreira: Garante que bitmap_phys está definido
         compiler_fence(Ordering::SeqCst);
@@ -186,27 +175,16 @@ impl BitmapFrameAllocator {
         // Barreira antes do memset crítico
         compiler_fence(Ordering::SeqCst);
 
-        crate::drivers::serial::write_str_raw("[PMM] CP5: pre-memset\r\n");
-
         // Debug: imprimir valor do ponteiro
-        crate::drivers::serial::write_str_raw("[PMM] bitmap_ptr=");
-        crate::drivers::serial::write_hex_raw(self.bitmap_ptr as u64);
-        crate::drivers::serial::write_str_raw(" len=");
-        crate::drivers::serial::write_hex_raw(self.bitmap_len as u64);
-        crate::drivers::serial::write_newline_raw();
+        crate::ktrace!("[PMM] bitmap_ptr=", self.bitmap_ptr as u64);
+        crate::ktrace!("[PMM] bitmap_len=", self.bitmap_len as u64);
 
         // Memset: Preenche tudo como OCUPADO
         // Usando while manual em vez de for (iterador Range pode gerar #UD)
         let ptr_u64 = self.bitmap_ptr;
 
-        crate::drivers::serial::write_str_raw("[PMM] CP5a: pre-while\r\n");
-
         let mut i: usize = 0;
         while i < self.bitmap_len {
-            if i == 0 {
-                crate::drivers::serial::write_str_raw("[PMM] CP5b: first-iter\r\n");
-            }
-
             // Usar inline asm para escrever - evita SSE/AVX que pode causar #UD
             let addr = ptr_u64.add(i);
             core::arch::asm!(
@@ -215,13 +193,8 @@ impl BitmapFrameAllocator {
                 in(reg) u64::MAX,
                 options(nostack, preserves_flags)
             );
-            if i == 0 {
-                crate::drivers::serial::write_str_raw("[PMM] CP5c: first-write-ok\r\n");
-            }
             i += 1;
         }
-
-        crate::drivers::serial::write_str_raw("[PMM] CP6: pos-memset\r\n");
 
         // Barreira após memset
         compiler_fence(Ordering::SeqCst);
@@ -231,11 +204,8 @@ impl BitmapFrameAllocator {
         // ANTES de init_free_regions liberar frames "Usable".
         // Isso garante que as page tables do bootloader nunca sejam
         // marcadas como livres, mesmo que estejam em regiões "Usable".
-        crate::drivers::serial::write_str_raw("[PMM] CP7: pre-pt-scanner\r\n");
-        crate::kdebug!("(PMM) Escaneando page tables do bootloader...");
+        crate::ktrace!("(PMM) Escaneando tabelas de página do bootloader...");
         super::pt_scanner::mark_bootloader_page_tables(self);
-
-        crate::drivers::serial::write_str_raw("[PMM] CP8: pre-init-free-regions\r\n");
 
         // 5. Liberar regiões usable
         self.init_free_regions(boot_info, bitmap_phys, req_size_bytes as u64);
@@ -247,55 +217,32 @@ impl BitmapFrameAllocator {
         let free = self.total_frames.saturating_sub(used);
 
         crate::kinfo!(
-            "(PMM) Init completo. Total: {} frames. Livres: {}",
-            self.total_frames,
-            free
+            "(PMM) Inicialização completa. Total=",
+            self.total_frames as u64
         );
+        crate::kinfo!("(PMM) Livres=", free as u64);
     }
 
     /// Scan seguro do mapa de memória
     fn scan_memory_map_safe(&self, boot_info: &BootInfo) -> (PhysAddr, usize) {
-        // Checkpoint S1
-        crate::drivers::serial::write_str_raw("[SCAN] S1: entrada\r\n");
-
         let mut max_phys = 0u64;
         let mut count = 0usize;
-
-        // Checkpoint S2
-        crate::drivers::serial::write_str_raw("[SCAN] S2: pre-PhysAddr\r\n");
 
         // CORREÇÃO: memory_map_addr é endereço FÍSICO, converter para virtual
         let map_phys = PhysAddr::new(boot_info.memory_map_addr);
 
-        // Checkpoint S3
-        crate::drivers::serial::write_str_raw("[SCAN] S3: pre-phys_to_virt\r\n");
-
         let map_virt = addr::phys_to_virt(map_phys);
-
-        // Checkpoint S4
-        crate::drivers::serial::write_str_raw("[SCAN] S4: pos-phys_to_virt\r\n");
 
         let map_ptr = map_virt.as_ptr() as *const crate::core::handoff::MemoryMapEntry;
         let map_len = boot_info.memory_map_len as usize;
         let safe_len = core::cmp::min(map_len, MAX_MEMORY_MAP_ENTRIES);
 
-        // Checkpoint S5
-        crate::drivers::serial::write_str_raw("[SCAN] S5: pre-loop\r\n");
-
         // Barreira antes de iterar sobre memória externa
         compiler_fence(Ordering::SeqCst);
-
-        // Checkpoint W0: pre-while
-        crate::drivers::serial::write_str_raw("[SCAN] W0: pre-while\r\n");
 
         // Usando while manual em vez de for (iterador Range pode gerar #UD)
         let mut i: usize = 0;
         while i < safe_len {
-            // Checkpoint W1: início de cada iteração (apenas primeira)
-            if i == 0 {
-                crate::drivers::serial::write_str_raw("[SCAN] W1: i=0\r\n");
-            }
-
             unsafe {
                 let entry_ptr = map_ptr.add(i);
                 let entry = &*entry_ptr;
@@ -312,18 +259,15 @@ impl BitmapFrameAllocator {
             i += 1;
         }
 
-        // Checkpoint S6
-        crate::drivers::serial::write_str_raw("[SCAN] S6: pos-loop\r\n");
-
         // Barreira após leitura
         compiler_fence(Ordering::SeqCst);
 
         if max_phys == 0 {
-            crate::kerror!("(PMM) FATAL: Nenhuma memória Usable encontrada!");
+            crate::kerror!("(PMM) FATAL: Nenhuma memória utilizável (Usable) encontrada!");
             return (PhysAddr::new(128 * 1024 * 1024), 0);
         }
 
-        crate::kdebug!("(PMM) max_phys={:#x}", max_phys);
+        crate::kdebug!("(PMM) Memória física máxima=", max_phys);
         (PhysAddr::new(max_phys), count)
     }
 
@@ -343,28 +287,21 @@ impl BitmapFrameAllocator {
         let map_ptr = map_virt.as_ptr() as *const crate::core::handoff::MemoryMapEntry;
         let map_len = core::cmp::min(boot_info.memory_map_len as usize, MAX_MEMORY_MAP_ENTRIES);
 
-        crate::kdebug!(
-            "(PMM) map_phys={:#x} -> map_virt={:#x}",
-            map_phys.as_u64(),
-            map_virt.as_u64()
-        );
+        crate::kdebug!("(PMM) Mapa físico=", map_phys.as_u64());
+        crate::kdebug!("(PMM) Mapa virtual=", map_virt.as_u64());
 
         // DEBUG: Verificar se a memória é acessível lendo o primeiro byte
         // Usando escrita RAW para evitar #UD causado por formatação
-        crate::drivers::serial::write_str_raw("[DEBG] (PMM) F1: pre-read\r\n");
+
         compiler_fence(Ordering::SeqCst);
 
-        let test_ptr = map_ptr as *const u8;
+        let _test_ptr = map_ptr as *const u8;
         // Desabilitado temporariamente para teste
         // let test_byte = unsafe { core::ptr::read_volatile(test_ptr) };
-        let test_byte: u8 = 0; // Placeholder
-
-        crate::drivers::serial::write_str_raw("[DEBG] (PMM) F2: pos-read\r\n");
+        let _test_byte: u8 = 0; // Placeholder
 
         // Barreira
         compiler_fence(Ordering::SeqCst);
-
-        crate::drivers::serial::write_str_raw("[DEBG] (PMM) F3: pre-loop\r\n");
 
         // Encontrar a MAIOR região Usable
         let mut best_region_idx = None;
@@ -386,23 +323,15 @@ impl BitmapFrameAllocator {
             i += 1;
         }
 
-        crate::drivers::serial::write_str_raw("[DEBG] (PMM) F4: pos-loop\r\n");
-
         // Barreira
         compiler_fence(Ordering::SeqCst);
 
-        crate::drivers::serial::write_str_raw("[DEBG] (PMM) F5: pre-if-let\r\n");
-
         if let Some(idx) = best_region_idx {
-            crate::drivers::serial::write_str_raw("[DEBG] (PMM) F6: inside-if-let\r\n");
-
             let entry = unsafe { &*map_ptr.add(idx) };
             let region_start = entry.base;
             let region_end = entry.base + entry.len;
             let region_center = region_start + (entry.len / 2);
             let center_candidate = (region_center.saturating_sub(size_needed / 2) + 0xFFF) & !0xFFF;
-
-            crate::drivers::serial::write_str_raw("[DEBG] (PMM) F7: pre-probing\r\n");
 
             let mut fib_a = 0u64;
             let mut fib_b = PAGE_SIZE as u64;
@@ -441,11 +370,8 @@ impl BitmapFrameAllocator {
                 //     continue;
                 // }
 
-                crate::drivers::serial::write_str_raw("[DEBG] (PMM) F8: found-candidate!\r\n");
                 return PhysAddr::new(candidate_start);
             }
-
-            crate::drivers::serial::write_str_raw("[DEBG] (PMM) F9: no-candidate-found\r\n");
         }
 
         panic!("(PMM) Falha crítica: não foi possível alocar região para bitmap!");
@@ -467,7 +393,9 @@ impl BitmapFrameAllocator {
         }
         false
     }
+}
 
+impl BitmapFrameAllocator {
     /// Aloca um frame físico
     pub fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let start_search = self.next_free;

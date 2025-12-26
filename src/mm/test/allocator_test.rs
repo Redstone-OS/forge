@@ -16,22 +16,19 @@ fn validate_heap_mapping() -> bool {
 
     // Verificar se o início do heap está mapeado
     if translate_addr(heap_start).is_none() {
-        crate::kerror!("(AllocTest) Heap não mapeado em {:#x}!", heap_start);
+        crate::kerror!("(AllocTest) Heap não mapeado em start=", heap_start);
         return false;
     }
 
     // Verificar se o fim do heap também está mapeado
     let heap_end = heap_start + crate::mm::heap::HEAP_INITIAL_SIZE as u64 - 4096;
     if translate_addr(heap_end).is_none() {
-        crate::kerror!("(AllocTest) Fim do heap não mapeado em {:#x}!", heap_end);
+        crate::kerror!("(AllocTest) Fim do heap não mapeado em end=", heap_end);
         return false;
     }
 
-    crate::kinfo!(
-        "(AllocTest) Heap validado: {:#x} - {:#x}",
-        heap_start,
-        heap_end
-    );
+    crate::kinfo!("(AllocTest) Heap validado start=", heap_start);
+    crate::kinfo!("(AllocTest) Heap validado end  =", heap_end);
     true
 }
 
@@ -97,7 +94,7 @@ fn test_buddy_basic() {
         if ptr1.is_null() {
             panic!("(Buddy) Falha alloc 4KB");
         }
-        crate::ktrace!("(Buddy) Alloc 4KB -> {:p}", ptr1);
+        crate::ktrace!("(Buddy) Alloc 4KB -> ", ptr1 as u64);
 
         // Alloc 8KB (Order 1)
         let layout2 = Layout::from_size_align(8192, 4096).unwrap();
@@ -105,7 +102,7 @@ fn test_buddy_basic() {
         if ptr2.is_null() {
             panic!("(Buddy) Falha alloc 8KB");
         }
-        crate::ktrace!("(Buddy) Alloc 8KB -> {:p}", ptr2);
+        crate::ktrace!("(Buddy) Alloc 8KB -> ", ptr2 as u64);
 
         // Dealloc em ordem inversa
         buddy.dealloc(ptr2, layout2);
@@ -116,7 +113,7 @@ fn test_buddy_basic() {
         if ptr_all.is_null() {
             panic!("(Buddy) Falha ao realocar tudo (fragmentação/merge falhou?)");
         }
-        crate::ktrace!("(Buddy) Realloc Full 1MB -> {:p}", ptr_all);
+        crate::ktrace!("(Buddy) Realloc Full 1MB -> ", ptr_all as u64);
 
         buddy.dealloc(ptr_all, Layout::from_size_align(size, 4096).unwrap());
     }
@@ -155,7 +152,8 @@ fn test_slab_basic() {
             panic!("(Slab) Retornou mesmo ponteiro!");
         }
 
-        crate::ktrace!("(Slab) Ptr1: {:p}, Ptr2: {:p}", ptr1, ptr2);
+        crate::ktrace!("(Slab) Ptr1=", ptr1 as u64);
+        crate::ktrace!("(Slab) Ptr2=", ptr2 as u64);
 
         slab.dealloc(ptr1, layout32, &mut buddy);
         slab.dealloc(ptr2, layout32, &mut buddy);
@@ -186,10 +184,7 @@ fn test_slab_canary_integrity() {
         let canary_start = (block_ptr as *const u64).read();
 
         if canary_start != 0xDEAD_BEEF_CAFE_BABE {
-            crate::kerror!(
-                "(Test) Start Canary AUSENTE ou incorreto: {:#x}",
-                canary_start
-            );
+            crate::kerror!("(Test) Start Canary AURENTE ou incorreto=", canary_start);
             panic!("Test Canary Integrity Failed");
         }
 
@@ -198,7 +193,7 @@ fn test_slab_canary_integrity() {
         let canary_end = footer_ptr.read_unaligned();
 
         if canary_end != 0xBAAD_F00D_DEAD_C0DE {
-            crate::kerror!("(Test) End Canary AUSENTE ou incorreto: {:#x}", canary_end);
+            crate::kerror!("(Test) End Canary AUSENTE ou incorreto=", canary_end);
             panic!("Test Canary Integrity Failed");
         }
 

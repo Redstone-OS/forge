@@ -31,7 +31,10 @@ use crate::sched::scheduler::SCHEDULER;
 /// - Remove da runqueue
 /// - Cede CPU para sempre (não retorna)
 pub fn sys_exit(code: i32) -> SysResult<usize> {
-    crate::kinfo!("(Syscall) sys_exit: Processo encerrado com código {}", code);
+    crate::kinfo!(
+        "(Syscall) sys_exit: Processo encerrado. Código=",
+        code as u64
+    );
 
     // TODO: Implementar exit real quando tiver process management
     // Por enquanto: loop infinito cedendo CPU

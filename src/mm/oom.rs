@@ -10,7 +10,7 @@ use core::alloc::Layout;
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
     crate::kerror!("(OOM) CRITICAL: Kernel Out of Memory!");
-    crate::kerror!("(OOM) Falha ao alocar layout: {:?}", layout);
+    crate::kerror!("(OOM) Falha ao alocar layout size=", layout.size() as u64);
 
     // TODO: Adicionar dump de estatísticas de memória aqui
 

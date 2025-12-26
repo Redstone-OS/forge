@@ -135,7 +135,11 @@ pub fn sys_debug(cmd: usize, arg_ptr: usize, arg_len: usize) -> SysResult<usize>
             let data = unsafe { slice::from_raw_parts(arg_ptr as *const u8, len) };
 
             match core::str::from_utf8(data) {
-                Ok(s) => crate::kinfo!("(Debug) {}", s),
+                Ok(s) => {
+                    crate::kinfo!("(Debug) ");
+                    crate::klog!(s);
+                    crate::knl!();
+                }
                 Err(_) => crate::kwarn!("(Debug) sys_debug: Dados não-UTF8 recebidos"),
             }
 
@@ -161,7 +165,7 @@ pub fn sys_debug(cmd: usize, arg_ptr: usize, arg_len: usize) -> SysResult<usize>
         }
 
         _ => {
-            crate::kwarn!("(Debug) sys_debug: Comando desconhecido: {}", cmd);
+            crate::kwarn!("(Debug) sys_debug: Comando desconhecido cmd=", cmd as u64);
             Err(SysError::InvalidArgument)
         }
     }

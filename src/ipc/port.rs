@@ -52,27 +52,17 @@ impl PortHandle {
         let mut port = self.0.lock();
 
         if !port.active {
-            crate::kwarn!(
-                "(IPC) send: Tentativa de envio para porta fechada (ID: {})",
-                msg_id
-            );
+            crate::kwarn!("(IPC) send: Porta fechada para msg_id=", msg_id);
             return PortStatus::Closed;
         }
 
         if port.queue.len() >= port.capacity {
-            crate::ktrace!(
-                "(IPC) send: Porta cheia ({} mensagens), bloqueando ID: {}",
-                port.capacity,
-                msg_id
-            );
+            crate::ktrace!("(IPC) send: Porta cheia. msg_id=", msg_id);
             return PortStatus::Full;
         }
 
-        crate::ktrace!(
-            "(IPC) send: Mensagem ID: {} enfileirada ({} bytes)",
-            msg_id,
-            msg.header.data_len
-        );
+        crate::ktrace!("(IPC) send: Mensagem enfileirada ID=", msg_id);
+        crate::ktrace!("(IPC) send: Mensagem bytes=", msg.header.data_len as u64);
         port.queue.push_back(msg);
         PortStatus::Ok
     }
@@ -82,10 +72,7 @@ impl PortHandle {
         let mut port = self.0.lock();
 
         if let Some(msg) = port.queue.pop_front() {
-            crate::ktrace!(
-                "(IPC) recv: Mensagem ID: {} retirada da fila",
-                msg.header.id
-            );
+            crate::ktrace!("(IPC) recv: Mensagem retirada ID=", msg.header.id);
             Ok(msg)
         } else if !port.active {
             Err(PortStatus::Closed)

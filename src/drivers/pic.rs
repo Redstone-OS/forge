@@ -54,11 +54,8 @@ impl ChainedPics {
         // Salvar máscaras
         let mask1 = self.pics[0].data.read();
         let mask2 = self.pics[1].data.read();
-        crate::ktrace!(
-            "(PIC) init: Máscaras originais salvas: 0x{:02x}, 0x{:02x}",
-            mask1,
-            mask2
-        );
+        crate::ktrace!("(PIC) init: Máscaras originais mask1=", mask1 as u64);
+        crate::ktrace!("(PIC) init: Máscaras originais mask2=", mask2 as u64);
 
         // Sequência de inicialização (ICW1)
         self.pics[0].command.write(0x11);
@@ -68,11 +65,8 @@ impl ChainedPics {
         // ICW2: Offsets dos vetores
         self.pics[0].data.write(self.pics[0].offset);
         self.pics[1].data.write(self.pics[1].offset);
-        crate::ktrace!(
-            "(PIC) init: ICW2 offsets: {}, {}",
-            self.pics[0].offset,
-            self.pics[1].offset
-        );
+        crate::ktrace!("(PIC) init: ICW2 offset1=", self.pics[0].offset as u64);
+        crate::ktrace!("(PIC) init: ICW2 offset2=", self.pics[1].offset as u64);
 
         // ICW3: Cascata
         self.pics[0].data.write(4); // IRQ2 tem slave

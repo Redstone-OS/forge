@@ -154,12 +154,8 @@ impl VMO {
             vmo.commit_all()?;
         }
 
-        crate::kdebug!(
-            "(VMO) Criado VMO #{}: {} bytes, {} páginas",
-            vmo.id,
-            aligned_size,
-            num_pages
-        );
+        crate::kdebug!("(VMO) Criado VMO ID=", vmo.id);
+        crate::kdebug!("(VMO) VMO páginas   =", num_pages as u64);
 
         Ok(vmo)
     }
@@ -291,7 +287,7 @@ impl Drop for VMO {
             }
         }
 
-        crate::kdebug!("(VMO) Destruído VMO #{}", self.id);
+        crate::kdebug!("(VMO) Destruído VMO ID=", self.id);
     }
 }
 

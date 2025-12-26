@@ -38,6 +38,7 @@
 
 use crate::arch::x86_64::gdt::{KERNEL_CODE_SEL, KERNEL_DATA_SEL, USER_CODE_SEL, USER_DATA_SEL};
 use crate::core::handle::HandleTable;
+use crate::drivers::serial;
 use crate::sched::context::Context;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -109,7 +110,7 @@ impl Task {
             let t = task.as_mut().get_unchecked_mut();
             t.setup_stack(entry as u64, KERNEL_CODE_SEL, KERNEL_DATA_SEL, 0);
         }
-        crate::kdebug!("[Task] new_kernel OK: entry={:#x}", entry as usize);
+        crate::kdebug!("[Task] new_kernel OK: entrada=", entry as usize);
         task
     }
 
@@ -120,12 +121,14 @@ impl Task {
     /// * `user_stack_top`: Endereço virtual (RSP) da stack no userspace.
     /// * `cr3`: Endereço físico da tabela de páginas do processo.
     pub fn new_user(entry_point: u64, user_stack_top: u64, cr3: u64) -> PinnedTask {
-        crate::ktrace!(
-            "(Task) new_user: entry={:#x} stack={:#x} cr3={:#x}",
+        crate::klog!(
+            "[TRAC] (Task) new_user: entrada=",
             entry_point,
-            user_stack_top,
-            cr3
+            " pilha=",
+            user_stack_top
         );
+        crate::klog!(" cr3=", cr3);
+        crate::knl!();
 
         let mut task = Box::pin(Self::create_base());
 
@@ -135,10 +138,7 @@ impl Task {
             t.cr3 = cr3;
             t.setup_stack(entry_point, USER_CODE_SEL, USER_DATA_SEL, user_stack_top);
         }
-        crate::kinfo!(
-            "(Task) Processo de usuário criado: PID {}",
-            task.id.as_u64()
-        );
+        crate::kinfo!("(Task) Processo de usuário criado: PID=", task.id.as_u64());
         task
     }
 
@@ -146,10 +146,9 @@ impl Task {
     fn create_base() -> Self {
         const STACK_SIZE: usize = 32 * 1024; // 32KB
 
-        crate::ktrace!(
-            "(Task) create_base: Alocando {} bytes para stack...",
-            STACK_SIZE
-        );
+        serial::emit_str("[TRAC] (Task) create_base: Alocando ");
+        serial::emit_dec(STACK_SIZE);
+        serial::emit_str(" bytes para pilha...\n\r");
 
         // SEGURO: Vec::resize inicializa memória sem unsafe
         let mut kstack = Vec::with_capacity(STACK_SIZE);
@@ -178,24 +177,23 @@ impl Task {
     /// Prepara a stack para o primeiro Context Switch.
     /// Constrói um stack frame artificial que simula uma tarefa interrompida.
     fn setup_stack(&mut self, rip: u64, cs: u16, ss: u16, user_rsp: u64) {
-        // Bounds check: validar kstack_top está dentro da região válida
         let stack_start = self.kstack.as_ptr() as u64;
         let stack_end = stack_start + self.kstack.len() as u64;
 
-        assert!(
-            self.kstack_top >= stack_start && self.kstack_top <= stack_end,
-            "kstack_top ({:#x}) fora dos limites [{:#x} - {:#x}]",
-            self.kstack_top,
-            stack_start,
-            stack_end
-        );
+        if !(self.kstack_top >= stack_start && self.kstack_top <= stack_end) {
+            serial::emit_str("[ERRO] kstack_top=");
+            serial::emit_hex(self.kstack_top);
+            serial::emit_str(" fora dos limites do kernel!\n\r");
+            panic!("Task kstack_top out of bounds");
+        }
 
-        crate::kdebug!(
-            "[Task] setup_stack: rip={:#x} cs={:#x} kstack_top={:#x}",
+        crate::klog!(
+            "[DEBG] [Task] setup_stack: rip=",
             rip,
-            cs,
+            " kstack_top=",
             self.kstack_top
         );
+        crate::knl!();
 
         unsafe {
             let mut ptr = self.kstack_top as *mut u64;
@@ -227,7 +225,7 @@ impl Task {
 
                 // Endereço de retorno: Trampolim
                 stack_push!(user_entry_trampoline as usize as u64);
-                crate::ktrace!("[Task] IRETQ frame criado, trampoline={:#x}", *ptr);
+                crate::ktrace!("[Task] Frame IRETQ criado, trampolim=", *ptr);
             } else {
                 // Tarefa de Kernel: Endereço de retorno direto
                 stack_push!(rip);
@@ -243,7 +241,7 @@ impl Task {
 
             // 3. Salvar o novo topo da stack
             self.kstack_top = ptr as u64;
-            crate::kdebug!("[Task] setup_stack OK: kstack_top={:#x}", self.kstack_top);
+            crate::kdebug!("[Task] setup_stack OK: novo kstack_top=", self.kstack_top);
         }
     }
 }

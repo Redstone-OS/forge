@@ -10,41 +10,39 @@
 
 use crate::arch::platform::Cpu;
 use crate::arch::traits::CpuOps;
+use crate::drivers::serial;
 use core::panic::PanicInfo;
 
 /// Handler chamado pelo compilador Rust em `panic!`.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    // 1. Silence: Desabilitar interrupções imediatamente para evitar
-    // que o scheduler ou drivers tentem rodar em estado corrompido.
-    // SAFETY: Estamos em shutdown de emergência. É a ação mais segura.
+    // 1. Silêncio: Desabilitar interrupções imediatamente.
     unsafe {
         Cpu::disable_interrupts();
     }
 
-    // 2. Report: Tentar extrair informações úteis
-    crate::kerror!("=====   PÂNICO DO KERNEL (CRÍTICO)   =====");
+    // 2. Reportar: Tentar extrair informações úteis via serial direta (sem core::fmt)
+    serial::emit_str("\x1b[1;31m"); // Vermelho Bold
+    serial::emit_str("\n\r\n\r=====   PANICO DO KERNEL (CRITICO)   =====");
+    serial::emit_str("\x1b[0m\n\r");
 
     if let Some(location) = info.location() {
-        crate::kerror!(
-            "Localização: {}:{}:{}",
-            location.file(),
-            location.line(),
-            location.column()
-        );
+        serial::emit_str("[LOCAL] ");
+        serial::emit_str(location.file());
+        serial::emit_str(":");
+        serial::emit_dec(location.line() as usize);
+        serial::emit_str(":");
+        serial::emit_dec(location.column() as usize);
+        serial::emit_nl();
     } else {
-        crate::kerror!("Localização: Desconhecida (Sem debug info)");
+        serial::emit_str("[LOCAL] Desconhecido\n\r");
     }
 
-    if let Some(msg) = info.message() {
-        crate::kerror!("Razão:   {}", msg);
-    } else {
-        crate::kerror!("Razão:   Causa desconhecida");
-    }
+    // Nota: info.message() requer o sistema de formatação do Rust (core::fmt)
+    // que estamos evitando para prevenir crashes #UD por SSE/AVX.
+    serial::emit_str("[INFO] Veja a ultima linha de log para mais detalhes.\n\r");
+    serial::emit_str("[HALT] Sistema congelado. Reset manual necessario.\n\r");
 
-    crate::kerror!("Sistema congelado. Reset manual necessário.");
-
-    // 3. Freeze: Entra em loop infinito de HLT.
-    // O método hang() já garante o loop e desabilita interrupções novamente por segurança.
+    // 3. Congelar: Entra em loop infinito de HLT.
     Cpu::hang();
 }

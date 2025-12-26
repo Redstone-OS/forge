@@ -260,9 +260,15 @@ pub fn is_guard_page_fault(fault_addr: VirtAddr) -> bool {
 /// Imprime estatísticas
 pub fn print_stats() {
     crate::kinfo!(
-        "(Mapper) Regiões: {}, Páginas: {}, Guards: {}",
-        MAPPER_STATS.regions_mapped.load(Ordering::Relaxed),
-        MAPPER_STATS.pages_mapped.load(Ordering::Relaxed),
-        MAPPER_STATS.guard_pages.load(Ordering::Relaxed)
+        "(Mapper) Regiões=",
+        MAPPER_STATS.regions_mapped.load(Ordering::Relaxed) as u64
+    );
+    crate::kinfo!(
+        "(Mapper) Páginas=",
+        MAPPER_STATS.pages_mapped.load(Ordering::Relaxed) as u64
+    );
+    crate::kinfo!(
+        "(Mapper) Guards =",
+        MAPPER_STATS.guard_pages.load(Ordering::Relaxed) as u64
     );
 }

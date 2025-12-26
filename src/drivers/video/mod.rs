@@ -52,13 +52,12 @@ static mut FRAMEBUFFER: Option<FramebufferInfo> = None;
 /// Mapeia a memória do framebuffer (se necessário) e limpa a tela.
 pub unsafe fn init(info: &FramebufferInfo) {
     FRAMEBUFFER = Some(*info);
+    crate::kinfo!("Video Driver: Inicializado");
     crate::kinfo!(
-        "Video Driver: {}x{} stride={} format={:?}",
-        info.width,
-        info.height,
-        info.stride,
-        info.format
+        "Video Dimensões=",
+        (info.width as u64) << 32 | (info.height as u64)
     );
+    crate::kinfo!("Video Stride   =", info.stride as u64);
 
     // Mapear Framebuffer (Identity Map para simplicidade no kernel, assumindo endereço físico acessível)
     // Se o FB estiver acima de 4GB, precisamos garantir mapeamento.

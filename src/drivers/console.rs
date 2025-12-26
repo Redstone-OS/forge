@@ -20,11 +20,10 @@ pub static CONSOLE: Mutex<Option<Console>> = Mutex::new(None);
 /// # Argumentos
 /// * `info`: Informações do Framebuffer obtidas do BootInfo.
 pub fn init_console(info: FramebufferInfo) {
+    crate::kdebug!("(Console) init: Framebuffer em=", info.addr);
     crate::kdebug!(
-        "(Console) init: Inicializando framebuffer em {:#x} ({}x{})",
-        info.addr,
-        info.width,
-        info.height
+        "(Console) init: Resolução=",
+        (info.width as u64) << 32 | info.height as u64
     );
     let mut console_lock = CONSOLE.lock();
     let mut console = Console::new(info);

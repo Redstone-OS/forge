@@ -52,11 +52,7 @@ pub fn sys_alloc(size: usize, flags: usize) -> SysResult<usize> {
     // TODO: Usar VMM para alocar páginas no espaço do processo
     // TODO: Mapear com permissões corretas
 
-    crate::kwarn!(
-        "(Syscall) sys_alloc: {} bytes ({} páginas) não implementado",
-        size,
-        pages
-    );
+    crate::kwarn!("(Syscall) sys_alloc: não implementado size=", size as u64);
     Err(SysError::NotImplemented)
 }
 
@@ -84,11 +80,7 @@ pub fn sys_free(addr: usize, size: usize) -> SysResult<usize> {
 
     // TODO: Usar VMM para desmapear e liberar páginas
 
-    crate::kwarn!(
-        "(Syscall) sys_free: {:#x} ({} bytes) não implementado",
-        addr,
-        size
-    );
+    crate::kwarn!("(Syscall) sys_free: não implementado addr=", addr as u64);
     Err(SysError::NotImplemented)
 }
 
@@ -120,13 +112,9 @@ pub fn sys_map(addr: usize, size: usize, flags: usize, handle: usize) -> SysResu
     // - Se handle == 0: mapeamento anônimo
     // - Se handle != 0: verificar tipo (Memory/File) e mapear
 
-    crate::kwarn!(
-        "(Syscall) sys_map: addr={:#x} size={} flags={:#x} handle={} não implementado",
-        addr,
-        size,
-        flags,
-        handle
-    );
+    crate::kwarn!("(Syscall) sys_map: não implementado addr=", addr as u64);
+    crate::klog!(" size=", size as u64, " handle=", handle as u64);
+    crate::knl!();
     Err(SysError::NotImplemented)
 }
 
@@ -145,10 +133,6 @@ pub fn sys_unmap(addr: usize, size: usize) -> SysResult<usize> {
 
     // TODO: Usar VMM para remover mapeamento
 
-    crate::kwarn!(
-        "(Syscall) sys_unmap: {:#x} ({} bytes) não implementado",
-        addr,
-        size
-    );
+    crate::kwarn!("(Syscall) sys_unmap: não implementado addr=", addr as u64);
     Err(SysError::NotImplemented)
 }

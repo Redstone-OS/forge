@@ -143,12 +143,15 @@ impl HandleTable {
         for i in 0..len {
             let idx = (start + i) % len;
             if !self.entries[idx].is_active() {
-                crate::ktrace!(
-                    "(Handle) insert: Slot {} ocupado por {:?} (ptr: {:#x})",
-                    idx,
-                    entry.object_type,
-                    entry.object_ptr
+                crate::ktrace!("(Handle) insert: Slot livre=", idx as u64);
+                crate::klog!(
+                    " (tipo=",
+                    entry.object_type as u64,
+                    " ptr=",
+                    entry.object_ptr as u64
                 );
+                crate::klog!(")");
+                crate::knl!();
                 self.entries[idx] = entry;
                 self.next_free = ((idx + 1) % len) as u32;
                 return Some(Handle(idx as u32));
@@ -160,7 +163,7 @@ impl HandleTable {
             let new_len = (len * 2).min(Self::MAX_CAPACITY);
             let idx = len;
 
-            crate::kdebug!("(Handle) Expandindo tabela: {} -> {} slots", len, new_len);
+            crate::kdebug!("(Handle) Expandindo tabela para slots=", new_len as u64);
 
             // Expandir
             for _ in len..new_len {
@@ -172,10 +175,7 @@ impl HandleTable {
             return Some(Handle(idx as u32));
         }
 
-        crate::kwarn!(
-            "(Handle) Falha ao inserir: Tabela de handles cheia (max {})",
-            Self::MAX_CAPACITY
-        );
+        crate::kwarn!("(Handle) Falha ao inserir: Tabela de handles cheia");
         None // Tabela cheia
     }
 
@@ -213,11 +213,7 @@ impl HandleTable {
 
         // Trocar por entrada vazia
         let old = core::mem::replace(entry, HandleEntry::empty());
-        crate::ktrace!(
-            "(Handle) remove: Handle {} ({:?}) removido",
-            idx,
-            old.object_type
-        );
+        crate::ktrace!("(Handle) remove: Handle removido index=", idx as u64);
 
         // Atualizar hint de slot livre
         if (self.next_free as usize) > idx {
@@ -253,12 +249,7 @@ impl HandleTable {
 
         let result = self.insert(new_entry);
         if let Some(h) = result {
-            crate::ktrace!(
-                "(Handle) duplicate: {} -> {} (direitos: {:?})",
-                handle.0,
-                h.0,
-                new_rights
-            );
+            crate::ktrace!("(Handle) duplicate: novo handle idx=", h.0 as u64);
         }
         result
     }

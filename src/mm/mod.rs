@@ -80,25 +80,25 @@ pub mod error;
 /// Faz panic se a inicialização do Heap falhar.
 pub unsafe fn init(boot_info: &'static crate::core::handoff::BootInfo) {
     // 1. VMM primeiro: registra CR3, valida scratch slot
-    crate::kdebug!("(MM) Inicializando VMM...");
+    crate::kinfo!("(MM) Inicializando VMM...");
     vmm::init(boot_info);
 
     // 2. PMM segundo: pode acessar memória física via identity map
     // Nota: pt_scanner é chamado DENTRO de pmm::init, ANTES de liberar frames
-    crate::kdebug!("(MM) Inicializando PMM...");
+    crate::kinfo!("(MM) Inicializando PMM...");
     pmm::init(boot_info);
 
     // 3. Heap terceiro: precisa do PMM para alocar frames
-    crate::kdebug!("(MM) Inicializando Heap...");
+    crate::kinfo!("(MM) Inicializando Heap...");
     if !heap::init_heap(&mut *pmm::FRAME_ALLOCATOR.lock()) {
         panic!("(MM) Falha crítica ao inicializar Heap!");
     }
 
     // 4. Guard Page: desmapeia página de guarda da stack para detectar stack overflow
-    crate::kdebug!("(MM) Configurando guard page da stack...");
+    crate::kinfo!("(MM) Configurando guard page da stack...");
     setup_guard_page();
 
-    crate::kinfo!("(MM) Subsistema de memória inicializado!");
+    crate::kok!("(MM) Subsistema de memória inicializado com sucesso!");
 }
 
 /// Configura a guard page da stack do kernel.
@@ -117,13 +117,10 @@ unsafe fn setup_guard_page() {
 
     // Desmapear a guard page (marcar como NOT PRESENT)
     // Se já não está mapeada, unmap_page é um no-op seguro
-    if let Err(e) = vmm::unmap_page(guard_page_addr) {
-        crate::kwarn!(
-            "(MM) Guard page não pôde ser desmapeada: {} (pode já estar desmapeada)",
-            e
-        );
+    if let Err(_e) = vmm::unmap_page(guard_page_addr) {
+        crate::kwarn!("(MM) Guard page não pôde ser desmapeada (pode já estar desmapeada)");
     } else {
-        crate::kinfo!("(MM) Guard page configurada em {:#x}", guard_page_addr);
+        crate::kinfo!("(MM) Guard page configurada em=", guard_page_addr);
     }
 
     // Invalidar TLB para a guard page

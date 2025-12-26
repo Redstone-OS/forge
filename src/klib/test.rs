@@ -28,7 +28,7 @@ fn test_align_up() {
     let align = 4096;
     let aligned = align_up(addr, align);
 
-    crate::ktrace!("(klib) align_up({}, {}) = {}", addr, align, aligned);
+    crate::ktrace!("(klib) align_up(4097, 4096) = ", aligned);
 
     if aligned == 8192 {
         crate::kinfo!("(klib) ✓ Align Up Logic OK");

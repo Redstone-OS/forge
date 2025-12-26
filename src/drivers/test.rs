@@ -24,8 +24,8 @@ fn test_pic_remap() {
     let master_offset = 32;
     let slave_offset = 40;
 
-    crate::ktrace!("(Driver) Master Offset: {}", master_offset);
-    crate::ktrace!("(Driver) Slave Offset:  {}", slave_offset);
+    crate::ktrace!("(Driver) Master Offset: ", master_offset);
+    crate::ktrace!("(Driver) Slave Offset:  ", slave_offset);
 
     if master_offset >= 32 && slave_offset >= 32 {
         crate::kinfo!("(Driver) ✓ PIC Offsets OK (Safe Range)");
@@ -44,8 +44,10 @@ fn test_vga_buffer_size() {
     let stride = width * bpp;
     let total_size = stride * height;
 
-    crate::ktrace!("(Driver) {}x{} @ 32bpp", width, height);
-    crate::ktrace!("(Driver) Calculated Size: {} bytes", total_size);
+    crate::ktrace!("(Driver) Resolução=", width);
+    crate::klog!("x", height, " @ 32bpp");
+    crate::knl!();
+    crate::ktrace!("(Driver) Calculated Size: ", total_size);
 
     if total_size > 0 {
         crate::kinfo!("(Driver) ✓ VGA Buffer Math OK");

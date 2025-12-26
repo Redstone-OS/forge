@@ -4,7 +4,7 @@
 //! Fundamental para carregar o primeiro processo (init).
 
 use super::vfs::{NodeType, VfsError, VfsHandle, VfsNode};
-use alloc::string::{String};
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::str;
@@ -18,7 +18,7 @@ pub struct Initramfs {
 impl Initramfs {
     /// Cria o FS a partir de um slice de memória contendo o TAR.
     pub fn new(data: &'static [u8]) -> Self {
-        crate::kdebug!("(Initramfs) Parsing arquivo TAR ({} bytes)...", data.len());
+        crate::kdebug!("(Initramfs) Parsing arquivo TAR. bytes=", data.len() as u64);
         let mut fs = Self {
             data,
             // Pré-alocar para evitar realocação durante parse (que causa UD)
@@ -63,12 +63,10 @@ impl Initramfs {
             let next_header = (data_end + 511) & !511;
 
             if kind == NodeType::File {
-                crate::ktrace!(
-                    "(Initramfs) parse: {} ({} bytes) em 0x{:x}",
-                    name,
-                    size,
-                    data_start
-                );
+                crate::ktrace!("(Initramfs) parse: ");
+                crate::klog!(name);
+                crate::klog!(" size=", size, " em=", data_start as u64);
+                crate::knl!();
                 let file_data = &self.data[data_start..data_end];
 
                 // Criar String manualmente (evita String::from que causa GPF)
@@ -92,8 +90,8 @@ impl Initramfs {
         }
 
         crate::kinfo!(
-            "(Initramfs) Pronto: {} objetos carregados da memória.",
-            self.files.len()
+            "(Initramfs) Pronto. Objetos carregados=",
+            self.files.len() as u64
         );
     }
 }

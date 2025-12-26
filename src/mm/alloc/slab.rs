@@ -214,8 +214,8 @@ impl SlabAllocator {
             // O alloc delegou para buddy.alloc(layout) diretamente, sem canaries
             // Então aqui liberamos diretamente no buddy
             crate::ktrace!(
-                "(Slab) Dealloc oversized -> Buddy ({} bytes)",
-                layout.size()
+                "(Slab) Dealloc oversized -> Buddy. Size=",
+                layout.size() as u64
             );
             buddy.dealloc(ptr, layout);
             return;
@@ -227,12 +227,8 @@ impl SlabAllocator {
         // 1. Checar Start Canary
         let start_canary = (block_ptr as *const u64).read();
         if start_canary != CANARY_START {
-            crate::kerror!("(MM) CRITICAL: Heap Underflow detectado em {:p}!", ptr);
-            crate::kerror!(
-                "(MM) Esperado: {:#x}, Encontrado: {:#x}",
-                CANARY_START,
-                start_canary
-            );
+            crate::kerror!("(MM) CRITICAL: Heap Underflow detectado em=", ptr as u64);
+            crate::kerror!("(MM) Encontrado=", start_canary);
             panic!("HEAP CORRUPTION: Underflow");
         }
 
@@ -240,12 +236,8 @@ impl SlabAllocator {
         let footer_ptr = ptr.add(payload_size) as *const u64;
         let end_canary = footer_ptr.read_unaligned();
         if end_canary != CANARY_END {
-            crate::kerror!("(MM) CRITICAL: Heap Overflow detectado em {:p}!", ptr);
-            crate::kerror!(
-                "(MM) Esperado: {:#x}, Encontrado: {:#x}",
-                CANARY_END,
-                end_canary
-            );
+            crate::kerror!("(MM) CRITICAL: Heap Overflow detectado em=", ptr as u64);
+            crate::kerror!("(MM) Encontrado=", end_canary);
             panic!("HEAP CORRUPTION: Overflow");
         }
 

@@ -72,7 +72,9 @@ impl Vfs {
 
     /// Resolve um caminho absoluto (ex: "/bin/init").
     pub fn lookup(&self, path: &str) -> Result<Arc<dyn VfsNode>, VfsError> {
-        crate::ktrace!("(Vfs) lookup: Buscando caminho '{}'", path);
+        crate::ktrace!("(Vfs) lookup: Buscando caminho: ");
+        crate::klog!(path);
+        crate::knl!();
         let root = self.root.as_ref().ok_or(VfsError::NotFound)?;
 
         if path == "/" {
@@ -118,13 +120,17 @@ impl Vfs {
                     }
                 }
                 if is_match {
-                    crate::ktrace!("(Vfs) lookup: '{}' encontrado", path);
+                    crate::ktrace!("(Vfs) lookup: Encontrado: ");
+                    crate::klog!(path);
+                    crate::knl!();
                     return Ok(child.clone());
                 }
             }
         }
 
-        crate::ktrace!("(Vfs) lookup: '{}' não encontrado", path);
+        crate::ktrace!("(Vfs) lookup: Não encontrado: ");
+        crate::klog!(path);
+        crate::knl!();
         Err(VfsError::NotFound)
     }
 }

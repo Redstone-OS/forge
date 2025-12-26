@@ -42,7 +42,7 @@ fn test_pmm_basic() {
         let frame = pmm.allocate_frame();
 
         if frame.is_none() {
-            crate::kerror!("(PMM) FALHA: OOM ao alocar frame {}", i);
+            crate::kerror!("(PMM) FALHA: OOM ao alocar frame index=", i as u64);
             panic!("Teste PMM falhou: OOM");
         }
 
@@ -51,7 +51,7 @@ fn test_pmm_basic() {
 
         // Verificar alinhamento
         if f.addr() % PAGE_SIZE as u64 != 0 {
-            crate::kerror!("(PMM) FALHA: frame {} não alinhado: {:#x}", i, f.addr());
+            crate::kerror!("(PMM) FALHA: frame alinhamento incorreto em=", f.addr());
             panic!("Teste PMM falhou: alinhamento");
         }
 
@@ -83,16 +83,13 @@ fn test_pmm_basic() {
 fn test_vmm_translate() {
     // Testar tradução de endereço do kernel (deve funcionar)
     let kernel_addr: u64 = 0xffffffff80000000;
-    crate::kdebug!(
-        "(VMM) Teste: traduzindo endereço kernel {:#x}...",
-        kernel_addr
-    );
+    crate::kdebug!("(VMM) Teste: traduzindo endereço kernel=", kernel_addr);
 
     let result = vmm::translate_addr(kernel_addr);
 
     match result {
         Some(phys) => {
-            crate::kdebug!("(VMM) Teste: {:#x} -> phys {:#x}", kernel_addr, phys);
+            crate::kdebug!("(VMM) Teste: virt -> phys OK em addr=", kernel_addr);
             crate::kinfo!("(VMM) ✓ VMM translate (kernel) OK");
         }
         None => {
@@ -103,13 +100,13 @@ fn test_vmm_translate() {
 
     // Testar tradução de endereço do heap (usa endereço dinâmico)
     let heap_addr: u64 = crate::mm::heap::heap_start() as u64;
-    crate::kdebug!("(VMM) Teste: traduzindo endereço heap {:#x}...", heap_addr);
+    crate::kdebug!("(VMM) Teste: traduzindo endereço heap=", heap_addr);
 
     let result = vmm::translate_addr(heap_addr);
 
     match result {
         Some(phys) => {
-            crate::kdebug!("(VMM) Teste: {:#x} -> phys {:#x}", heap_addr, phys);
+            crate::kdebug!("(VMM) Teste: heap_virt -> phys OK em addr=", heap_addr);
             crate::kinfo!("(VMM) ✓ VMM translate (heap) OK");
         }
         None => {
@@ -131,11 +128,13 @@ fn test_heap_basic() {
     let heap_start = crate::mm::heap::heap_start();
     let heap_size = crate::mm::heap::HEAP_INITIAL_SIZE;
 
-    crate::ktrace!(
-        "(Heap) Teste: HEAP_START={:#x}, SIZE={}",
+    crate::klog!(
+        "(Heap) Teste: HEAP_START=",
         heap_start,
-        heap_size
+        " SIZE=",
+        heap_size as u64
     );
+    crate::knl!();
 
     // Verificar que podemos ler/escrever no heap via ponteiro raw
     let heap_ptr = heap_start as *mut u64;
@@ -164,15 +163,11 @@ fn test_heap_basic() {
     }
 
     if read_val != test_val {
-        crate::kerror!(
-            "(Heap) FALHA: escrevemos {:#x} mas lemos {:#x}",
-            test_val,
-            read_val
-        );
+        crate::kerror!("(Heap) FALHA: Valor lido incorreto=", read_val);
         panic!("Teste Heap falhou: mapeamento incorreto");
     }
 
-    crate::ktrace!("(Heap) Teste: valor lido OK: {:#x}", read_val);
+    crate::ktrace!("(Heap) Teste: valor lido OK=", read_val);
     crate::kinfo!("(Heap) ✓ Heap mapping verified");
 
     // TODO: Resolver SSE em __rust_alloc para habilitar Box/Vec
@@ -186,10 +181,10 @@ fn test_phys_to_virt() {
     // Testar endereço dentro do identity map
     let test_phys_val: u64 = 0x1000000; // 16 MB
     let test_phys = PhysAddr::new(test_phys_val);
-    crate::kdebug!("(Addr) Teste: phys_to_virt({:#x})...", test_phys_val);
+    crate::kdebug!("(Addr) Teste: phys_to_virt em phys=", test_phys_val);
 
     if !addr::is_phys_accessible(test_phys) {
-        crate::kerror!("(Addr) FALHA: {:#x} deveria ser acessível!", test_phys_val);
+        crate::kerror!("(Addr) FALHA: phys deveria ser acessível=", test_phys_val);
         panic!("Teste phys_to_virt falhou");
     }
 
@@ -200,18 +195,12 @@ fn test_phys_to_virt() {
     let back: PhysAddr = addr::virt_to_phys(virt).expect("Falha ao reverter virt->phys");
 
     crate::ktrace!(
-        "(Addr) Teste: phys {:#x} -> virt {:#x} -> phys {:#x}",
-        test_phys.as_u64(),
-        virt.as_u64(),
-        back.as_u64()
+        "(Addr) Teste: phys -> virt -> phys OK para=",
+        test_phys.as_u64()
     );
 
     if test_phys != back {
-        crate::kerror!(
-            "(Addr) FALHA: round-trip falhou! {:#x} != {:#x}",
-            test_phys.as_u64(),
-            back.as_u64()
-        );
+        crate::kerror!("(Addr) FALHA: round-trip falhou! back=", back.as_u64());
         panic!("Teste phys_to_virt falhou: round-trip");
     }
 
@@ -223,18 +212,10 @@ fn test_phys_to_virt() {
     let aligned = crate::mm::config::align_down(test_addr as usize, 4096) as u64;
     let expected: u64 = 0x12345000;
 
-    crate::ktrace!(
-        "(Addr) Teste: frame_align_down({:#x}) = {:#x}",
-        test_addr,
-        aligned
-    );
+    crate::ktrace!("(Addr) Teste: frame_align_down OK=", aligned);
 
     if aligned != expected {
-        crate::kerror!(
-            "(Addr) FALHA: alinhamento errado! {:#x} != {:#x}",
-            aligned,
-            expected
-        );
+        crate::kerror!("(Addr) FALHA: alinhamento errado! aligned=", aligned);
         panic!("Teste frame_align falhou");
     }
 
@@ -255,13 +236,14 @@ fn test_vmm_lifecycle() {
         .expect("OOM no teste VMM");
     let phys_addr = frame.addr();
 
-    crate::kdebug!("(VMM) Teste: mapeando {:#x} -> {:#x}", virt_addr, phys_addr);
+    crate::kdebug!("(VMM) Teste: mapeando virt=", virt_addr);
+    crate::kdebug!("(VMM) Teste: mapeando para phys=", phys_addr);
 
     // Mapear
     unsafe {
         use crate::mm::config::{PAGE_PRESENT, PAGE_WRITABLE};
         if let Err(e) = vmm::map_page(virt_addr, phys_addr, PAGE_PRESENT | PAGE_WRITABLE) {
-            crate::kerror!("(VMM) FALHA: map_page retornou erro: {}", e);
+            crate::kerror!("(VMM) FALHA: map_page retornou erro");
             panic!("Teste VMM Lifecycle falhou");
         }
     }
@@ -270,11 +252,7 @@ fn test_vmm_lifecycle() {
     match vmm::translate_addr(virt_addr) {
         Some(p) => {
             if p != phys_addr {
-                crate::kerror!(
-                    "(VMM) FALHA: tradução incorreta {:#x} != {:#x}",
-                    p,
-                    phys_addr
-                );
+                crate::kerror!("(VMM) FALHA: tradução incorreta=", p);
                 panic!("Teste VMM Lifecycle falhou: tradução");
             }
         }

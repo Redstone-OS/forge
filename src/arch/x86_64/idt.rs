@@ -101,7 +101,7 @@ struct IdtDescriptor {
 
 /// Inicializa a IDT e registra os handlers básicos.
 pub unsafe fn init() {
-    crate::kdebug!("(IDT) init: Inicializando tabela de vetores...");
+    crate::kdebug!("(IDT) Inicializando tabela de vetores...");
 
     // Limpar IDT (segurança)
     IDT.entries = [IdtEntry::missing(); 256];
@@ -112,11 +112,11 @@ pub unsafe fn init() {
     IDT.entries[8] = IdtEntry::new(interrupts::double_fault_handler as usize);
     IDT.entries[13] = IdtEntry::new(interrupts::general_protection_fault_handler as usize);
     IDT.entries[14] = IdtEntry::new(interrupts::page_fault_handler as usize);
-    crate::ktrace!("(IDT) init: Exceções de CPU registradas");
+    crate::ktrace!("(IDT) Exceções de CPU registradas");
 
     // Timer (PIC remapeia IRQ0 para vetor 0x20 = 32)
     IDT.entries[32] = IdtEntry::new(interrupts::timer_handler as usize);
-    crate::ktrace!("(IDT) init: IRQ 0 (Timer) registrado");
+    crate::ktrace!("(IDT) IRQ 0 (Timer) registrado");
 
     // Syscall API (Vector 0x80)
     extern "C" {
@@ -125,7 +125,7 @@ pub unsafe fn init() {
     let mut syscall_entry = IdtEntry::new(syscall_handler as usize);
     syscall_entry.type_attr = 0xEE; // Set DPL=3
     IDT.entries[0x80] = syscall_entry;
-    crate::ktrace!("(IDT) init: Vetor 0x80 (Syscall) configurado");
+    crate::ktrace!("(IDT) Vetor 0x80 (Syscall) configurado");
 
     // Carregar IDT
     let idt_ptr = IdtDescriptor {
@@ -135,9 +135,9 @@ pub unsafe fn init() {
     // Copiar campos packed para variáveis locais (evita E0793)
     let idt_base = idt_ptr.base;
     let idt_limit = idt_ptr.limit;
-    crate::ktrace!("(IDT) init: IDTR base={:#x} limit={}", idt_base, idt_limit);
+    crate::ktrace!("(IDT) IDTR base=", idt_base);
 
     asm!("lidt [{}]", in(reg) &idt_ptr, options(readonly, nostack, preserves_flags));
 
-    crate::kinfo!("(IDT) Inicializado");
+    crate::kinfo!("(IDT) Inicializada com sucesso");
 }
