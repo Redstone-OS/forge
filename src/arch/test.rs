@@ -106,7 +106,8 @@ fn test_cpu_info() {
     vendor_buf[11] = ((info.ecx >> 24) & 0xFF) as u8;
 
     if let Ok(vendor) = core::str::from_utf8(&vendor_buf) {
-        crate::kinfo!("(Arch) CPU Vendor: ");
+        crate::klog!(crate::core::logging::P_INFO);
+        crate::klog!("(Arch) CPU Vendor: ");
         crate::klog!(vendor);
         crate::knl!();
     } else {

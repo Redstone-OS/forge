@@ -53,7 +53,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::arch::platform::idt::init();
     }
 
-    #[cfg(feature = "verbose_logs")]
+    #[cfg(feature = "log_trace")]
     {
         // Agora que temos GDT/IDT, podemos rodar testes com segurança de que exceções serão capturadas.
         crate::arch::test::run_arch_tests();
@@ -73,7 +73,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::mm::init(boot_info);
     }
 
-    #[cfg(feature = "verbose_logs")]
+    #[cfg(feature = "log_trace")]
     {
         crate::kinfo!("(MM) Executando testes de memória...");
         crate::mm::test::run_memory_tests();
@@ -99,17 +99,17 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         );
     }
 
-    #[cfg(feature = "verbose_logs")]
+    #[cfg(feature = "log_trace")]
     crate::drivers::test::run_driver_tests();
 
     // 6. Subsistemas Lógicos
     // Inicializa estruturas de IPC (Portas, Mensagens) e Filesystem (VFS).
     crate::ipc::init();
-    #[cfg(feature = "verbose_logs")]
+    #[cfg(feature = "log_trace")]
     crate::ipc::test::run_ipc_tests();
 
     crate::fs::init(boot_info);
-    #[cfg(feature = "verbose_logs")]
+    #[cfg(feature = "log_trace")]
     crate::fs::test::run_fs_tests();
 
     // Inicializar Vídeo (após memória e antes do console real)
@@ -124,7 +124,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("(Core) Ativando escalonador multitarefa...");
     crate::sched::scheduler::init();
 
-    #[cfg(feature = "verbose_logs")]
+    #[cfg(feature = "log_trace")]
     {
         crate::sched::test::run_sched_tests();
         crate::security::test::run_security_tests();
