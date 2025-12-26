@@ -63,7 +63,9 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Inicializa o alocador de frames físicos, paginação e o Heap do kernel.
     // Habilita o uso de `Box`, `Vec`, `Arc`, etc.
     crate::kinfo!("(Core) Inicializando subsistema de memória...");
-    crate::mm::init(boot_info);
+    unsafe {
+        crate::mm::init(boot_info);
+    }
 
     #[cfg(feature = "verbose_logs")]
     {
@@ -195,7 +197,7 @@ fn spawn_init_process() {
                                 unsafe {
                                     vmm::map_page(
                                         addr,
-                                        frame.addr,
+                                        frame.addr(),
                                         PAGE_PRESENT | PAGE_USER | PAGE_WRITABLE,
                                     );
                                     // TLB flush

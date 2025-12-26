@@ -171,7 +171,7 @@
 //! ----------------------------------------------------------------------
 //! Abaixo deste ponto: implementação.
 //! Comentários locais explicam decisões específicas.
-use crate::mm::addr::phys_to_virt;
+use crate::mm::addr::{phys_to_virt, PhysAddr};
 use crate::mm::error::{MmError, MmResult};
 use crate::mm::pmm::{BitmapFrameAllocator, FRAME_ALLOCATOR};
 use core::arch::asm;
@@ -286,7 +286,7 @@ unsafe fn init_scratch_slot() {
     let pd_idx = ((SCRATCH_VIRT >> 21) & 0x1FF) as usize;
 
     // Usar phys_to_virt para acessar PML4
-    let pml4: *const u64 = phys_to_virt(ACTIVE_PML4_PHYS);
+    let pml4: *const u64 = phys_to_virt(PhysAddr::new(ACTIVE_PML4_PHYS)).as_ptr();
     let pml4_entry = *pml4.add(pml4_idx);
 
     if pml4_entry & PAGE_PRESENT == 0 {
@@ -296,7 +296,7 @@ unsafe fn init_scratch_slot() {
     }
 
     let pdpt_phys = pml4_entry & PAGE_MASK;
-    let pdpt: *const u64 = phys_to_virt(pdpt_phys);
+    let pdpt: *const u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_ptr();
     let pdpt_entry = *pdpt.add(pdpt_idx);
 
     if pdpt_entry & PAGE_PRESENT == 0 {
@@ -306,7 +306,7 @@ unsafe fn init_scratch_slot() {
     }
 
     let pd_phys = pdpt_entry & PAGE_MASK;
-    let pd: *const u64 = phys_to_virt(pd_phys);
+    let pd: *const u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_ptr();
     let pd_entry = *pd.add(pd_idx);
 
     if pd_entry & PAGE_PRESENT == 0 {
@@ -345,15 +345,26 @@ unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
     // Usar scratch slot se disponível (método preferido)
     if SCRATCH_READY {
         let pt_idx = ((SCRATCH_VIRT >> 12) & 0x1FF) as usize;
-        let pt_ptr: *mut u64 = phys_to_virt(SCRATCH_PT_PHYS);
+        let pt_ptr: *mut u64 = phys_to_virt(PhysAddr::new(SCRATCH_PT_PHYS)).as_mut_ptr();
         let pte_ptr = pt_ptr.add(pt_idx);
 
-        // Salvar PTE original
-        let original_pte = core::ptr::read_volatile(pte_ptr);
+        // Salvar PTE original usando assembly (evita SSE)
+        let original_pte: u64;
+        core::arch::asm!(
+            "mov {0}, [{1}]",
+            out(reg) original_pte,
+            in(reg) pte_ptr,
+            options(nostack, preserves_flags, readonly)
+        );
 
-        // Mapear frame no scratch slot
+        // Mapear frame no scratch slot usando assembly
         let temp_pte = (phys & PAGE_MASK) | PAGE_PRESENT | PAGE_WRITABLE;
-        core::ptr::write_volatile(pte_ptr, temp_pte);
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) pte_ptr,
+            in(reg) temp_pte,
+            options(nostack, preserves_flags)
+        );
         asm!("invlpg [{}]", in(reg) SCRATCH_VIRT, options(nostack, preserves_flags));
 
         // Zerar via endereço virtual do scratch usando while + assembly
@@ -371,15 +382,20 @@ unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
             i += 1;
         }
 
-        // Restaurar PTE original
-        core::ptr::write_volatile(pte_ptr, original_pte);
+        // Restaurar PTE original usando assembly
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) pte_ptr,
+            in(reg) original_pte,
+            options(nostack, preserves_flags)
+        );
         asm!("invlpg [{}]", in(reg) SCRATCH_VIRT, options(nostack, preserves_flags));
 
         return Ok(());
     }
 
     // Fallback: usar identity map via phys_to_virt (só funciona para < 4GB)
-    if !crate::mm::addr::is_phys_accessible(phys) {
+    if !crate::mm::addr::is_phys_accessible(PhysAddr::new(phys)) {
         crate::kerror!(
             "(VMM) zero_frame: phys {:#x} inacessível sem scratch!",
             phys
@@ -388,7 +404,7 @@ unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
     }
 
     crate::ktrace!("(VMM) zero_frame: usando identity map para {:#x}", phys);
-    let ptr: *mut u64 = phys_to_virt(phys);
+    let ptr: *mut u64 = phys_to_virt(PhysAddr::new(phys)).as_mut_ptr();
     let mut i = 0usize;
     let zero_val = 0u64;
     while i < 512 {
@@ -465,7 +481,7 @@ pub unsafe fn map_page_with_pmm(
     }
 
     // Ponteiro para a PML4 atual via phys_to_virt
-    let pml4_ptr: *mut u64 = phys_to_virt(ACTIVE_PML4_PHYS);
+    let pml4_ptr: *mut u64 = phys_to_virt(PhysAddr::new(ACTIVE_PML4_PHYS)).as_mut_ptr();
 
     if is_first {
         crate::ktrace!("(VMM) pml4_ptr = {:p}", pml4_ptr);
@@ -487,7 +503,7 @@ pub unsafe fn map_page_with_pmm(
         return false;
     }
 
-    let pdpt_ptr: *mut u64 = phys_to_virt(pdpt_phys);
+    let pdpt_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_mut_ptr();
     let pdpt_entry = &mut *pdpt_ptr.add(pdpt_idx);
 
     // Garantir PD existe
@@ -497,7 +513,7 @@ pub unsafe fn map_page_with_pmm(
         return false;
     }
 
-    let pd_ptr: *mut u64 = phys_to_virt(pd_phys);
+    let pd_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_mut_ptr();
     let pd_entry = &mut *pd_ptr.add(pd_idx);
 
     // Garantir PT existe (pode exigir split de huge page)
@@ -507,7 +523,7 @@ pub unsafe fn map_page_with_pmm(
         return false;
     }
 
-    let pt_ptr: *mut u64 = phys_to_virt(pt_phys);
+    let pt_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pt_phys)).as_mut_ptr();
     let pt_entry = &mut *pt_ptr.add(pt_idx);
 
     // Escrever PTE final (endereço físico + flags + PRESENT)
@@ -537,6 +553,16 @@ pub unsafe fn map_page_with_pmm(
 /// - `entry` deve ser um ponteiro válido para uma entrada da page table.
 /// - `pmm` deve estar inicializado e operante.
 unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllocator) -> u64 {
+    // DEBUG: log apenas para primeiras chamadas
+    static mut CALL_COUNT: usize = 0;
+    let count = CALL_COUNT;
+    CALL_COUNT += 1;
+    let should_log = count < 5;
+
+    if should_log {
+        crate::ktrace!("(VMM) ensure_table[{}]: entry={:#x}", count, *entry);
+    }
+
     // Caso: entrada já existe
     if *entry & PAGE_PRESENT != 0 {
         // Se for uma huge page, precisamos converter para uma PT de 4 KiB (split)
@@ -558,7 +584,7 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
                     return 0;
                 }
             };
-            let pt_phys = frame.addr;
+            let pt_phys = frame.addr();
 
             // Zera a página que conterá a nova PT antes de escrever entradas.
             if let Err(e) = zero_frame_via_scratch(pt_phys) {
@@ -567,7 +593,7 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
             }
 
             // Preenche a PT replicando o mapeamento da huge page em 512 entradas.
-            let pt: *mut u64 = phys_to_virt(pt_phys);
+            let pt: *mut u64 = phys_to_virt(PhysAddr::new(pt_phys)).as_mut_ptr();
             let new_flags = (old_flags & !PAGE_HUGE) | PAGE_PRESENT | PAGE_WRITABLE;
 
             let mut j = 0usize;
@@ -601,10 +627,21 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
 
         // Entrada presente e não-huge: garantir flags de acesso e retornar endereço.
         *entry |= PAGE_USER | PAGE_WRITABLE;
+        if should_log {
+            crate::ktrace!(
+                "(VMM) ensure_table[{}]: entry presente, phys={:#x}",
+                count,
+                *entry & PAGE_MASK
+            );
+        }
         return *entry & PAGE_MASK;
     }
 
     // Caso: entrada ausente — aloca nova tabela (frame de 4 KiB)
+    if should_log {
+        crate::ktrace!("(VMM) ensure_table[{}]: alocando nova tabela...", count);
+    }
+
     let frame = match pmm.allocate_frame() {
         Some(f) => f,
         None => {
@@ -612,7 +649,15 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
             return 0;
         }
     };
-    let phys = frame.addr;
+    let phys = frame.addr();
+
+    if should_log {
+        crate::ktrace!(
+            "(VMM) ensure_table[{}]: frame={:#x}, zerando...",
+            count,
+            phys
+        );
+    }
 
     // Zera a nova tabela (crítico para evitar leitura de lixo).
     if let Err(e) = zero_frame_via_scratch(phys) {
@@ -631,14 +676,14 @@ unsafe fn ensure_table_entry_with_pmm(entry: &mut u64, pmm: &mut BitmapFrameAllo
 pub fn translate_addr(virt_addr: u64) -> Option<u64> {
     unsafe {
         let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
-        let pml4_ptr: *const u64 = phys_to_virt(ACTIVE_PML4_PHYS);
+        let pml4_ptr: *const u64 = phys_to_virt(PhysAddr::new(ACTIVE_PML4_PHYS)).as_ptr();
         let pml4_entry = *pml4_ptr.add(pml4_idx);
         if pml4_entry & PAGE_PRESENT == 0 {
             return None;
         }
 
         let pdpt_phys = pml4_entry & PAGE_MASK;
-        let pdpt_ptr: *const u64 = phys_to_virt(pdpt_phys);
+        let pdpt_ptr: *const u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_ptr();
         let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
         let pdpt_entry = *pdpt_ptr.add(pdpt_idx);
         if pdpt_entry & PAGE_PRESENT == 0 {
@@ -653,7 +698,7 @@ pub fn translate_addr(virt_addr: u64) -> Option<u64> {
         }
 
         let pd_phys = pdpt_entry & PAGE_MASK;
-        let pd_ptr: *const u64 = phys_to_virt(pd_phys);
+        let pd_ptr: *const u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_ptr();
         let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
         let pd_entry = *pd_ptr.add(pd_idx);
         if pd_entry & PAGE_PRESENT == 0 {
@@ -668,7 +713,7 @@ pub fn translate_addr(virt_addr: u64) -> Option<u64> {
         }
 
         let pt_phys = pd_entry & PAGE_MASK;
-        let pt_ptr: *const u64 = phys_to_virt(pt_phys);
+        let pt_ptr: *const u64 = phys_to_virt(PhysAddr::new(pt_phys)).as_ptr();
         let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
         let pt_entry = *pt_ptr.add(pt_idx);
         if pt_entry & PAGE_PRESENT == 0 {
@@ -684,14 +729,14 @@ pub fn translate_addr(virt_addr: u64) -> Option<u64> {
 pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
     unsafe {
         let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
-        let pml4_ptr: *const u64 = phys_to_virt(ACTIVE_PML4_PHYS);
+        let pml4_ptr: *const u64 = phys_to_virt(PhysAddr::new(ACTIVE_PML4_PHYS)).as_ptr();
         let pml4_entry = *pml4_ptr.add(pml4_idx);
         if pml4_entry & PAGE_PRESENT == 0 {
             return None;
         }
 
         let pdpt_phys = pml4_entry & PAGE_MASK;
-        let pdpt_ptr: *const u64 = phys_to_virt(pdpt_phys);
+        let pdpt_ptr: *const u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_ptr();
         let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
         let pdpt_entry = *pdpt_ptr.add(pdpt_idx);
         if pdpt_entry & PAGE_PRESENT == 0 {
@@ -705,7 +750,7 @@ pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
         }
 
         let pd_phys = pdpt_entry & PAGE_MASK;
-        let pd_ptr: *const u64 = phys_to_virt(pd_phys);
+        let pd_ptr: *const u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_ptr();
         let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
         let pd_entry = *pd_ptr.add(pd_idx);
         if pd_entry & PAGE_PRESENT == 0 {
@@ -719,7 +764,7 @@ pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
         }
 
         let pt_phys = pd_entry & PAGE_MASK;
-        let pt_ptr: *const u64 = phys_to_virt(pt_phys);
+        let pt_ptr: *const u64 = phys_to_virt(PhysAddr::new(pt_phys)).as_ptr();
         let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
         let pt_entry = *pt_ptr.add(pt_idx);
         if pt_entry & PAGE_PRESENT == 0 {

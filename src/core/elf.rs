@@ -140,10 +140,10 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                 crate::ktrace!(
                     "(Elf) map_page: virt={:#x} phys={:#x} flags={:#x}",
                     curr,
-                    frame.addr,
+                    frame.addr(),
                     page_flags
                 );
-                vmm::map_page(curr, frame.addr, page_flags);
+                vmm::map_page(curr, frame.addr(), page_flags);
 
                 // TLB flush para garantir que o mapeamento está visível
                 core::arch::asm!("invlpg [{0}]", in(reg) curr, options(nostack, preserves_flags));

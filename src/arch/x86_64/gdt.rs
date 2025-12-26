@@ -145,8 +145,8 @@ impl SystemSegmentEntry {
     }
 
     /// Cria descritor TSS a partir do endereço da struct TSS.
-    fn new_tss(tss: &Tss) -> Self {
-        let ptr = tss as *const _ as u64;
+    fn new_tss(tss_ptr: *const Tss) -> Self {
+        let ptr = tss_ptr as u64;
         let size = size_of::<Tss>() as u64 - 1;
 
         Self {
@@ -188,7 +188,7 @@ pub unsafe fn init() {
     crate::kdebug!("(GDT) init: Configurando GDT e TSS...");
 
     // 1. Configurar entrada do TSS na GDT com o endereço real
-    GDT.tss = SystemSegmentEntry::new_tss(&TSS);
+    GDT.tss = SystemSegmentEntry::new_tss(core::ptr::addr_of!(TSS));
     crate::ktrace!("(GDT) init: TSS configurado em GDT");
 
     // 2. Carregar GDTR

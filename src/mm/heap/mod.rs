@@ -101,6 +101,20 @@ unsafe impl GlobalAlloc for LockedHeap {
     /// ---------------------
     /// Retorna `null_mut` em caso de OOM.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // DEBUG: apenas para primeiras alocações
+        static mut ALLOC_COUNT: usize = 0;
+        let count = ALLOC_COUNT;
+        ALLOC_COUNT += 1;
+
+        if count < 5 {
+            crate::ktrace!(
+                "(Heap) alloc[{}]: size={} align={}",
+                count,
+                layout.size(),
+                layout.align()
+            );
+        }
+
         let ptr = self.inner.lock().alloc(layout);
 
         if ptr.is_null() {
@@ -110,6 +124,8 @@ unsafe impl GlobalAlloc for LockedHeap {
                 layout.size(),
                 layout.align()
             );
+        } else if count < 5 {
+            crate::ktrace!("(Heap) alloc[{}]: OK, ptr={:p}", count, ptr);
         }
 
         ptr
@@ -198,12 +214,12 @@ impl BumpAllocator {
         pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
     ) -> bool {
         let new_end = self.heap_end + extra_size;
-        for page in (self.heap_end..new_end).step_by(crate::mm::pmm::FRAME_SIZE) {
+        for page in (self.heap_end..new_end).step_by(crate::mm::config::PAGE_SIZE) {
             match pmm.allocate_frame() {
                 Some(frame) => {
                     let flags = crate::mm::vmm::PAGE_PRESENT | crate::mm::vmm::PAGE_WRITABLE;
                     unsafe {
-                        crate::mm::vmm::map_page_with_pmm(page as u64, frame.addr, flags, pmm);
+                        crate::mm::vmm::map_page_with_pmm(page as u64, frame.addr(), flags, pmm);
                     }
                 }
                 None => {
@@ -264,10 +280,11 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
         };
 
         if pages_mapped == 0 {
-            crate::ktrace!("(Heap) Primeiro frame: {:#x}, mapeando...", frame.addr);
+            crate::ktrace!("(Heap) Primeiro frame: {:#x}, mapeando...", frame.addr());
         }
 
-        if unsafe { !crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr, flags, pmm) } {
+        if unsafe { !crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr(), flags, pmm) }
+        {
             crate::kerror!("(Heap) init: mapeamento falhou em {:#x}", page_addr);
             return false;
         }
@@ -284,3 +301,42 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
     crate::kinfo!("(Heap) Inicializado: {} KiB", HEAP_INITIAL_SIZE / 1024);
     true
 }
+
+// =============================================================================
+// IMPLEMENTAÇÕES MANUAIS DE ALOCAÇÃO (bypass __rust_alloc gerado)
+// =============================================================================
+// O compilador Rust gera código para __rust_alloc que pode usar instruções SSE.
+// Fornecemos implementações manuais usando #[no_mangle] para evitar isso.
+
+// Implementação manual de __rust_alloc
+// Nota: Se #[global_allocator] define isso, teremos conflito de símbolos.
+// Por isso, comentamos por enquanto e tentamos alternativa.
+/*
+#[no_mangle]
+pub unsafe extern "C" fn __rust_alloc(size: usize, align: usize) -> *mut u8 {
+    use core::alloc::Layout;
+    let layout = Layout::from_size_align_unchecked(size, align);
+    ALLOCATOR.alloc(layout)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __rust_dealloc(ptr: *mut u8, size: usize, align: usize) {
+    use core::alloc::Layout;
+    let layout = Layout::from_size_align_unchecked(size, align);
+    ALLOCATOR.dealloc(ptr, layout)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __rust_realloc(ptr: *mut u8, old_size: usize, align: usize, new_size: usize) -> *mut u8 {
+    use core::alloc::Layout;
+    let old_layout = Layout::from_size_align_unchecked(old_size, align);
+    ALLOCATOR.realloc(ptr, old_layout, new_size)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __rust_alloc_zeroed(size: usize, align: usize) -> *mut u8 {
+    use core::alloc::Layout;
+    let layout = Layout::from_size_align_unchecked(size, align);
+    ALLOCATOR.alloc_zeroed(layout)
+}
+*/
