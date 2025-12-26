@@ -179,6 +179,7 @@ pub fn yield_now() {
 
 // --- Tarefas de Teste ---
 
+#[allow(dead_code)]
 extern "C" fn task_a() {
     loop {
         crate::kprint!("A");
@@ -186,6 +187,7 @@ extern "C" fn task_a() {
     }
 }
 
+#[allow(dead_code)]
 extern "C" fn task_b() {
     loop {
         crate::kprint!("B");
@@ -193,6 +195,7 @@ extern "C" fn task_b() {
     }
 }
 
+#[allow(dead_code)]
 extern "C" fn task_c() {
     loop {
         crate::kprint!("C");
@@ -200,6 +203,7 @@ extern "C" fn task_c() {
     }
 }
 
+#[allow(dead_code)]
 fn spin_delay(count: usize) {
     for _ in 0..count {
         core::hint::spin_loop();

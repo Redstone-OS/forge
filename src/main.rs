@@ -9,7 +9,6 @@
 #![no_std]
 #![no_main]
 #![feature(naked_functions)]
-#![feature(alloc_error_handler)]
 #![feature(asm_const)]
 
 // Importar a biblioteca do kernel.
@@ -74,10 +73,4 @@ pub unsafe extern "C" fn _start(boot_info_addr: u64) -> ! {
         kernel_main = sym kernel_core::entry::kernel_main,
         options(noreturn)
     );
-}
-
-/// Handler de erro de alocação (OOM).
-#[alloc_error_handler]
-fn alloc_error_handler(layout: ::core::alloc::Layout) -> ! {
-    panic!("Kernel OOM: {:?}", layout)
 }

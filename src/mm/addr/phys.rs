@@ -1,4 +1,4 @@
-use crate::mm::config::{align_down, align_up, is_aligned, PAGE_SIZE};
+use crate::mm::config::{align_down, align_up, is_aligned};
 use core::fmt;
 
 /// Endereço físico (wrapper type-safe)

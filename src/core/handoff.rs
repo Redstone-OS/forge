@@ -6,8 +6,6 @@
 //! - Tipos primitivos (`u64`, `u32`) para portabilidade.
 //! - Magic Number para validação de versão.
 
-#![no_std]
-
 /// Assinatura mágica esperada do Bootloader ("REDSTONE").
 /// Usado para garantir que não estamos bootando lixo.
 pub const BOOT_MAGIC: u64 = 0x524544_53544F4E45;

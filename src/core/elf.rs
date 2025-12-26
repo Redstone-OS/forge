@@ -10,8 +10,8 @@ use crate::sys::Errno;
 // Constantes ELF
 const ELF_MAGIC: [u8; 4] = [0x7F, b'E', b'L', b'F'];
 const PT_LOAD: u32 = 1;
-const PF_W: u32 = 2; // Flag Write
-const PF_X: u32 = 1; // Flag Exec
+const _PF_W: u32 = 2; // Flag Write
+const _PF_X: u32 = 1; // Flag Exec
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

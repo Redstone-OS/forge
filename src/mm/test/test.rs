@@ -7,7 +7,7 @@
 //! Chamar `run_memory_tests()` logo após `mm::init()` no boot.
 
 use crate::mm::config::PAGE_SIZE;
-use crate::mm::{heap, pmm, vmm};
+use crate::mm::{pmm, vmm};
 
 /// Executa todos os testes de memória no boot
 pub fn run_memory_tests() {

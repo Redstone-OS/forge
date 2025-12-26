@@ -12,7 +12,7 @@ use core::sync::atomic::Ordering;
 /// Protegido por Mutex externo (em mod.rs).
 pub struct BitmapFrameAllocator {
     /// Início da memória gerenciada (geralmente 0)
-    memory_base: PhysAddr,
+    _memory_base: PhysAddr,
     /// Ponteiro para o bitmap (em HHDM virtual address)
     bitmap_ptr: *mut u64,
     /// Tamanho do bitmap em u64
@@ -33,7 +33,7 @@ impl BitmapFrameAllocator {
     /// Cria um alocador vazio
     pub const fn empty() -> Self {
         Self {
-            memory_base: PhysAddr::new(0),
+            _memory_base: PhysAddr::new(0),
             bitmap_ptr: core::ptr::null_mut(),
             bitmap_len: 0,
             total_frames: 0,

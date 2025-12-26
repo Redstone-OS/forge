@@ -1,5 +1,4 @@
 .global context_switch
-.intel_syntax noprefix
 
 # void context_switch(u64* old_stack_ptr, u64 new_stack_ptr);
 # RDI = old_stack_ptr (ponteiro para u64 onde guardamos o RSP antigo)

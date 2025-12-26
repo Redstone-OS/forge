@@ -1,4 +1,3 @@
-.intel_syntax noprefix
 .global syscall_handler
 .extern syscall_dispatcher
 

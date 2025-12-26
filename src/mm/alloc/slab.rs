@@ -42,7 +42,7 @@ impl SizeClass {
     }
 
     unsafe fn pop(&mut self) -> Option<*mut u8> {
-        if let Some(mut obj) = self.free_list {
+        if let Some(obj) = self.free_list {
             self.free_list = obj.as_ref().next;
             return Some(obj.as_ptr() as *mut u8);
         }

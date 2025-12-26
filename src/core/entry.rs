@@ -147,7 +147,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 /// Se encontrado, cria um processo de usuário (Ring 3).
 /// Se não, cria uma tarefa de kernel (dummy) para manter o sistema vivo.
 fn spawn_init_process() {
-    use crate::fs::vfs::{VfsHandle, ROOT_VFS};
+    use crate::fs::vfs::ROOT_VFS;
 
     crate::kinfo!("[Init] spawn_init_process iniciando...");
 

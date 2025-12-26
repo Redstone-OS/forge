@@ -16,6 +16,7 @@ struct FreeBlock {
 }
 
 impl FreeBlock {
+    #[allow(dead_code)]
     fn new(next: Option<NonNull<FreeBlock>>) -> Self {
         Self { next }
     }

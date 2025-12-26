@@ -27,6 +27,7 @@ pub fn virt_to_phys(virt: VirtAddr) -> Option<PhysAddr> {
 
 /// Helper para converter ponteiro raw para PhysAddr
 /// (Útil para interagir com APIs legadas que usam pointers)
+#[allow(dead_code)]
 pub fn ptr_to_phys<T>(ptr: *const T) -> Option<PhysAddr> {
     virt_to_phys(VirtAddr::new(ptr as u64))
 }

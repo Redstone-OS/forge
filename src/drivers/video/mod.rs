@@ -71,7 +71,9 @@ pub unsafe fn init(info: &FramebufferInfo) {
     let mut curr = start_page;
     while curr < end_page {
         // Mapeia 1:1, RW, Kernel-only
-        vmm::map_page(curr, curr, vmm::PAGE_PRESENT | vmm::PAGE_WRITABLE);
+        unsafe {
+            let _ = vmm::map_page(curr, curr, vmm::PAGE_PRESENT | vmm::PAGE_WRITABLE);
+        }
         // Otimização: Huge pages seria melhor, mas requer suporte no VMM map_page
         // ou map_range. Por enquanto, 4KB é seguro.
         curr += 4096;

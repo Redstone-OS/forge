@@ -34,11 +34,11 @@ fn test_spinlock_api() {
 
     // Lock
     locked = true;
-    crate::ktrace!("(Sync) Lock Acquired (State: locked)");
+    crate::ktrace!("(Sync) Lock Acquired (State: {})", locked);
 
     // Unlock
     locked = false;
-    crate::ktrace!("(Sync) Lock Released (State: free)");
+    crate::ktrace!("(Sync) Lock Released (State: {})", locked);
 
     if !locked {
         crate::kinfo!("(Sync) ✓ Spinlock State Logic OK");
