@@ -179,25 +179,12 @@ use core::arch::asm;
 // =============================================================================
 // FLAGS DE PAGINAÇÃO x86_64
 // =============================================================================
-// Flags usadas neste módulo. Consulte Intel SDM para significado detalhado.
-
-/// Máscara para extrair endereço físico de uma PTE (bits 12-51)
-pub const PAGE_MASK: u64 = 0x000F_FFFF_FFFF_F000;
-
-/// Página presente na memória física.
-pub const PAGE_PRESENT: u64 = 1 << 0;
-
-/// Página pode ser escrita.
-pub const PAGE_WRITABLE: u64 = 1 << 1;
-
-/// Página acessível em modo usuário (Ring 3).
-pub const PAGE_USER: u64 = 1 << 2;
-
-/// Huge page (2 MiB quando definida em PD). Quando ativa, o CPU ignora PT.
-pub const PAGE_HUGE: u64 = 1 << 7;
-
-/// Disable Execute (NX) — marca página como não executável.
-pub const PAGE_NO_EXEC: u64 = 1 << 63;
+// Flags importadas de mm::config para garantir consistência em todo o sistema.
+// Flags importadas de mm::config para garantir consistência em todo o sistema.
+// Re-exportamos para manter compatibilidade com módulos que usam vmm::PAGE_...
+pub use crate::mm::config::{
+    PAGE_HUGE, PAGE_MASK, PAGE_NO_EXEC, PAGE_PRESENT, PAGE_USER, PAGE_WRITABLE,
+};
 
 // =============================================================================
 // ESTADO GLOBAL DO VMM
@@ -221,7 +208,8 @@ static mut ACTIVE_PML4_PHYS: u64 = 0;
 //
 // Observação: se você mudar o índice do scratch, atualize o bootloader (ignite).
 //
-const SCRATCH_VIRT: u64 = 0xFFFF_FE00_0000_0000; // virtual address acordado para scratch
+// Usamos u64 aqui para facilitar operações bitwise, mas a constante vem de config (usize).
+const SCRATCH_VIRT: u64 = crate::mm::config::SCRATCH_VIRT as u64;
 static mut SCRATCH_PT_PHYS: u64 = 0; // endereço físico da PT do scratch
 static mut SCRATCH_READY: bool = false; // indica disponibilidade operacional
 
@@ -431,8 +419,8 @@ unsafe fn zero_frame_via_scratch(phys: u64) -> MmResult<()> {
 /// - Para evitar deadlocks em caminhos que já têm o lock do PMM, use
 ///   `map_page_with_pmm()` passando o PMM explicitamente.
 ///
-/// Retorna `true` em sucesso, `false` em OOM ou erro.
-pub unsafe fn map_page(virt_addr: u64, phys_addr: u64, flags: u64) -> bool {
+/// Retorna `Ok(())` em sucesso, `Err` em OOM ou erro.
+pub unsafe fn map_page(virt_addr: u64, phys_addr: u64, flags: u64) -> MmResult<()> {
     let mut pmm = FRAME_ALLOCATOR.lock();
     map_page_with_pmm(virt_addr, phys_addr, flags, &mut *pmm)
 }
@@ -451,7 +439,7 @@ pub unsafe fn map_page_with_pmm(
     phys_addr: u64,
     flags: u64,
     pmm: &mut BitmapFrameAllocator,
-) -> bool {
+) -> MmResult<()> {
     // DEBUG: Log de entrada apenas na primeira página
     static mut FIRST_MAP: bool = true;
     let is_first = FIRST_MAP;
@@ -500,7 +488,7 @@ pub unsafe fn map_page_with_pmm(
     let pdpt_phys = ensure_table_entry_with_pmm(pml4_entry, pmm);
     if pdpt_phys == 0 {
         crate::kerror!("(VMM) map_page: falha ao criar PDPT para {:#x}", virt_addr);
-        return false;
+        return Err(MmError::OutOfMemory);
     }
 
     let pdpt_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_mut_ptr();
@@ -510,7 +498,7 @@ pub unsafe fn map_page_with_pmm(
     let pd_phys = ensure_table_entry_with_pmm(pdpt_entry, pmm);
     if pd_phys == 0 {
         crate::kerror!("(VMM) map_page: falha ao criar PD para {:#x}", virt_addr);
-        return false;
+        return Err(MmError::OutOfMemory);
     }
 
     let pd_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_mut_ptr();
@@ -520,7 +508,7 @@ pub unsafe fn map_page_with_pmm(
     let pt_phys = ensure_table_entry_with_pmm(pd_entry, pmm);
     if pt_phys == 0 {
         crate::kerror!("(VMM) map_page: falha ao criar PT para {:#x}", virt_addr);
-        return false;
+        return Err(MmError::OutOfMemory);
     }
 
     let pt_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pt_phys)).as_mut_ptr();
@@ -532,7 +520,7 @@ pub unsafe fn map_page_with_pmm(
     // Invalida TLB para o endereço mapeado
     asm!("invlpg [{}]", in(reg) virt_addr, options(nostack, preserves_flags));
 
-    true
+    Ok(())
 }
 
 // =============================================================================

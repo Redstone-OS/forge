@@ -32,36 +32,102 @@
 //!   - *Risco:* Detectar Heap Overflow antes que corrompa dados vizinhos.
 //! - [ ] **TODO: (Safety)** Implementar **Randomization (ASLR-like)** para o heap base.
 
+use crate::mm::alloc::{BuddyAllocator, SlabAllocator};
 use crate::sync::Mutex;
 use core::alloc::{GlobalAlloc, Layout};
 
 /// Endereço virtual inicial do heap (Higher-Half)
-/// -----------------------------------------------
-/// Deve ser consistente com o VMM. Alterações requerem ajustes no mapeamento.
-pub const HEAP_START: usize = 0xFFFF_9000_0000_0000;
+/// Definido em `mm::config` para consistência. Alterações requerem ajustes no VMM/Bootloader.
+pub const HEAP_START: usize = crate::mm::config::HEAP_VIRT_BASE;
 
 /// Tamanho inicial do heap (16 MiB)
-/// ---------------------------------
-/// Aumentado para suportar múltiplos serviços no initramfs.
-pub const HEAP_INITIAL_SIZE: usize = 16 * 1024 * 1024;
+/// Definido em `mm::config`.
+pub const HEAP_INITIAL_SIZE: usize = crate::mm::config::HEAP_INITIAL_SIZE;
 
-/// Global allocator exposto a todo o kernel (Box, Vec, String)
+/// Endereço real de início do Heap (pode variar com ASLR)
+/// Inicializado em `init_heap`.
+static HEAP_START_ADDR: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(crate::mm::config::HEAP_VIRT_BASE);
+
+/// Retorna o endereço virtual inicial do Heap (runtime).
+pub fn heap_start() -> usize {
+    HEAP_START_ADDR.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Helper para ler Time Stamp Counter (TSC) para entropia
+fn rdtsc() -> u64 {
+    unsafe { core::arch::x86_64::_rdtsc() }
+}
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-/// Estrutura encapsulando o BumpAllocator protegido por Mutex
+/// Orquestrador de Alocação de Memória (Composite: Slab + Buddy)
+pub struct HeapAllocator {
+    buddy: BuddyAllocator,
+    slab: SlabAllocator,
+    /// Rastreia o fim da região mapeada para permitir crescimento
+    heap_end: usize,
+}
+
+impl HeapAllocator {
+    pub const fn new() -> Self {
+        Self {
+            buddy: BuddyAllocator::new(),
+            slab: SlabAllocator::new(),
+            heap_end: 0,
+        }
+    }
+
+    pub unsafe fn init(&mut self, start: usize, size: usize) {
+        self.buddy.init(start, size);
+        self.heap_end = start + size;
+    }
+
+    pub unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
+        // Objetos pequenos (< 2048) vão para Slab, grandes para Buddy
+        if layout.size() <= 2048 {
+            self.slab.alloc(layout, &mut self.buddy)
+        } else {
+            self.buddy.alloc(layout)
+        }
+    }
+
+    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        if layout.size() <= 2048 {
+            self.slab.dealloc(ptr, layout)
+        } else {
+            self.buddy.dealloc(ptr, layout)
+        }
+    }
+
+    // TODO: Implementar grow se necessário. Por enquanto, assumimos tamanho fixo inicial.
+    // Para manter compatibilidade com a trait/interface anterior:
+    pub unsafe fn grow(
+        &mut self,
+        _extra_size: usize,
+        _pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
+    ) -> bool {
+        crate::kwarn!("(HeapAllocator) grow: Não implementado para Buddy/Slab ainda.");
+        // Implementar growth no Buddy requer:
+        // 1. Mapear frames (similar ao Bump)
+        // 2. Chamar buddy.add_to_free_list(novo_range)
+        false
+    }
+}
+
+/// Estrutura encapsulando o HeapAllocator protegido por Mutex
 /// -----------------------------------------------------------
 /// Garante exclusão mútua em cenários multicore simplificados.
 /// Acesso ao allocator deve sempre passar pelo lock.
 pub struct LockedHeap {
-    inner: Mutex<BumpAllocator>,
+    inner: Mutex<HeapAllocator>,
 }
 
 impl LockedHeap {
     /// Construtor em tempo de compilação — sem heap inicializado
     pub const fn empty() -> Self {
         Self {
-            inner: Mutex::new(BumpAllocator::new()),
+            inner: Mutex::new(HeapAllocator::new()),
         }
     }
 
@@ -138,130 +204,46 @@ unsafe impl GlobalAlloc for LockedHeap {
     }
 }
 
-/// Implementação do Bump Allocator
-/// --------------------------------
-/// Aloca sempre subindo `next`. Não possui free list real.
-/// Ideal para early-boot; substitua em produção por allocator completo.
-pub struct BumpAllocator {
-    heap_start: usize,  // Início do heap virtual
-    heap_end: usize,    // Fim do heap virtual
-    next: usize,        // Próxima posição livre
-    allocations: usize, // Contador de alocações ativas
-}
-
-impl BumpAllocator {
-    /// Construtor em tempo de compilação
-    pub const fn new() -> Self {
-        Self {
-            heap_start: 0,
-            heap_end: 0,
-            next: 0,
-            allocations: 0,
-        }
-    }
-
-    /// Inicializa limites do heap
-    pub fn init(&mut self, heap_start: usize, heap_size: usize) {
-        self.heap_start = heap_start;
-        self.heap_end = heap_start + heap_size;
-        self.next = heap_start;
-        self.allocations = 0;
-    }
-
-    /// Aloca memória com layout específico
-    /// ------------------------------------
-    /// Retorna ponteiro nulo se não houver espaço suficiente.
-    pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        let align = if layout.align() == 0 {
-            1
-        } else {
-            layout.align()
-        };
-        let alloc_start = align_up(self.next, align);
-        let alloc_end = match alloc_start.checked_add(layout.size()) {
-            Some(end) => end,
-            None => return core::ptr::null_mut(), // overflow detectado
-        };
-
-        if alloc_end > self.heap_end {
-            return core::ptr::null_mut(); // sem espaço disponível
-        }
-
-        self.next = alloc_end;
-        self.allocations = self.allocations.saturating_add(1);
-        alloc_start as *mut u8
-    }
-
-    /// Libera memória (apenas decrementa contador)
-    /// --------------------------------------------
-    /// O reset do ponteiro `next` acontece apenas quando `allocations == 0`.
-    pub fn dealloc(&mut self, _ptr: *mut u8, _layout: Layout) {
-        if self.allocations > 0 {
-            self.allocations = self.allocations.saturating_sub(1);
-        }
-        if self.allocations == 0 {
-            self.next = self.heap_start;
-        }
-    }
-
-    /// Cresce o heap mapeando novas páginas físicas
-    /// -------------------------------------------
-    /// Necessita de PMM para alocar frames físicos.
-    /// Retorna `false` se não houver frames suficientes.
-    pub fn grow(
-        &mut self,
-        extra_size: usize,
-        pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
-    ) -> bool {
-        let new_end = self.heap_end + extra_size;
-        for page in (self.heap_end..new_end).step_by(crate::mm::config::PAGE_SIZE) {
-            match pmm.allocate_frame() {
-                Some(frame) => {
-                    let flags = crate::mm::vmm::PAGE_PRESENT | crate::mm::vmm::PAGE_WRITABLE;
-                    unsafe {
-                        crate::mm::vmm::map_page_with_pmm(page as u64, frame.addr(), flags, pmm);
-                    }
-                }
-                None => {
-                    crate::kerror!("(Heap) grow: sem frames para {} bytes extras", extra_size);
-                    return false;
-                }
-            }
-        }
-        self.heap_end = new_end;
-        true
-    }
-}
-
-/// Alinha o endereço `addr` para cima de acordo com `align`
-/// ----------------------------------------------------------
-/// Suporta qualquer `align > 0`. Para alocações típicas, `align` é potência de 2.
-fn align_up(addr: usize, align: usize) -> usize {
-    if align <= 1 {
-        return addr;
-    }
-    (addr + align - 1) & !(align - 1)
-}
-
 /// Inicializa o heap do kernel
 /// ---------------------------
 /// - Mapeia todas as páginas virtuais correspondentes
 /// - Inicializa o `ALLOCATOR` global
 /// - Retorna `true` se sucesso, `false` se OOM ou falha de mapeamento
 pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
-    let pages = HEAP_INITIAL_SIZE / 4096;
+    // Usando constantes importadas de config
+    let base_addr = crate::mm::config::HEAP_VIRT_BASE;
+    let heap_size = crate::mm::config::HEAP_INITIAL_SIZE;
+
+    // --- ASLR (Heap Randomization) ---
+    // Adiciona um offset aleatório ao endereço base para dificultar exploits.
+    // Offset máximo: 512 MiB (256 * 2MB)
+    let tsc = rdtsc();
+    // Usamos máscara 0xFF (256 slots) deslocada por 21 bits (2MB alignment)
+    let random_offset = (tsc & 0xFF) as usize * 0x200000;
+
+    let heap_start = base_addr + random_offset;
+
+    // Atualiza a global atomic para que outros módulos (testes) saibam onde começa
+    HEAP_START_ADDR.store(heap_start, core::sync::atomic::Ordering::Relaxed);
+
+    crate::kinfo!(
+        "(Heap) Base: {:#x}, Offset ASLR: {:#x} -> Start: {:#x}",
+        base_addr,
+        random_offset,
+        heap_start
+    );
+
+    let pages = heap_size / 4096;
     crate::kinfo!(
         "(Heap) Mapeando {} páginas ({} KiB)...",
         pages,
-        HEAP_INITIAL_SIZE / 1024
+        heap_size / 1024
     );
 
-    let page_range = HEAP_START..(HEAP_START + HEAP_INITIAL_SIZE);
-    let flags = crate::mm::vmm::PAGE_PRESENT | crate::mm::vmm::PAGE_WRITABLE;
+    let flags = crate::mm::config::PAGE_PRESENT | crate::mm::config::PAGE_WRITABLE;
 
-    // Usar while loop em vez de for+step_by para evitar código SSE do iterador
-    let mut page_addr = HEAP_START;
-    let heap_end = HEAP_START + HEAP_INITIAL_SIZE;
+    let mut page_addr = heap_start;
+    let heap_end = heap_start + heap_size;
     let mut pages_mapped = 0usize;
 
     crate::ktrace!("(Heap) Iniciando loop de mapeamento...");
@@ -283,9 +265,11 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
             crate::ktrace!("(Heap) Primeiro frame: {:#x}, mapeando...", frame.addr());
         }
 
-        if unsafe { !crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr(), flags, pmm) }
+        // Importante: map_page_with_pmm está no módulo VMM
+        if let Err(e) =
+            unsafe { crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr(), flags, pmm) }
         {
-            crate::kerror!("(Heap) init: mapeamento falhou em {:#x}", page_addr);
+            crate::kerror!("(Heap) init: mapeamento falhou em {:#x}: {}", page_addr, e);
             return false;
         }
 
@@ -295,10 +279,10 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
     crate::ktrace!("(Heap) {} páginas mapeadas OK", pages_mapped);
 
     unsafe {
-        ALLOCATOR.init(HEAP_START, HEAP_INITIAL_SIZE);
+        ALLOCATOR.init(heap_start, heap_size);
     }
 
-    crate::kinfo!("(Heap) Inicializado: {} KiB", HEAP_INITIAL_SIZE / 1024);
+    crate::kinfo!("(Heap) Inicializado");
     true
 }
 

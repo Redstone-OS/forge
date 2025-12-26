@@ -199,7 +199,8 @@ fn spawn_init_process() {
                                         addr,
                                         frame.addr(),
                                         PAGE_PRESENT | PAGE_USER | PAGE_WRITABLE,
-                                    );
+                                    )
+                                    .expect("Failed to map user stack");
                                     // TLB flush
                                     core::arch::asm!("invlpg [{0}]", in(reg) addr, options(nostack, preserves_flags));
                                 }

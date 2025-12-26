@@ -17,8 +17,12 @@ pub fn run_memory_tests() {
 
     test_pmm_basic();
     test_vmm_translate();
+    test_vmm_lifecycle(); // Novo teste de ciclo de vida
     test_heap_basic();
     test_phys_to_virt();
+
+    // Novos testes de alocadores (Phase 4)
+    crate::mm::test::allocator_test::run_alloc_tests();
 
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║  ✅ TODOS OS TESTES PASSARAM!          ║");
@@ -34,7 +38,6 @@ fn test_pmm_basic() {
 
     // Usar while em vez de for para evitar SSE
     let mut i = 0usize;
-    // ...
     while i < 10 {
         let frame = pmm.allocate_frame();
 
@@ -67,7 +70,6 @@ fn test_pmm_basic() {
         use crate::mm::pmm::PhysFrame;
 
         // Assumindo que PhysFrame tem from_start_address ou similar
-        // PhysFrame::containing_address(addr) ou from_start_address
         let frame = PhysFrame::from_start_address(PhysAddr::new(addr));
         pmm.deallocate_frame(frame);
         j += 1;
@@ -99,8 +101,8 @@ fn test_vmm_translate() {
         }
     }
 
-    // Testar tradução de endereço do heap
-    let heap_addr: u64 = crate::mm::heap::HEAP_START as u64;
+    // Testar tradução de endereço do heap (usa endereço dinâmico)
+    let heap_addr: u64 = crate::mm::heap::heap_start() as u64;
     crate::kdebug!("(VMM) Teste: traduzindo endereço heap {:#x}...", heap_addr);
 
     let result = vmm::translate_addr(heap_addr);
@@ -124,7 +126,9 @@ fn test_heap_basic() {
 
     // O heap foi mapeado durante init_heap - verificar endereço base
     // Use caminho absoluto para evitar ambiguidade ou erro de re-export
-    let heap_start = crate::mm::heap::HEAP_START;
+    // O heap foi mapeado durante init_heap - verificar endereço base
+    // Use caminho absoluto para evitar ambiguidade ou erro de re-export
+    let heap_start = crate::mm::heap::heap_start();
     let heap_size = crate::mm::heap::HEAP_INITIAL_SIZE;
 
     crate::ktrace!(
@@ -235,4 +239,53 @@ fn test_phys_to_virt() {
     }
 
     crate::kinfo!("(Addr) ✓ phys_to_virt/virt_to_phys OK");
+}
+
+/// Teste de ciclo de vida VMM (Map/Unmap - parcial)
+fn test_vmm_lifecycle() {
+    crate::kdebug!("(VMM) Teste: map_page (lifecycle)...");
+
+    // Escolher um endereço virtual arbitrário (livre, bem alto)
+    let virt_addr = 0xDEAD_0000_0000;
+
+    // Alocar um frame físico manualmente
+    let frame = pmm::FRAME_ALLOCATOR
+        .lock()
+        .allocate_frame()
+        .expect("OOM no teste VMM");
+    let phys_addr = frame.addr();
+
+    crate::kdebug!("(VMM) Teste: mapeando {:#x} -> {:#x}", virt_addr, phys_addr);
+
+    // Mapear
+    unsafe {
+        use crate::mm::config::{PAGE_PRESENT, PAGE_WRITABLE};
+        if let Err(e) = vmm::map_page(virt_addr, phys_addr, PAGE_PRESENT | PAGE_WRITABLE) {
+            crate::kerror!("(VMM) FALHA: map_page retornou erro: {}", e);
+            panic!("Teste VMM Lifecycle falhou");
+        }
+    }
+
+    // Verificar tradução
+    match vmm::translate_addr(virt_addr) {
+        Some(p) => {
+            if p != phys_addr {
+                crate::kerror!(
+                    "(VMM) FALHA: tradução incorreta {:#x} != {:#x}",
+                    p,
+                    phys_addr
+                );
+                panic!("Teste VMM Lifecycle falhou: tradução");
+            }
+        }
+        None => {
+            crate::kerror!("(VMM) FALHA: endereço não mapeado após map_page");
+            panic!("Teste VMM Lifecycle falhou: não mapeado");
+        }
+    }
+
+    // TODO: Testar unmap quando implementado
+    // unsafe { vmm::unmap_page(virt_addr); }
+
+    crate::kinfo!("(VMM) ✓ VMM map_page lifecycle OK");
 }

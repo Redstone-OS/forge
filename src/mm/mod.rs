@@ -2,6 +2,7 @@
 pub mod addr;
 pub mod alloc;
 pub mod heap;
+pub mod oom;
 pub mod ops;
 pub mod pmm;
 pub mod test;

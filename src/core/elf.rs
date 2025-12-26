@@ -143,7 +143,10 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
                     frame.addr(),
                     page_flags
                 );
-                vmm::map_page(curr, frame.addr(), page_flags);
+                if let Err(e) = vmm::map_page(curr, frame.addr(), page_flags) {
+                    crate::kerror!("(Elf) map_page failed: {}", e);
+                    return Err(Errno::ENOMEM);
+                }
 
                 // TLB flush para garantir que o mapeamento está visível
                 core::arch::asm!("invlpg [{0}]", in(reg) curr, options(nostack, preserves_flags));
