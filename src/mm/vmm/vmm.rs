@@ -763,3 +763,120 @@ pub fn translate_addr_with_flags(virt_addr: u64) -> Option<(u64, u64)> {
         Some((phys_base + (virt_addr & 0xFFF), pt_entry & 0xFFF))
     }
 }
+
+// =============================================================================
+// UNMAP PAGE
+// =============================================================================
+
+/// Remove mapeamento de uma página virtual
+///
+/// # Descrição
+///
+/// Esta função remove o mapeamento de uma página virtual, retornando
+/// o endereço físico que estava mapeado anteriormente.
+///
+/// # Safety
+///
+/// - A página deve estar mapeada
+/// - O caller deve garantir que ninguém está usando a página
+/// - O caller é responsável por liberar o frame físico se necessário
+///
+/// # Retorno
+///
+/// - `Ok(PhysAddr)` com o endereço físico que estava mapeado
+/// - `Err(MmError::NotMapped)` se a página não estava mapeada
+/// - `Err(MmError::HugePageNotSupported)` se for uma huge page
+///
+/// # Exemplo
+///
+/// ```rust
+/// // Desmapear página
+/// let phys = unsafe { unmap_page(0xDEAD_0000_0000)? };
+///
+/// // Liberar o frame físico
+/// let frame = PhysFrame::from_start_address(phys);
+/// pmm.deallocate_frame(frame);
+/// ```
+pub unsafe fn unmap_page(virt_addr: u64) -> MmResult<PhysAddr> {
+    let pml4_idx = ((virt_addr >> 39) & 0x1FF) as usize;
+    let pdpt_idx = ((virt_addr >> 30) & 0x1FF) as usize;
+    let pd_idx = ((virt_addr >> 21) & 0x1FF) as usize;
+    let pt_idx = ((virt_addr >> 12) & 0x1FF) as usize;
+
+    // Acessar PML4
+    let pml4_ptr: *mut u64 = phys_to_virt(PhysAddr::new(ACTIVE_PML4_PHYS)).as_mut_ptr();
+    let pml4_entry = *pml4_ptr.add(pml4_idx);
+
+    if pml4_entry & PAGE_PRESENT == 0 {
+        return Err(MmError::NotMapped);
+    }
+
+    // Acessar PDPT
+    let pdpt_phys = pml4_entry & PAGE_MASK;
+    let pdpt_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_mut_ptr();
+    let pdpt_entry = *pdpt_ptr.add(pdpt_idx);
+
+    if pdpt_entry & PAGE_PRESENT == 0 {
+        return Err(MmError::NotMapped);
+    }
+
+    // Verificar huge page 1GB
+    if pdpt_entry & PAGE_HUGE != 0 {
+        return Err(MmError::HugePageNotSupported);
+    }
+
+    // Acessar PD
+    let pd_phys = pdpt_entry & PAGE_MASK;
+    let pd_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_mut_ptr();
+    let pd_entry = *pd_ptr.add(pd_idx);
+
+    if pd_entry & PAGE_PRESENT == 0 {
+        return Err(MmError::NotMapped);
+    }
+
+    // Verificar huge page 2MB
+    if pd_entry & PAGE_HUGE != 0 {
+        return Err(MmError::HugePageNotSupported);
+    }
+
+    // Acessar PT
+    let pt_phys = pd_entry & PAGE_MASK;
+    let pt_ptr: *mut u64 = phys_to_virt(PhysAddr::new(pt_phys)).as_mut_ptr();
+    let pt_entry_ptr = pt_ptr.add(pt_idx);
+    let pt_entry = *pt_entry_ptr;
+
+    if pt_entry & PAGE_PRESENT == 0 {
+        return Err(MmError::NotMapped);
+    }
+
+    // Extrair endereço físico antes de limpar
+    let phys = pt_entry & PAGE_MASK;
+
+    // Limpar entrada da page table
+    *pt_entry_ptr = 0;
+
+    // Invalidar TLB
+    core::arch::asm!(
+        "invlpg [{}]",
+        in(reg) virt_addr,
+        options(nostack, preserves_flags)
+    );
+
+    crate::ktrace!(
+        "(VMM) unmap_page: virt={:#x} -> phys={:#x}",
+        virt_addr,
+        phys
+    );
+
+    Ok(PhysAddr::new(phys))
+}
+
+/// Remove mapeamento e libera o frame físico
+///
+/// Versão conveniente que também libera o frame no PMM.
+pub unsafe fn unmap_page_and_free(virt_addr: u64, pmm: &mut BitmapFrameAllocator) -> MmResult<()> {
+    let phys = unmap_page(virt_addr)?;
+    let frame = crate::mm::pmm::PhysFrame::from_start_address(phys);
+    pmm.deallocate_frame(frame);
+    Ok(())
+}

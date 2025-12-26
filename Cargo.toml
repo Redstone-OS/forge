@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "0.0.1"                                            # Bump para Refatoração Fase 2
+version = "0.0.2"                                            # Bump para Reformulação MM
 edition = "2021"
 authors = ["Redstone OS Team"]
 description = "Industrial-Grade Microkernel for Redstone OS"
@@ -19,18 +19,42 @@ volatile = "0.5.1"
 # Alocador de Lista Encadeada (Para o Heap futuro - Upgrade do Bump)
 linked_list_allocator = "0.10.5"
 
-# NÃO INCLUIR:
-# - uart_16550 (Usamos src/drivers/serial.rs)
-# - pic8259    (Usamos src/drivers/pic.rs)
-# - pc-keyboard (Vamos implementar driver nativo PS/2)
-
 [features]
 default = [
     "serial_debug",
     "verbose_logs",
-] # verbose_logs habilita todos os níveis de log
-serial_debug = [] # Habilita logs na porta serial
-verbose_logs = [] # Habilita DEBUG/TRACE logs (desabilitar em release)
+]
+
+# Debug e Logging
+serial_debug = []    # Habilita logs na porta serial
+verbose_logs = []    # Habilita DEBUG/TRACE logs (desabilitar em release)
+
+# =============================================================================
+# NOVAS FEATURES PARA MM REFORMULADO
+# =============================================================================
+
+# SMP (Symmetric Multi-Processing)
+smp = ["tlb_shootdown", "percpu_caches"]
+tlb_shootdown = []   # TLB shootdown via IPI
+percpu_caches = []   # Per-CPU object caches
+
+# Memops
+memops_asm = []      # Usar implementação ASM (produção)
+# Nota: memops_rust é o padrão quando memops_asm não está ativo
+
+# Segurança
+wx_enforcement = []  # Bloquear mapeamentos RWX (W^X policy)
+guard_pages = []     # Guard pages para stacks
+
+# Accounting
+memory_accounting = [] # Tracking de memória por subsistema
+
+# Debug avançado
+alloc_stats = []     # Estatísticas de alocação
+mm_trace = []        # Trace detalhado do MM
+
+# NUMA
+numa = []            # NUMA-aware allocation
 
 [profile.dev]
 panic = "abort"
@@ -46,3 +70,4 @@ lto = true
 codegen-units = 1
 debug = false
 strip = true      # Remove símbolos para binário menor
+

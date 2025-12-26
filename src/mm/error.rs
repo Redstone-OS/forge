@@ -23,6 +23,22 @@ pub enum MmError {
     InitFailed,
     /// Double free detectado
     DoubleFree,
+    /// Violação de política W^X (Write XOR Execute)
+    WxViolation,
+    /// Endereço inválido (não canônico ou fora de range)
+    InvalidAddress,
+    /// Endereço não alinhado a página
+    NotAligned,
+    /// Tamanho inválido (zero ou muito grande)
+    InvalidSize,
+    /// Operação não suportada para huge pages
+    HugePageNotSupported,
+    /// Índice fora dos limites
+    OutOfBounds,
+    /// Quota de memória excedida
+    QuotaExceeded,
+    /// Mapeamento falhou
+    MappingFailed,
 }
 
 impl MmError {
@@ -38,6 +54,14 @@ impl MmError {
             Self::InvalidParameter => "Parâmetro inválido",
             Self::InitFailed => "Falha na inicialização",
             Self::DoubleFree => "Double free detectado",
+            Self::WxViolation => "Violação W^X: página RWX não permitida",
+            Self::InvalidAddress => "Endereço inválido",
+            Self::NotAligned => "Endereço não alinhado a página",
+            Self::InvalidSize => "Tamanho inválido",
+            Self::HugePageNotSupported => "Operação não suportada para huge pages",
+            Self::OutOfBounds => "Índice fora dos limites",
+            Self::QuotaExceeded => "Quota de memória excedida",
+            Self::MappingFailed => "Mapeamento falhou",
         }
     }
 }
