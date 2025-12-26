@@ -5,10 +5,18 @@
 //! - Structs `#[repr(C)]` para garantia de layout.
 //! - Tipos primitivos (`u64`, `u32`) para portabilidade.
 //! - Magic Number para validação de versão.
+//!
+//! # Contrato de ABI
+//! Este arquivo DEVE ser mantido em sincronia EXATA com `ignite/src/core/handoff.rs`.
+//! Qualquer mudança aqui DEVE ser refletida lá e vice-versa.
 
 /// Assinatura mágica esperada do Bootloader ("REDSTONE").
 /// Usado para garantir que não estamos bootando lixo.
 pub const BOOT_MAGIC: u64 = 0x524544_53544F4E45;
+
+/// Versão esperada do protocolo de boot.
+/// v2: Adicionado _padding e cr3_phys para alinhamento correto.
+pub const BOOT_INFO_VERSION: u32 = 2;
 
 /// Estrutura de informações de boot.
 /// Deve ser mantida em sincronia binária exata com o Bootloader.

@@ -10,7 +10,7 @@
 
 use crate::arch::platform::Cpu;
 use crate::arch::traits::CpuOps;
-use crate::core::handoff::{BootInfo, BOOT_MAGIC};
+use crate::core::handoff::{BootInfo, BOOT_INFO_VERSION, BOOT_MAGIC};
 use alloc::vec::Vec;
 
 /// Função principal do Kernel (High-Level).
@@ -22,6 +22,13 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Garante que não estamos bootando com dados corrompidos ou versão incompatível do Ignite.
     if boot_info.magic != BOOT_MAGIC {
         // Se a magia falhar, não podemos confiar em nada. Travamos a CPU imediatamente.
+        Cpu::hang();
+    }
+
+    // Verificar versão do protocolo de boot
+    if boot_info.version != BOOT_INFO_VERSION {
+        // Versão incompatível - log e halt
+        // Nota: Não podemos usar kinfo! ainda pois pode não estar inicializado
         Cpu::hang();
     }
 
