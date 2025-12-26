@@ -63,27 +63,40 @@ static mut SCAN_STATS: ScanStats = ScanStats::new();
 /// - O CR3 deve conter page tables válidas do bootloader
 /// - O PMM deve estar parcialmente inicializado (bitmap alocado)
 pub unsafe fn mark_bootloader_page_tables(pmm: &mut BitmapFrameAllocator) {
+    crate::drivers::serial::write_str_raw("[PTS] A: entrada\r\n");
+
     let cr3: u64;
     asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
 
+    crate::drivers::serial::write_str_raw("[PTS] B: pos-cr3\r\n");
+
     let pml4_phys = cr3 & PAGE_MASK;
+
+    crate::drivers::serial::write_str_raw("[PTS] C: pre-kinfo\r\n");
 
     crate::kinfo!(
         "(PTScanner) Escaneando page tables a partir de CR3={:#x}",
         pml4_phys
     );
 
+    crate::drivers::serial::write_str_raw("[PTS] D: pos-kinfo\r\n");
+
     // Resetar estatísticas
+    crate::drivers::serial::write_str_raw("[PTS] E: pre-stats-reset\r\n");
     SCAN_STATS = ScanStats::new();
+    crate::drivers::serial::write_str_raw("[PTS] F: pos-stats-reset\r\n");
 
     // Marcar a própria PML4
+    crate::drivers::serial::write_str_raw("[PTS] G: pre-mark-pml4\r\n");
     if mark_frame(pmm, pml4_phys, "PML4") {
         SCAN_STATS.pml4_frames += 1;
     } else {
         SCAN_STATS.already_marked += 1;
     }
+    crate::drivers::serial::write_str_raw("[PTS] H: pos-mark-pml4\r\n");
 
     // Escanear hierarquia
+    crate::drivers::serial::write_str_raw("[PTS] I: pre-scan-pml4\r\n");
     scan_pml4(pmm, pml4_phys);
 
     // Log de resumo
@@ -105,23 +118,23 @@ pub unsafe fn mark_bootloader_page_tables(pmm: &mut BitmapFrameAllocator) {
 /// Marca um frame como ocupado no PMM usando o método real
 ///
 /// Retorna true se o frame foi marcado, false se já estava marcado
-unsafe fn mark_frame(pmm: &mut BitmapFrameAllocator, phys: u64, level: &str) -> bool {
+///
+/// NOTA: Evita macros de formatação (ktrace!) para não gerar SSE/#UD
+unsafe fn mark_frame(pmm: &mut BitmapFrameAllocator, phys: u64, _level: &str) -> bool {
+    crate::drivers::serial::write_str_raw("[MF] A: is_frame_used\r\n");
+
     // Verificar se já está marcado como ocupado
     if pmm.is_frame_used(phys) {
-        crate::ktrace!("(PTScanner) {} Frame {:#x} já ocupado", level, phys);
+        crate::drivers::serial::write_str_raw("[MF] B: already used\r\n");
         return false;
     }
+
+    crate::drivers::serial::write_str_raw("[MF] C: mark_frame_used\r\n");
 
     // Marcar como ocupado usando o método do PMM
     let marked = pmm.mark_frame_used(phys);
 
-    if marked {
-        crate::ktrace!(
-            "(PTScanner) {} Frame {:#x} MARCADO como ocupado",
-            level,
-            phys
-        );
-    }
+    crate::drivers::serial::write_str_raw("[MF] D: done\r\n");
 
     marked
 }
@@ -130,7 +143,9 @@ unsafe fn mark_frame(pmm: &mut BitmapFrameAllocator, phys: u64, level: &str) -> 
 unsafe fn scan_pml4(pmm: &mut BitmapFrameAllocator, pml4_phys: u64) {
     let pml4: *const u64 = phys_to_virt(PhysAddr::new(pml4_phys)).as_ptr();
 
-    for i in 0..512 {
+    // Usando while manual em vez de for (iterador Range pode gerar #UD)
+    let mut i: usize = 0;
+    while i < 512 {
         let entry = *pml4.add(i);
 
         if entry & PAGE_PRESENT != 0 {
@@ -153,6 +168,7 @@ unsafe fn scan_pml4(pmm: &mut BitmapFrameAllocator, pml4_phys: u64) {
                 return;
             }
         }
+        i += 1;
     }
 }
 
@@ -160,12 +176,14 @@ unsafe fn scan_pml4(pmm: &mut BitmapFrameAllocator, pml4_phys: u64) {
 unsafe fn scan_pdpt(pmm: &mut BitmapFrameAllocator, pdpt_phys: u64) {
     let pdpt: *const u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_ptr();
 
-    for i in 0..512 {
+    let mut i: usize = 0;
+    while i < 512 {
         let entry = *pdpt.add(i);
 
         if entry & PAGE_PRESENT != 0 {
             // Se for huge page (1GB), não tem PD abaixo
             if entry & PAGE_HUGE != 0 {
+                i += 1;
                 continue;
             }
 
@@ -184,6 +202,7 @@ unsafe fn scan_pdpt(pmm: &mut BitmapFrameAllocator, pdpt_phys: u64) {
                 return;
             }
         }
+        i += 1;
     }
 }
 
@@ -191,12 +210,14 @@ unsafe fn scan_pdpt(pmm: &mut BitmapFrameAllocator, pdpt_phys: u64) {
 unsafe fn scan_pd(pmm: &mut BitmapFrameAllocator, pd_phys: u64) {
     let pd: *const u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_ptr();
 
-    for i in 0..512 {
+    let mut i: usize = 0;
+    while i < 512 {
         let entry = *pd.add(i);
 
         if entry & PAGE_PRESENT != 0 {
             // Se for huge page (2MB), não tem PT abaixo
             if entry & PAGE_HUGE != 0 {
+                i += 1;
                 continue;
             }
 
@@ -215,6 +236,7 @@ unsafe fn scan_pd(pmm: &mut BitmapFrameAllocator, pd_phys: u64) {
                 return;
             }
         }
+        i += 1;
     }
 }
 

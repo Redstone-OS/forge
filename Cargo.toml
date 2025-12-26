@@ -1,6 +1,24 @@
+# =============================================================================
+# FORGE KERNEL - Cargo.toml
+# =============================================================================
+#
+# Microkernel Industrial-Grade para Redstone OS
+#
+# SISTEMA DE LOGS ZERO-OVERHEAD:
+# - no_logs:   Release - remove 100% dos logs (custo ZERO no binário)
+# - log_info:  Dev - apenas INFO, WARN, ERROR
+# - log_trace: Debug - todos os níveis (padrão para desenvolvimento)
+#
+# Para compilar:
+#   cargo build                    # Usa log_trace (padrão)
+#   cargo build --features log_info --no-default-features
+#   cargo build --features no_logs --no-default-features
+#
+# =============================================================================
+
 [package]
 name = "forge"
-version = "0.0.2"                                            # Bump para Reformulação MM
+version = "0.0.3"                                            # Bump para Log Refactor
 edition = "2021"
 authors = ["Redstone OS Team"]
 description = "Industrial-Grade Microkernel for Redstone OS"
@@ -19,49 +37,77 @@ volatile = "0.5.1"
 # Alocador de Lista Encadeada (Para o Heap futuro - Upgrade do Bump)
 linked_list_allocator = "0.10.5"
 
+# =============================================================================
+# FEATURES
+# =============================================================================
+
 [features]
-default = [
-    "serial_debug",
-    "verbose_logs",
-]
+# ---------------------------------------------------------------------------
+# DEFAULT: Modo de desenvolvimento com logs completos
+# ---------------------------------------------------------------------------
+default = ["log_trace"]
 
-# Debug e Logging
-serial_debug = []    # Habilita logs na porta serial
-verbose_logs = []    # Habilita DEBUG/TRACE logs (desabilitar em release)
+# ---------------------------------------------------------------------------
+# SISTEMA DE LOGS ZERO-OVERHEAD
+# ---------------------------------------------------------------------------
+# Estes são MUTUAMENTE EXCLUSIVOS. Use apenas um por vez.
+#
+# no_logs:   RELEASE - Remove TODOS os logs do binário. Custo ZERO.
+#            Os macros kinfo!, kdebug!, etc. viram expressões vazias.
+#
+# log_info:  DEV - Apenas logs importantes (INFO, WARN, ERROR).
+#            DEBUG e TRACE são removidos.
+#
+# log_trace: DEBUG - Todos os níveis de log ativos.
+#            Mais verbose, ideal para debugging profundo.
+# ---------------------------------------------------------------------------
+no_logs = []
+log_info = []
+log_trace = []
 
-# =============================================================================
-# NOVAS FEATURES PARA MM REFORMULADO
-# =============================================================================
-
+# ---------------------------------------------------------------------------
 # SMP (Symmetric Multi-Processing)
+# ---------------------------------------------------------------------------
 smp = ["tlb_shootdown", "percpu_caches"]
-tlb_shootdown = []   # TLB shootdown via IPI
-percpu_caches = []   # Per-CPU object caches
+tlb_shootdown = []                       # TLB shootdown via IPI
+percpu_caches = []                       # Per-CPU object caches
 
+# ---------------------------------------------------------------------------
 # Memops
-memops_asm = []      # Usar implementação ASM (produção)
+# ---------------------------------------------------------------------------
+memops_asm = [] # Usar implementação ASM (produção)
 # Nota: memops_rust é o padrão quando memops_asm não está ativo
 
+# ---------------------------------------------------------------------------
 # Segurança
-wx_enforcement = []  # Bloquear mapeamentos RWX (W^X policy)
-guard_pages = []     # Guard pages para stacks
+# ---------------------------------------------------------------------------
+wx_enforcement = [] # Bloquear mapeamentos RWX (W^X policy)
+guard_pages = []    # Guard pages para stacks
 
+# ---------------------------------------------------------------------------
 # Accounting
+# ---------------------------------------------------------------------------
 memory_accounting = [] # Tracking de memória por subsistema
 
+# ---------------------------------------------------------------------------
 # Debug avançado
-alloc_stats = []     # Estatísticas de alocação
-mm_trace = []        # Trace detalhado do MM
+# ---------------------------------------------------------------------------
+alloc_stats = [] # Estatísticas de alocação
+mm_trace = []    # Trace detalhado do MM
 
+# ---------------------------------------------------------------------------
 # NUMA
-numa = []            # NUMA-aware allocation
+# ---------------------------------------------------------------------------
+numa = [] # NUMA-aware allocation
+
+# =============================================================================
+# PROFILES
+# =============================================================================
 
 [profile.dev]
 panic = "abort"
 opt-level = 0
 debug = true
-# NOTA: debug-assertions habilitado por padrão em dev
-# Isso permite que cfg(debug_assertions) funcione para logs verbose
 
 [profile.release]
 panic = "abort"
@@ -70,4 +116,3 @@ lto = true
 codegen-units = 1
 debug = false
 strip = true      # Remove símbolos para binário menor
-

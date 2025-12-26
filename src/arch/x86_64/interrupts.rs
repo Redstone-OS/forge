@@ -68,14 +68,28 @@ macro_rules! handler_with_err {
 }
 
 // --- Implementações Rust Seguras (logs em PT-BR) ---
+// IMPORTANTE: Handlers críticos (#GPF, #UD, #DF) NÃO devem usar kerror!/formatação
+// porque podem causar outra exceção se a heap/SSE não estiver pronta.
 
 extern "C" fn breakpoint_handler_impl(frame: &ContextFrame) {
     crate::kwarn!("(Int) EXCEÇÃO: BREAKPOINT em RIP={:#x}", frame.rip);
 }
 
+/// Handler de Double Fault - SEGURO (sem formatação)
 extern "C" fn double_fault_handler_impl(frame: &ContextFrame) {
-    crate::kerror!("(Int) EXCEÇÃO CRÍTICA: DOUBLE FAULT\n{:#?}", frame);
-    crate::arch::platform::Cpu::hang();
+    // Usar escrita raw para evitar #UD em cascata
+    crate::drivers::serial::write_str_raw("\r\n[FATAL] DOUBLE FAULT at RIP=");
+    crate::drivers::serial::write_hex_raw(frame.rip);
+    crate::drivers::serial::write_str_raw(" RSP=");
+    crate::drivers::serial::write_hex_raw(frame.rsp);
+    crate::drivers::serial::write_newline_raw();
+
+    // Halt simples sem SSE
+    loop {
+        unsafe {
+            core::arch::asm!("cli; hlt", options(nomem, nostack));
+        }
+    }
 }
 
 extern "C" fn page_fault_handler_impl(frame: &ContextFrame) {
@@ -84,22 +98,38 @@ extern "C" fn page_fault_handler_impl(frame: &ContextFrame) {
         asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
     };
 
-    crate::kerror!(
-        "(Int) EXCEÇÃO CRÍTICA: PAGE FAULT em RIP={:#x} acessando vaddr={:#x}\nCódigo de Erro: {:?}",
-        frame.rip,
-        cr2,
-        frame.error_code
-    );
-    crate::arch::platform::Cpu::hang();
+    // Usar escrita raw para evitar #UD
+    crate::drivers::serial::write_str_raw("\r\n[FATAL] PAGE FAULT at RIP=");
+    crate::drivers::serial::write_hex_raw(frame.rip);
+    crate::drivers::serial::write_str_raw(" CR2=");
+    crate::drivers::serial::write_hex_raw(cr2);
+    crate::drivers::serial::write_str_raw(" ERR=");
+    crate::drivers::serial::write_hex_raw(frame.error_code);
+    crate::drivers::serial::write_newline_raw();
+
+    // Halt simples
+    loop {
+        unsafe {
+            core::arch::asm!("cli; hlt", options(nomem, nostack));
+        }
+    }
 }
 
+/// Handler de GPF - SEGURO (sem formatação para evitar cascata)
 extern "C" fn general_protection_fault_handler_impl(frame: &ContextFrame) {
-    crate::kerror!(
-        "(Int) EXCEÇÃO CRÍTICA: GPF em RIP={:#x} Código de Erro: {:#x}",
-        frame.rip,
-        frame.error_code
-    );
-    crate::arch::platform::Cpu::hang();
+    // Usar escrita raw - CRÍTICO: não usar kerror! aqui
+    crate::drivers::serial::write_str_raw("\r\n[FATAL] GPF at RIP=");
+    crate::drivers::serial::write_hex_raw(frame.rip);
+    crate::drivers::serial::write_str_raw(" ERR=");
+    crate::drivers::serial::write_hex_raw(frame.error_code);
+    crate::drivers::serial::write_newline_raw();
+
+    // Halt simples sem usar Cpu::hang() que pode ter código problemático
+    loop {
+        unsafe {
+            core::arch::asm!("cli; hlt", options(nomem, nostack));
+        }
+    }
 }
 
 extern "C" fn timer_handler_impl(_frame: &ContextFrame) {
@@ -107,12 +137,19 @@ extern "C" fn timer_handler_impl(_frame: &ContextFrame) {
     crate::drivers::timer::handle_timer_interrupt();
 }
 
+/// Handler de Invalid Opcode (#UD) - SEGURO (sem formatação)
 extern "C" fn invalid_opcode_handler_impl(frame: &ContextFrame) {
-    crate::kerror!(
-        "(Int) EXCEÇÃO CRÍTICA: OPERAÇÃO INVÁLIDA (UD) em RIP={:#x}",
-        frame.rip
-    );
-    crate::arch::platform::Cpu::hang();
+    // CRÍTICO: NÃO usar kerror! aqui - pode causar loop infinito de #UD
+    crate::drivers::serial::write_str_raw("\r\n[FATAL] INVALID OPCODE at RIP=");
+    crate::drivers::serial::write_hex_raw(frame.rip);
+    crate::drivers::serial::write_newline_raw();
+
+    // Halt simples
+    loop {
+        unsafe {
+            core::arch::asm!("cli; hlt", options(nomem, nostack));
+        }
+    }
 }
 
 // --- Geração dos Stubs ---
