@@ -4,12 +4,14 @@
 
 pub mod bitmap;
 pub mod frame;
+pub mod pt_scanner;
 pub mod region;
 pub mod stats;
 pub mod zones;
 
 pub use bitmap::BitmapFrameAllocator;
 pub use frame::PhysFrame;
+pub use pt_scanner::mark_bootloader_page_tables;
 pub use region::{MemoryRegion, MemoryRegionType};
 pub use stats::PmmStats;
 

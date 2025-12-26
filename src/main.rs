@@ -24,12 +24,23 @@ extern "C" {
     static __bss_end: u8;
 }
 
-// Stack do kernel (64 KB).
+// Stack do kernel (64 KB) + Guard Page.
+// A guard page é uma página NÃO mapeada após a stack que causa page fault
+// em caso de stack overflow, permitindo detecção precoce do problema.
 #[repr(align(16))]
 struct KernelStack([u8; 64 * 1024]);
 
+/// Guard page size (4KB) - não mapeada, detecta stack overflow
+pub const GUARD_PAGE_SIZE: usize = 4096;
+
 #[no_mangle]
 static KERNEL_STACK: KernelStack = KernelStack([0; 64 * 1024]);
+
+/// Guard page marker (deve ser NOT PRESENT no VMM após init)
+/// O VMM deve chamar unmap_page() para este endereço durante init.
+pub fn guard_page_virt() -> u64 {
+    unsafe { &KERNEL_STACK as *const _ as u64 - GUARD_PAGE_SIZE as u64 }
+}
 
 /// Ponto de entrada Naked.
 /// Configura o Stack Pointer (RSP), habilita SSE, ZERA BSS, e chama kernel_main.

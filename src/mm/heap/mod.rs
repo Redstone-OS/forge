@@ -94,7 +94,8 @@ impl HeapAllocator {
 
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if layout.size() <= 2048 {
-            self.slab.dealloc(ptr, layout)
+            // Slab precisa do buddy para liberar objetos oversized
+            self.slab.dealloc(ptr, layout, &mut self.buddy)
         } else {
             self.buddy.dealloc(ptr, layout)
         }
@@ -216,10 +217,12 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
 
     // --- ASLR (Heap Randomization) ---
     // Adiciona um offset aleatório ao endereço base para dificultar exploits.
-    // Offset máximo: 512 MiB (256 * 2MB)
+    // IMPORTANTE: Limitamos a 64 slots (128 MiB max) para garantir que o heap
+    // fique dentro da região PML4[288] pré-alocada pelo bootloader.
+    // Offset máximo: 128 MiB (64 * 2MB)
     let tsc = rdtsc();
-    // Usamos máscara 0xFF (256 slots) deslocada por 21 bits (2MB alignment)
-    let random_offset = (tsc & 0xFF) as usize * 0x200000;
+    // Usamos máscara 0x3F (64 slots) deslocada por 21 bits (2MB alignment)
+    let random_offset = (tsc & 0x3F) as usize * 0x200000;
 
     let heap_start = base_addr + random_offset;
 
@@ -289,38 +292,59 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
 // =============================================================================
 // IMPLEMENTAÇÕES MANUAIS DE ALOCAÇÃO (bypass __rust_alloc gerado)
 // =============================================================================
-// O compilador Rust gera código para __rust_alloc que pode usar instruções SSE.
-// Fornecemos implementações manuais usando #[no_mangle] para evitar isso.
+// O compilador Rust pode gerar código para __rust_alloc que usa instruções SSE
+// para memcpy/memset internos. Isso causa #UD se SSE não estiver configurado
+// ou se o stack não estiver alinhado a 16 bytes.
+//
+// SOLUÇÃO: Fornecemos implementações manuais usando #[no_mangle] que
+// delegam diretamente para nosso GlobalAlloc, evitando qualquer geração
+// de código SSE pelo compilador.
+//
+// NOTA: O #[global_allocator] já define esses símbolos em Rust moderno,
+// então usamos #[linkage = "weak"] não disponível. Como alternativa,
+// confiamos que o GlobalAlloc seja usado corretamente pelo compilador
+// e garantimos que SSE está habilitado ANTES de qualquer alocação.
 
-// Implementação manual de __rust_alloc
-// Nota: Se #[global_allocator] define isso, teremos conflito de símbolos.
-// Por isso, comentamos por enquanto e tentamos alternativa.
-/*
-#[no_mangle]
-pub unsafe extern "C" fn __rust_alloc(size: usize, align: usize) -> *mut u8 {
-    use core::alloc::Layout;
-    let layout = Layout::from_size_align_unchecked(size, align);
-    ALLOCATOR.alloc(layout)
+// Helper para zeragem manual sem SSE
+#[inline(always)]
+unsafe fn manual_memset(ptr: *mut u8, val: u8, count: usize) {
+    let mut i = 0;
+    while i < count {
+        core::ptr::write_volatile(ptr.add(i), val);
+        i += 1;
+    }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn __rust_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    use core::alloc::Layout;
-    let layout = Layout::from_size_align_unchecked(size, align);
-    ALLOCATOR.dealloc(ptr, layout)
+// Helper para cópia manual sem SSE
+#[inline(always)]
+unsafe fn manual_memcpy(dst: *mut u8, src: *const u8, count: usize) {
+    let mut i = 0;
+    while i < count {
+        core::ptr::write_volatile(dst.add(i), core::ptr::read_volatile(src.add(i)));
+        i += 1;
+    }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn __rust_realloc(ptr: *mut u8, old_size: usize, align: usize, new_size: usize) -> *mut u8 {
-    use core::alloc::Layout;
-    let old_layout = Layout::from_size_align_unchecked(old_size, align);
-    ALLOCATOR.realloc(ptr, old_layout, new_size)
+/// Realloc manual que não depende de SSE
+pub unsafe fn manual_realloc(ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
+    if let Ok(new_layout) = Layout::from_size_align(new_size, old_layout.align()) {
+        let new_ptr = ALLOCATOR.alloc(new_layout);
+        if !new_ptr.is_null() {
+            let copy_size = core::cmp::min(old_layout.size(), new_size);
+            manual_memcpy(new_ptr, ptr, copy_size);
+            ALLOCATOR.dealloc(ptr, old_layout);
+        }
+        new_ptr
+    } else {
+        core::ptr::null_mut()
+    }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn __rust_alloc_zeroed(size: usize, align: usize) -> *mut u8 {
-    use core::alloc::Layout;
-    let layout = Layout::from_size_align_unchecked(size, align);
-    ALLOCATOR.alloc_zeroed(layout)
+/// Alloc zeroed manual que não depende de SSE
+pub unsafe fn manual_alloc_zeroed(layout: Layout) -> *mut u8 {
+    let ptr = ALLOCATOR.alloc(layout);
+    if !ptr.is_null() {
+        manual_memset(ptr, 0, layout.size());
+    }
+    ptr
 }
-*/

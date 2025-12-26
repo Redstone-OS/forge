@@ -160,6 +160,14 @@ impl BitmapFrameAllocator {
         // Barreira após memset
         compiler_fence(Ordering::SeqCst);
 
+        // 4.5 CRÍTICO: Marcar page tables do bootloader como ocupadas
+        // DEVE ser feito APÓS bitmap estar preenchido (tudo ocupado) e
+        // ANTES de init_free_regions liberar frames "Usable".
+        // Isso garante que as page tables do bootloader nunca sejam
+        // marcadas como livres, mesmo que estejam em regiões "Usable".
+        crate::kdebug!("(PMM) Escaneando page tables do bootloader...");
+        super::pt_scanner::mark_bootloader_page_tables(self);
+
         // 5. Liberar regiões usable
         self.init_free_regions(boot_info, bitmap_phys, req_size_bytes as u64);
 
@@ -424,5 +432,62 @@ impl BitmapFrameAllocator {
             core::ptr::write_volatile(ptr, entry & !(1u64 << bit));
         }
         self.stats.used_frames.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    // ========================================================================
+    // MÉTODOS PARA PROTEÇÃO DE PAGE TABLES DO BOOTLOADER
+    // ========================================================================
+
+    /// Marca um frame específico como ocupado (usado pelo pt_scanner).
+    ///
+    /// Usado para proteger page tables do bootloader que estão em regiões
+    /// marcadas como "Usable" no memory map.
+    ///
+    /// # Retorna
+    /// - true se o frame foi marcado com sucesso
+    /// - false se o frame já estava ocupado ou índice inválido
+    pub fn mark_frame_used(&mut self, phys_addr: u64) -> bool {
+        let frame_idx = (phys_addr / PAGE_SIZE as u64) as usize;
+
+        if frame_idx >= self.total_frames {
+            return false;
+        }
+
+        let idx = frame_idx / 64;
+        let bit = frame_idx % 64;
+
+        unsafe {
+            let ptr = self.bitmap_ptr.add(idx);
+            let entry = core::ptr::read_volatile(ptr);
+
+            // Verificar se já está ocupado
+            if (entry & (1u64 << bit)) != 0 {
+                return false; // Já estava marcado
+            }
+
+            // Marcar como ocupado
+            core::ptr::write_volatile(ptr, entry | (1u64 << bit));
+        }
+
+        self.stats.used_frames.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    /// Verifica se um frame está ocupado
+    pub fn is_frame_used(&self, phys_addr: u64) -> bool {
+        let frame_idx = (phys_addr / PAGE_SIZE as u64) as usize;
+
+        if frame_idx >= self.total_frames {
+            return true; // Fora do range = considerado ocupado
+        }
+
+        let idx = frame_idx / 64;
+        let bit = frame_idx % 64;
+
+        unsafe {
+            let ptr = self.bitmap_ptr.add(idx);
+            let entry = core::ptr::read_volatile(ptr);
+            (entry & (1u64 << bit)) != 0
+        }
     }
 }

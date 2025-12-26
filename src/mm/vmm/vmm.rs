@@ -517,6 +517,9 @@ pub unsafe fn map_page_with_pmm(
     // Escrever PTE final (endereço físico + flags + PRESENT)
     *pt_entry = (phys_addr & PAGE_MASK) | flags | PAGE_PRESENT;
 
+    // Barreira de memória: garante que a escrita da PTE seja visível antes de invlpg
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+
     // Invalida TLB para o endereço mapeado
     asm!("invlpg [{}]", in(reg) virt_addr, options(nostack, preserves_flags));
 

@@ -67,6 +67,7 @@ pub mod error;
 /// 1. **VMM primeiro**: Registra CR3 do bootloader, valida scratch slot
 /// 2. **PMM segundo**: Pode acessar memória física via identity map validado
 /// 3. **Heap terceiro**: Precisa do PMM para alocar frames
+/// 4. **Guard Page**: Desmapeia página de guarda da stack
 ///
 /// # Safety
 ///
@@ -83,6 +84,7 @@ pub unsafe fn init(boot_info: &'static crate::core::handoff::BootInfo) {
     vmm::init(boot_info);
 
     // 2. PMM segundo: pode acessar memória física via identity map
+    // Nota: pt_scanner é chamado DENTRO de pmm::init, ANTES de liberar frames
     crate::kdebug!("(MM) Inicializando PMM...");
     pmm::init(boot_info);
 
@@ -92,7 +94,40 @@ pub unsafe fn init(boot_info: &'static crate::core::handoff::BootInfo) {
         panic!("(MM) Falha crítica ao inicializar Heap!");
     }
 
+    // 4. Guard Page: desmapeia página de guarda da stack para detectar stack overflow
+    crate::kdebug!("(MM) Configurando guard page da stack...");
+    setup_guard_page();
+
     crate::kinfo!("(MM) Subsistema de memória inicializado!");
+}
+
+/// Configura a guard page da stack do kernel.
+///
+/// Desmapeia a página imediatamente antes da stack do kernel,
+/// causando Page Fault se ocorrer stack overflow.
+unsafe fn setup_guard_page() {
+    // Obter endereço da guard page do main.rs
+    // A guard page está ANTES da stack (endereço menor)
+    extern "C" {
+        static KERNEL_STACK: u8;
+    }
+
+    let stack_base = &KERNEL_STACK as *const u8 as u64;
+    let guard_page_addr = stack_base.saturating_sub(4096);
+
+    // Desmapear a guard page (marcar como NOT PRESENT)
+    // Se já não está mapeada, unmap_page é um no-op seguro
+    if let Err(e) = vmm::unmap_page(guard_page_addr) {
+        crate::kwarn!(
+            "(MM) Guard page não pôde ser desmapeada: {} (pode já estar desmapeada)",
+            e
+        );
+    } else {
+        crate::kinfo!("(MM) Guard page configurada em {:#x}", guard_page_addr);
+    }
+
+    // Invalidar TLB para a guard page
+    vmm::tlb::invlpg(addr::VirtAddr::new(guard_page_addr));
 }
 
 // =============================================================================
@@ -113,6 +148,9 @@ pub type Result<T> = core::result::Result<T, MmError>;
 
 // VMM (APIs principais)
 pub use vmm::{map_page, map_page_with_pmm, translate_addr, unmap_page};
+
+// TLB (flush_all para casos especiais)
+pub use vmm::tlb::{flush_tlb_local, invalidate_page, invlpg};
 
 // Mapper (API de alto nível)
 pub use vmm::mapper::{MapFlags, MappedRegion, RegionType};

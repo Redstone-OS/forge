@@ -1,35 +1,94 @@
+//! Testes de Alocadores (Buddy + Slab)
+//!
+//! Este módulo testa os alocadores de memória usando o heap real do kernel,
+//! não uma arena estática. Isso garante que os testes validem o comportamento
+//! real do sistema de memória.
+
 use crate::mm::alloc::{BuddyAllocator, SlabAllocator};
+use alloc::vec::Vec;
 use core::alloc::Layout;
 
-// Arena estática para testes isolados (1 MiB para garantir espaço para várias ordens)
-// Alinhada a 4096 para satisfazer requisitos do Buddy
-#[repr(align(4096))]
-struct TestArena([u8; 1024 * 1024]);
+/// Valida que o heap está corretamente mapeado antes de rodar testes.
+/// Retorna true se o heap está acessível.
+fn validate_heap_mapping() -> bool {
+    use crate::mm::vmm::translate_addr;
+    let heap_start = crate::mm::heap::heap_start() as u64;
 
-static mut TEST_ARENA: TestArena = TestArena([0; 1024 * 1024]);
+    // Verificar se o início do heap está mapeado
+    if translate_addr(heap_start).is_none() {
+        crate::kerror!("(AllocTest) Heap não mapeado em {:#x}!", heap_start);
+        return false;
+    }
+
+    // Verificar se o fim do heap também está mapeado
+    let heap_end = heap_start + crate::mm::heap::HEAP_INITIAL_SIZE as u64 - 4096;
+    if translate_addr(heap_end).is_none() {
+        crate::kerror!("(AllocTest) Fim do heap não mapeado em {:#x}!", heap_end);
+        return false;
+    }
+
+    crate::kinfo!(
+        "(AllocTest) Heap validado: {:#x} - {:#x}",
+        heap_start,
+        heap_end
+    );
+    true
+}
+
+/// Arena de teste alocada dinamicamente no heap.
+/// Usamos Vec<u8> para garantir que a memória está corretamente mapeada.
+struct DynamicTestArena {
+    buffer: Vec<u8>,
+}
+
+impl DynamicTestArena {
+    /// Aloca uma arena de teste de 1 MiB no heap.
+    fn new() -> Self {
+        let size = 1024 * 1024; // 1 MiB
+        let mut buffer = Vec::with_capacity(size);
+        // Preencher com zeros para garantir que as páginas estão mapeadas
+        buffer.resize(size, 0);
+        Self { buffer }
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        self.buffer.as_ptr()
+    }
+
+    fn size(&self) -> usize {
+        self.buffer.len()
+    }
+}
 
 pub fn run_alloc_tests() {
     crate::kinfo!("╔════════════════════════════════════════╗");
     crate::kinfo!("║     🧪 TESTES DE ALOCADORES            ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 
+    // CRÍTICO: Validar heap antes de rodar qualquer teste
+    if !validate_heap_mapping() {
+        crate::kerror!("(AllocTest) Heap não validado! Abortando testes de alocador.");
+        return;
+    }
+
     test_buddy_basic();
     test_slab_basic();
-    test_slab_canary_integrity(); // Verifica se canaries estão sendo escritos
-    test_integration(); // Buddy + Slab interagindo
-
-    // test_slab_overflow(); // Descomente para testar o Panic (vai travar o boot)
+    test_slab_canary_integrity();
+    test_integration();
 
     crate::kinfo!("(AllocTest) ✓ Todos os testes de alocador passaram.");
 }
 
 fn test_buddy_basic() {
     crate::kinfo!("(Test) BuddyAllocator: Basic Alloc/Dealloc...");
+
+    // Alocar arena dinamicamente no heap
+    let arena = DynamicTestArena::new();
     let mut buddy = BuddyAllocator::new();
 
     unsafe {
-        let start = TEST_ARENA.0.as_ptr() as usize;
-        let size = 1024 * 1024; // 1 MiB
+        let start = arena.as_ptr() as usize;
+        let size = arena.size();
         buddy.init(start, size);
 
         // Alloc 4KB (Order 0)
@@ -40,7 +99,7 @@ fn test_buddy_basic() {
         }
         crate::ktrace!("(Buddy) Alloc 4KB -> {:p}", ptr1);
 
-        // Alloc 8KB (Order 1) - deve ser vizinho ou próximo
+        // Alloc 8KB (Order 1)
         let layout2 = Layout::from_size_align(8192, 4096).unwrap();
         let ptr2 = buddy.alloc(layout2);
         if ptr2.is_null() {
@@ -53,7 +112,6 @@ fn test_buddy_basic() {
         buddy.dealloc(ptr1, layout1);
 
         // Tentar alocar tudo de novo (deve conseguir se o merge funcionou)
-        // 1 MiB inteiro
         let ptr_all = buddy.alloc(Layout::from_size_align(size, 4096).unwrap());
         if ptr_all.is_null() {
             panic!("(Buddy) Falha ao realocar tudo (fragmentação/merge falhou?)");
@@ -67,12 +125,14 @@ fn test_buddy_basic() {
 
 fn test_slab_basic() {
     crate::kinfo!("(Test) SlabAllocator: Basic Alloc/Dealloc...");
+
+    let arena = DynamicTestArena::new();
     let mut buddy = BuddyAllocator::new();
     let mut slab = SlabAllocator::new();
 
     unsafe {
-        let start = TEST_ARENA.0.as_ptr() as usize;
-        let size = 1024 * 1024;
+        let start = arena.as_ptr() as usize;
+        let size = arena.size();
         buddy.init(start, size);
 
         // Alloc 32 bytes
@@ -85,7 +145,7 @@ fn test_slab_basic() {
         // Escrever padrão
         core::ptr::write_volatile(ptr1 as *mut u64, 0xCAFEBABE);
 
-        // Alloc 32 bytes de novo (deve vir do mesmo slab/bloco)
+        // Alloc 32 bytes de novo
         let ptr2 = slab.alloc(layout32, &mut buddy);
         if ptr2.is_null() {
             panic!("(Slab) Falha alloc 32B (2)");
@@ -97,20 +157,22 @@ fn test_slab_basic() {
 
         crate::ktrace!("(Slab) Ptr1: {:p}, Ptr2: {:p}", ptr1, ptr2);
 
-        slab.dealloc(ptr1, layout32);
-        slab.dealloc(ptr2, layout32);
+        slab.dealloc(ptr1, layout32, &mut buddy);
+        slab.dealloc(ptr2, layout32, &mut buddy);
     }
     crate::kinfo!("(Test) SlabAllocator: OK");
 }
 
 fn test_slab_canary_integrity() {
     crate::kinfo!("(Test) SlabAllocator: Canary Integrity...");
+
+    let arena = DynamicTestArena::new();
     let mut buddy = BuddyAllocator::new();
     let mut slab = SlabAllocator::new();
 
     unsafe {
-        let start = TEST_ARENA.0.as_ptr() as usize;
-        let size = 1024 * 1024;
+        let start = arena.as_ptr() as usize;
+        let size = arena.size();
         buddy.init(start, size);
 
         // Alloc 16 bytes
@@ -118,16 +180,8 @@ fn test_slab_canary_integrity() {
         let ptr = slab.alloc(layout, &mut buddy);
         assert!(!ptr.is_null());
 
-        // Verificar se os bytes mágicos estão lá manualmente
-
-        // Header (Tamanho do canary é 8, align 16 -> Header align_up(8, 16) = 16 bytes)
-        // Se CANARY_SIZE=8 e align=16: align_up(8, 16) -> 16.
-        // Então ptr está em block_ptr + 16.
-        // O canary (8 bytes) foi escrito em block_ptr + 0?
-        // Verifique a impl de slab: (ptr as *mut u64).write(CANARY_START) onde ptr é block_ptr.
-        // Sim, o canary está no início do bloco.
-
-        let header_overhead = 16; // align_up(8, 16)
+        // Header: align_up(8, 16) = 16 bytes de overhead
+        let header_overhead = 16;
         let block_ptr = ptr.sub(header_overhead);
         let canary_start = (block_ptr as *const u64).read();
 
@@ -148,7 +202,7 @@ fn test_slab_canary_integrity() {
             panic!("Test Canary Integrity Failed");
         }
 
-        slab.dealloc(ptr, layout);
+        slab.dealloc(ptr, layout, &mut buddy);
     }
     crate::kinfo!("(Test) Canary Integrity: OK");
 }
@@ -156,12 +210,14 @@ fn test_slab_canary_integrity() {
 #[allow(dead_code)]
 fn test_slab_overflow() {
     crate::kinfo!("(Test) SlabAllocator: OVERFLOW TEST (Deve Panic)...");
+
+    let arena = DynamicTestArena::new();
     let mut buddy = BuddyAllocator::new();
     let mut slab = SlabAllocator::new();
 
     unsafe {
-        let start = TEST_ARENA.0.as_ptr() as usize;
-        let size = 1024 * 1024;
+        let start = arena.as_ptr() as usize;
+        let size = arena.size();
         buddy.init(start, size);
 
         let layout = Layout::from_size_align(32, 8).unwrap();
@@ -173,26 +229,30 @@ fn test_slab_overflow() {
         footer_ptr.write(0xDEAD_DEAD_DEAD_DEAD);
 
         // Isso deve triggar panic
-        slab.dealloc(ptr, layout);
+        slab.dealloc(ptr, layout, &mut buddy);
     }
 }
 
 fn test_integration() {
     crate::kinfo!("(Test) Integration: HeapAllocator Logic...");
-    // Aqui testamos a lógica de seleção (size <= 2048 -> Slab, > -> Buddy)
-    // Simulamos manualmente
+
+    let arena = DynamicTestArena::new();
     let mut buddy = BuddyAllocator::new();
     let mut slab = SlabAllocator::new();
 
     unsafe {
-        let start = TEST_ARENA.0.as_ptr() as usize;
-        let size = 1024 * 1024;
+        let start = arena.as_ptr() as usize;
+        let size = arena.size();
         buddy.init(start, size);
 
         // Caso Slab
         let ptr_small = slab.alloc(Layout::from_size_align(128, 16).unwrap(), &mut buddy);
         assert!(!ptr_small.is_null());
-        slab.dealloc(ptr_small, Layout::from_size_align(128, 16).unwrap());
+        slab.dealloc(
+            ptr_small,
+            Layout::from_size_align(128, 16).unwrap(),
+            &mut buddy,
+        );
 
         // Caso Buddy (4096)
         let ptr_large = buddy.alloc(Layout::from_size_align(4096, 4096).unwrap());

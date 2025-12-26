@@ -21,6 +21,9 @@ pub struct BootInfo {
     /// Versão do protocolo de boot.
     pub version: u32,
 
+    /// Padding para alinhamento de 8 bytes
+    pub _padding: u32,
+
     /// Informações de vídeo (GOP).
     pub framebuffer: FramebufferInfo,
 
@@ -38,6 +41,11 @@ pub struct BootInfo {
     /// Endereço do Initramfs (se carregado).
     pub initramfs_addr: u64,
     pub initramfs_size: u64,
+
+    /// Endereço físico do CR3 (PML4) configurado pelo bootloader.
+    /// O kernel herda esta hierarquia de page tables e NÃO deve liberar esses frames.
+    /// Se 0, o kernel lê CR3 diretamente via assembly.
+    pub cr3_phys: u64,
 }
 
 #[repr(C)]

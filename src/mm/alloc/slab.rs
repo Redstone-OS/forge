@@ -195,31 +195,29 @@ impl SlabAllocator {
     }
 
     /// Libera um objeto pequeno e verifica integridade (Canaries).
-    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    ///
+    /// # Argumentos
+    /// - `ptr`: Ponteiro retornado por `alloc()`
+    /// - `layout`: Layout original da alocação
+    /// - `buddy`: Referência ao BuddyAllocator para liberar objetos oversized
+    ///
+    /// # Panics
+    /// Panics se detectar corrupção de heap (canary inválido).
+    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout, buddy: &mut BuddyAllocator) {
         let header_size = Self::align_up(CANARY_SIZE, layout.align());
         let footer_size = CANARY_SIZE;
         let payload_size = layout.size();
         let total_size = header_size + payload_size + footer_size;
 
         if total_size > MAX_BLOCK_SIZE {
-            // Foi alocado direto no Buddy (veja alloc)
-            // TODO: implementar buddy clean
-            // Por enquanto, não conseguimos saber EXATAMENTE se veio do buddy só pelo layout...
-            // Risco: Se mudarmos a lógica do alloc, o dealloc quebra.
-            // Para MVP: O Layout é o do usuário. Precisamos recalcular total_size.
-            // Se total_size > 2048, VAI pro Buddy? Nao temos acesso ao Buddy aqui no dealloc struct...
-            // ERRO NO DESIGN DO SlabAllocator::dealloc: ele não recebia &mut Buddy.
-            // Mas SlabAllocator só gerencia listas internas.
-            // Se o objeto NÃO está no slab (large), quem libera é o HeapAllocator.
-            // MAS o HeapAllocator chama slab.dealloc se size <= 2048 (original).
-            // AQUI `layout.size()` é pequeno, mas `total_size` pode estourar.
-            // Se estourou no alloc, foi pro Buddy.
-            // Então aqui não podemos fazer nada se não temos acesso ao Buddy.
-            // Como resolver?
-            // O HeapAllocator precisa saber se foi pro slab ou buddy.
-            crate::kerror!(
-                "(Slab) Dealloc em objeto oversize (overflow slab limit). Leakando por segurança."
+            // Foi alocado direto no Buddy (veja alloc quando total_size > MAX_BLOCK_SIZE)
+            // O alloc delegou para buddy.alloc(layout) diretamente, sem canaries
+            // Então aqui liberamos diretamente no buddy
+            crate::ktrace!(
+                "(Slab) Dealloc oversized -> Buddy ({} bytes)",
+                layout.size()
             );
+            buddy.dealloc(ptr, layout);
             return;
         }
 
