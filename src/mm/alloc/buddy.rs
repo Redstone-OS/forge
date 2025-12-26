@@ -53,21 +53,33 @@ impl BuddyAllocator {
     /// - `heap_start` deve ser um ponteiro válido para memória mapeada e acessível.
     /// - `heap_size` deve ser potência de 2 e alinhado a PAGE_SIZE.
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
+        use core::sync::atomic::{compiler_fence, Ordering};
+
+        compiler_fence(Ordering::SeqCst);
+
         self.total_bytes = heap_size;
         self.allocated_bytes = 0;
 
+        compiler_fence(Ordering::SeqCst);
+
         // Adiciona a região inicial à free list da maior ordem possível
         self.add_to_free_list(heap_start, heap_size);
+
+        compiler_fence(Ordering::SeqCst);
     }
 
     /// Adiciona um bloco de memória ao alocador (usado no init e grow)
     unsafe fn add_to_free_list(&mut self, addr: usize, size: usize) {
+        use core::sync::atomic::{compiler_fence, Ordering};
+
         let start = addr;
         let end = addr + size;
         let mut curr = start;
 
         // Decompor o tamanho em blocos de ordem apropriada
         while curr < end {
+            compiler_fence(Ordering::SeqCst);
+
             let remaining = end - curr;
             let order = self.find_suitable_order(remaining);
             let block_size = 1 << (order + 12); // PAGE_SIZE << order
@@ -77,6 +89,8 @@ impl BuddyAllocator {
 
             curr += block_size;
         }
+
+        compiler_fence(Ordering::SeqCst);
     }
 
     /// Encontra a maior ordem que cabe em `size`
@@ -172,11 +186,19 @@ impl BuddyAllocator {
 
     /// Insere um bloco na free list de uma ordem
     unsafe fn push(&mut self, addr: usize, order: usize) {
-        let mut block_ptr = NonNull::new_unchecked(addr as *mut FreeBlock);
+        use core::sync::atomic::{compiler_fence, Ordering};
+
+        compiler_fence(Ordering::SeqCst);
+
+        let block_ptr = addr as *mut FreeBlock;
         let next = self.free_lists[order];
 
-        block_ptr.as_mut().next = next;
-        self.free_lists[order] = Some(block_ptr);
+        // Usar volatile write para garantir que a escrita aconteça
+        core::ptr::write_volatile(block_ptr, FreeBlock { next });
+
+        compiler_fence(Ordering::SeqCst);
+
+        self.free_lists[order] = NonNull::new(block_ptr);
     }
 
     /// Remove o primeiro bloco da free list de uma ordem
