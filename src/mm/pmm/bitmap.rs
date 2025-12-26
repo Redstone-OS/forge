@@ -47,108 +47,75 @@
 //!     o bootloader adora esconder coisas.
 
 use super::frame::PhysFrame;
-
 use super::stats::PmmStats;
-
 use crate::core::handoff::{BootInfo, MemoryType};
-
 use crate::mm::addr::{self, PhysAddr};
-
 use crate::mm::config::PAGE_SIZE;
-
 use core::sync::atomic::Ordering;
 
 /// BitmapFrameAllocator
-
 ///
-
 /// Gerencia memória física usando um bitmap.
-
 /// Protegido por Mutex externo (em mod.rs).
-
 pub struct BitmapFrameAllocator {
     /// Início da memória gerenciada (geralmente 0)
     _memory_base: PhysAddr,
-
     /// Ponteiro para o bitmap (em HHDM virtual address)
     bitmap_ptr: *mut u64,
-
     /// Tamanho do bitmap em u64
     bitmap_len: usize,
-
     /// Total de frames gerenciados
     total_frames: usize,
-
     /// Dica para próxima alocação
     next_free: usize,
-
     /// Estatísticas
     stats: PmmStats,
 }
 
 // SAFETY: Send/Sync seguro pois o acesso é via Mutex externo
-
 unsafe impl Send for BitmapFrameAllocator {}
-
 unsafe impl Sync for BitmapFrameAllocator {}
 
 impl BitmapFrameAllocator {
     /// Cria um alocador vazio
-
     pub const fn empty() -> Self {
         Self {
             _memory_base: PhysAddr::new(0),
-
             bitmap_ptr: core::ptr::null_mut(),
-
             bitmap_len: 0,
-
             total_frames: 0,
-
             next_free: 0,
-
             stats: PmmStats::new(),
         }
     }
 
     /// Inicializa o alocador
-
     pub unsafe fn init(&mut self, boot_info: &'static BootInfo) {
         crate::ktrace!("(PMM) [INSANITY] >>> ENTER init()");
-
         crate::kinfo!(
             "(PMM) Inicializando BitmapFrameAllocator (Center-Out + Probe + StatsFix)..."
         );
 
         // 1. Calcular memória total com segurança
-
         crate::kdebug!("(PMM) [INSANITY] Passo 1: Escaneando memory map...");
-
         let (max_phys, _) = self.scan_memory_map_safe(boot_info);
-
         crate::kdebug!(
             "(PMM) [INSANITY] max_phys calculado: {:#x}",
             max_phys.as_u64()
         );
 
         // 2. Calcular tamanho do bitmap e inicializar estatísticas
-
         self.total_frames = max_phys.as_usize() / PAGE_SIZE;
-
         self.stats.total_frames = self.total_frames;
 
         // [CORREÇÃO] Inicializar frames usados com o total, pois vamos preencher o bitmap com 1s (ocupado)
-
         self.stats
             .used_frames
             .store(self.total_frames, Ordering::Relaxed);
 
         let bitmap_size_bytes = (self.total_frames + 7) / 8;
-
         let bitmap_size_u64 = (bitmap_size_bytes + 7) / 8;
-
         self.bitmap_len = bitmap_size_u64;
-
         let req_size_bytes = self.bitmap_len * 8;
 
         crate::kdebug!(
@@ -159,20 +126,15 @@ impl BitmapFrameAllocator {
         );
 
         // 3. Alocar região física usando Center-Out com Probing
-
         crate::kdebug!("(PMM) [INSANITY] Passo 3: Buscando região segura (Probe Ativo)...");
-
         let bitmap_phys = self.find_bitmap_region_center_out(boot_info, req_size_bytes);
-
         crate::kdebug!(
             "(PMM) [INSANITY] Região ELEITA: bitmap_phys={:#x}",
             bitmap_phys.as_u64()
         );
 
         // 4. Mapear (HHDM) e limpar bitmap
-
         crate::kdebug!("(PMM) [INSANITY] Passo 4: Mapeando e limpando...");
-
         self.bitmap_ptr = addr::phys_to_virt(bitmap_phys).as_mut_ptr();
 
         if self.bitmap_ptr.is_null() || (self.bitmap_ptr as usize) % 8 != 0 {
@@ -180,19 +142,15 @@ impl BitmapFrameAllocator {
                 "(PMM) [INSANITY] FATAL: Ponteiro de bitmap inválido: {:p}",
                 self.bitmap_ptr
             );
-
             panic!("PMM Bitmap Pointer Error");
         }
 
         crate::ktrace!("(PMM) [INSANITY] Bitmap Virt Addr: {:p}", self.bitmap_ptr);
 
         // Memset Seguro (u64) - Preenche tudo como OCUPADO (1)
-
         let ptr_u64 = self.bitmap_ptr;
-
         for i in 0..self.bitmap_len {
             core::ptr::write_volatile(ptr_u64.add(i), u64::MAX);
-
             if i > 0 && i % 4096 == 0 {
                 crate::ktrace!(
                     "(PMM) [INSANITY] Memset progress: {}/{}",
@@ -201,19 +159,15 @@ impl BitmapFrameAllocator {
                 );
             }
         }
-
         crate::kdebug!("(PMM) [INSANITY] Memset completo.");
 
         // 5. Liberar regiões usable (Isso vai decrementar used_frames)
-
         crate::kdebug!("(PMM) [INSANITY] Passo 6: Liberando frames disponíveis...");
-
         self.init_free_regions(boot_info, bitmap_phys, req_size_bytes as u64);
 
         let used = self.stats.used_frames.load(Ordering::Relaxed);
 
         // Proteção contra visualização negativa se algo deu muito errado na contabilidade
-
         let free = if self.total_frames >= used {
             self.total_frames - used
         } else {
@@ -222,7 +176,6 @@ impl BitmapFrameAllocator {
                 self.total_frames,
                 used
             );
-
             0
         };
 
@@ -235,16 +188,11 @@ impl BitmapFrameAllocator {
     }
 
     /// Scan seguro do mapa de memória com logs detalhados e limites
-
     fn scan_memory_map_safe(&self, boot_info: &BootInfo) -> (PhysAddr, usize) {
         crate::ktrace!("(PMM) [INSANITY] >>> ENTER scan_memory_map_safe");
-
         let mut max_phys = 0;
-
         let mut count = 0;
-
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
-
         let map_len = boot_info.memory_map_len as usize;
 
         crate::ktrace!(
@@ -254,14 +202,12 @@ impl BitmapFrameAllocator {
         );
 
         // Trava de segurança para não ler lixo se o BootInfo estiver corrompido
-
         if map_len > 512 {
             crate::kwarn!(
                 "(PMM) [INSANITY] Map Len suspeito ({})! Limitando scan a 128 entradas.",
                 map_len
             );
         }
-
         let safe_len = core::cmp::min(map_len, 128);
 
         for i in 0..safe_len {
@@ -269,7 +215,6 @@ impl BitmapFrameAllocator {
                 let entry = &*map_ptr.add(i);
 
                 // Logar apenas entradas relevantes ou as primeiras
-
                 if i < 8 || entry.typ == MemoryType::Usable {
                     crate::ktrace!(
                         "(PMM) [INSANITY] Entry[{}]: Base={:#x} Len={:#x} Type={:?}",
@@ -282,21 +227,17 @@ impl BitmapFrameAllocator {
 
                 if entry.typ == MemoryType::Usable {
                     let end = entry.base + entry.len;
-
                     if end > max_phys {
                         max_phys = end;
                     }
-
                     count += 1;
                 }
             }
         }
 
         // Se max_phys for 0, algo deu muito errado
-
         if max_phys == 0 {
             crate::kerror!("(PMM) [INSANITY] FATAL: Nenhuma memória Usable encontrada!");
-
             return (PhysAddr::new(128 * 1024 * 1024), 0);
         }
 
@@ -304,38 +245,28 @@ impl BitmapFrameAllocator {
     }
 
     /// Estratégia "Center-Out" com Probing Fibonacci
-
     fn find_bitmap_region_center_out(&self, boot_info: &BootInfo, size_bytes: usize) -> PhysAddr {
         let kernel_start = boot_info.kernel_phys_addr;
-
         let kernel_end = boot_info.kernel_size + kernel_start;
-
         let size_needed = size_bytes as u64;
 
         // Zona proibida expandida (Kernel + 1MB padding)
-
         let forbidden_start = kernel_start.saturating_sub(1024 * 1024);
-
         let forbidden_end = kernel_end + (1024 * 1024);
 
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
-
         let map_len = core::cmp::min(boot_info.memory_map_len as usize, 128);
 
         let mut best_region_idx = None;
-
         let mut max_len = 0;
 
         for i in 0..map_len {
             unsafe {
                 let entry = &*map_ptr.add(i);
-
                 if entry.typ == MemoryType::Usable {
                     if entry.len > max_len && entry.base >= 0x100000 {
                         // Ignora < 1MB
-
                         max_len = entry.len;
-
                         best_region_idx = Some(i);
                     }
                 }
@@ -344,15 +275,11 @@ impl BitmapFrameAllocator {
 
         if let Some(idx) = best_region_idx {
             let entry = unsafe { &*map_ptr.add(idx) };
-
             let region_start = entry.base;
-
             let region_end = entry.base + entry.len;
-
             let region_center = region_start + (entry.len / 2);
 
             // Início ideal: Centro da região
-
             let center_candidate = (region_center.saturating_sub(size_needed / 2) + 0xFFF) & !0xFFF;
 
             crate::ktrace!(
@@ -363,24 +290,19 @@ impl BitmapFrameAllocator {
             );
 
             let mut fib_a = 0u64;
-
             let mut fib_b = PAGE_SIZE as u64; // 4KiB
 
             for attempt in 0..20 {
                 let offset = if attempt == 0 { 0 } else { fib_b };
-
                 let sign = if attempt % 2 == 0 { 1i64 } else { -1i64 };
 
                 if attempt > 0 && attempt % 2 == 0 {
                     let next = fib_a + fib_b;
-
                     fib_a = fib_b;
-
                     fib_b = next;
                 }
 
                 let candidate_start = (center_candidate as i64 + (offset as i64 * sign)) as u64;
-
                 let candidate_end = candidate_start + size_needed;
 
                 if candidate_start < region_start || candidate_end > region_end {
@@ -389,7 +311,6 @@ impl BitmapFrameAllocator {
                         attempt,
                         candidate_start
                     );
-
                     continue;
                 }
 
@@ -399,7 +320,6 @@ impl BitmapFrameAllocator {
                         attempt,
                         candidate_start
                     );
-
                     continue;
                 }
 
@@ -409,7 +329,6 @@ impl BitmapFrameAllocator {
                         attempt,
                         candidate_start
                     );
-
                     continue;
                 }
 
@@ -418,60 +337,45 @@ impl BitmapFrameAllocator {
                     attempt,
                     candidate_start
                 );
-
                 return PhysAddr::new(candidate_start);
             }
         }
 
         crate::kerror!("(PMM) [INSANITY] FATAL: Falha crítica na alocação Center-Out!");
-
         panic!("PMM OOM");
     }
 
     unsafe fn is_memory_dirty(&self, start: u64, size: u64) -> bool {
         let ptr = addr::phys_to_virt(PhysAddr::new(start)).as_mut_ptr() as *const u64;
-
         let offsets = [0, size / 2 / 8, (size - 8) / 8];
 
         for &off in &offsets {
             let val = core::ptr::read_volatile(ptr.add(off as usize));
-
             if val != 0 {
                 return true;
             }
         }
-
         false
     }
 
     pub fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let start_search = self.next_free;
-
         let mut i = 0;
-
         let limit = self.bitmap_len;
 
         while i < limit {
             let idx = (start_search + i) % limit;
-
             unsafe {
                 let entry_ptr = self.bitmap_ptr.add(idx);
-
                 let entry = *entry_ptr;
-
                 if entry != u64::MAX {
                     let bit = entry.trailing_ones() as usize;
-
                     if bit < 64 {
                         let frame_idx = idx * 64 + bit;
-
                         if frame_idx < self.total_frames {
                             *entry_ptr |= 1 << bit;
-
                             self.stats.inc_alloc();
-
                             self.next_free = idx;
-
                             return Some(PhysFrame::from_start_address(PhysAddr::new(
                                 frame_idx as u64 * PAGE_SIZE as u64,
                             )));
@@ -479,36 +383,27 @@ impl BitmapFrameAllocator {
                     }
                 }
             }
-
             i += 1;
         }
-
         None
     }
 
     pub fn deallocate_frame(&mut self, frame: PhysFrame) {
         let start_addr = frame.start_address().as_u64();
-
         let frame_idx = (start_addr / PAGE_SIZE as u64) as usize;
-
         if frame_idx >= self.total_frames {
             return;
         }
 
         let idx = frame_idx / 64;
-
         let bit = frame_idx % 64;
 
         unsafe {
             let ptr = self.bitmap_ptr.add(idx);
-
             let mask = 1 << bit;
-
             if (*ptr & mask) != 0 {
                 *ptr &= !mask;
-
                 self.stats.inc_free();
-
                 if idx < self.next_free {
                     self.next_free = idx;
                 }
@@ -518,29 +413,21 @@ impl BitmapFrameAllocator {
 
     unsafe fn init_free_regions(
         &mut self,
-
         boot_info: &BootInfo,
-
         bitmap_start: PhysAddr,
-
         bitmap_size: u64,
     ) {
         let kernel_start = boot_info.kernel_phys_addr;
-
         let kernel_end = kernel_start + boot_info.kernel_size;
-
         let bitmap_end = bitmap_start.as_u64() + bitmap_size;
 
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
-
         let map_len = core::cmp::min(boot_info.memory_map_len as usize, 128);
 
         for i in 0..map_len {
             let entry = &*map_ptr.add(i);
-
             if entry.typ == MemoryType::Usable {
                 let start_frame = entry.base / PAGE_SIZE as u64;
-
                 let end_frame = (entry.base + entry.len) / PAGE_SIZE as u64;
 
                 for f in start_frame..end_frame {
@@ -549,11 +436,9 @@ impl BitmapFrameAllocator {
                     if addr < 16 * 1024 * 1024 {
                         continue;
                     }
-
                     if addr >= kernel_start && addr < kernel_end {
                         continue;
                     }
-
                     if addr >= bitmap_start.as_u64() && addr < bitmap_end {
                         continue;
                     }
@@ -568,17 +453,12 @@ impl BitmapFrameAllocator {
         if frame_idx >= self.total_frames {
             return;
         }
-
         let idx = frame_idx / 64;
-
         let bit = frame_idx % 64;
-
         unsafe {
             let ptr = self.bitmap_ptr.add(idx);
-
             *ptr &= !(1 << bit);
         }
-
         self.stats.used_frames.fetch_sub(1, Ordering::Relaxed);
     }
 }
