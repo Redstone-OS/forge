@@ -57,11 +57,49 @@ pub mod config;
 pub mod error;
 
 // =============================================================================
+// INICIALIZAÇÃO
+// =============================================================================
+
+/// Inicializa todo o subsistema de memória na ordem correta.
+///
+/// # Ordem de Inicialização (CRÍTICO)
+///
+/// 1. **VMM primeiro**: Registra CR3 do bootloader, valida scratch slot
+/// 2. **PMM segundo**: Pode acessar memória física via identity map validado
+/// 3. **Heap terceiro**: Precisa do PMM para alocar frames
+///
+/// # Safety
+///
+/// - Deve ser chamado uma única vez no early-boot
+/// - O boot_info deve ser válido e estático
+/// - O CR3 deve conter page tables válidas do bootloader
+///
+/// # Panics
+///
+/// Faz panic se a inicialização do Heap falhar.
+pub unsafe fn init(boot_info: &'static crate::core::handoff::BootInfo) {
+    // 1. VMM primeiro: registra CR3, valida scratch slot
+    crate::kdebug!("(MM) Inicializando VMM...");
+    vmm::init(boot_info);
+
+    // 2. PMM segundo: pode acessar memória física via identity map
+    crate::kdebug!("(MM) Inicializando PMM...");
+    pmm::init(boot_info);
+
+    // 3. Heap terceiro: precisa do PMM para alocar frames
+    crate::kdebug!("(MM) Inicializando Heap...");
+    if !heap::init_heap(&mut *pmm::FRAME_ALLOCATOR.lock()) {
+        panic!("(MM) Falha crítica ao inicializar Heap!");
+    }
+
+    crate::kinfo!("(MM) Subsistema de memória inicializado!");
+}
+
+// =============================================================================
 // RE-EXPORTS
 // =============================================================================
 
 // PMM
-pub use pmm::init;
 pub use pmm::{
     BitmapFrameAllocator, MemoryRegion, MemoryRegionType, PhysFrame, PmmStats, FRAME_ALLOCATOR,
 };
@@ -74,7 +112,7 @@ pub use error::MmError;
 pub type Result<T> = core::result::Result<T, MmError>;
 
 // VMM (APIs principais)
-pub use vmm::{map_page, map_page_with_pmm, translate_addr};
+pub use vmm::{map_page, map_page_with_pmm, translate_addr, unmap_page};
 
 // Mapper (API de alto nível)
 pub use vmm::mapper::{MapFlags, MappedRegion, RegionType};

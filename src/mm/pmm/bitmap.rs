@@ -47,29 +47,62 @@ impl BitmapFrameAllocator {
         crate::kinfo!("(PMM) Inicializando BitmapFrameAllocator...");
 
         // 1. Calcular memória total e encontrar região para o bitmap
+        crate::kdebug!("(PMM) Passo 1: Escaneando memory map...");
         let (max_phys, _usable_regions) = self.scan_memory_map(boot_info);
+        crate::kdebug!(
+            "(PMM) max_phys={:#x} ({} MB)",
+            max_phys.as_u64(),
+            max_phys.as_u64() / (1024 * 1024)
+        );
 
         // 2. Calcular tamanho do bitmap
+        crate::kdebug!("(PMM) Passo 2: Calculando tamanho do bitmap...");
         self.total_frames = max_phys.as_usize() / PAGE_SIZE;
         self.stats.total_frames = self.total_frames;
 
         let bitmap_size_bytes = (self.total_frames + 7) / 8;
         let bitmap_size_u64 = (bitmap_size_bytes + 7) / 8;
         self.bitmap_len = bitmap_size_u64;
+        crate::kdebug!(
+            "(PMM) total_frames={}, bitmap_size={}KB",
+            self.total_frames,
+            (bitmap_size_u64 * 8) / 1024
+        );
 
         // 3. Alocar região física para o bitmap
+        crate::kdebug!("(PMM) Passo 3: Encontrando região para bitmap...");
         let bitmap_phys = self.find_bitmap_region(boot_info, bitmap_size_u64 * 8);
+        crate::kdebug!("(PMM) bitmap_phys={:#x}", bitmap_phys.as_u64());
 
         // 4. Mapear (HHDM) e limpar bitmap
+        crate::kdebug!("(PMM) Passo 4: Convertendo phys_to_virt...");
         self.bitmap_ptr = addr::phys_to_virt(bitmap_phys).as_mut_ptr();
         crate::kdebug!(
-            "(PMM) Bitmap em phys={:?} virt={:p}",
+            "(PMM) Bitmap em phys={:?} virt={:p} size={}KB",
             bitmap_phys,
-            self.bitmap_ptr
+            self.bitmap_ptr,
+            (self.bitmap_len * 8) / 1024
         );
 
         // Memset 0xFF (tudo ocupado inicialmente)
-        memops::memset(self.bitmap_ptr as *mut u8, 0xFF, self.bitmap_len * 8);
+        crate::kdebug!("(PMM) Passo 5: memset bitmap...");
+
+        // Debug: Testar escrita de um único byte primeiro
+        crate::kdebug!(
+            "(PMM) Testando escrita de 1 byte em {:p}...",
+            self.bitmap_ptr
+        );
+        core::ptr::write_volatile(self.bitmap_ptr as *mut u8, 0xFF);
+        crate::kdebug!("(PMM) Escrita de 1 byte OK!");
+
+        // Memset manual para evitar possível problema com otimização
+        let ptr = self.bitmap_ptr as *mut u8;
+        let len = self.bitmap_len * 8;
+        crate::kdebug!("(PMM) Iniciando memset de {} bytes...", len);
+        for i in 0..len {
+            core::ptr::write_volatile(ptr.add(i), 0xFF);
+        }
+        crate::kdebug!("(PMM) memset completo!");
 
         // 5. Liberar regiões usable
         self.init_free_regions(boot_info, bitmap_phys, (bitmap_size_u64 * 8) as u64);
@@ -172,18 +205,53 @@ impl BitmapFrameAllocator {
     }
 
     fn find_bitmap_region(&self, boot_info: &BootInfo, size_bytes: usize) -> PhysAddr {
+        // O bootloader mapeia os primeiros 4GB com huge pages de 2MB.
+        // Quando mapeia o kernel, ele QUEBRA a huge page que contém o kernel,
+        // criando páginas de 4KB apenas para o kernel, deixando as outras não mapeadas.
+        //
+        // Solução: alocar bitmap na PRÓXIMA huge page INTACTA após o kernel.
+        const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024; // 2MB
+
+        let kernel_end = boot_info.kernel_phys_addr + boot_info.kernel_size;
+
+        // Alinhar ao próximo limite de 2MB (próxima huge page intacta)
+        let next_huge_page = (kernel_end + HUGE_PAGE_SIZE - 1) & !(HUGE_PAGE_SIZE - 1);
+
+        crate::kdebug!(
+            "(PMM) kernel_end={:#x}, próxima huge page intacta={:#x}",
+            kernel_end,
+            next_huge_page
+        );
+
         let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
         let map_len = boot_info.memory_map_len as usize;
 
         for i in 0..map_len {
             unsafe {
                 let entry = &*map_ptr.add(i);
-                if entry.typ == MemoryType::Usable && entry.len >= size_bytes as u64 {
-                    let end_addr = entry.base + entry.len;
-                    let bitmap_start = (end_addr - size_bytes as u64) & !(PAGE_SIZE as u64 - 1);
+                if entry.typ == MemoryType::Usable {
+                    let entry_start = entry.base;
+                    let entry_end = entry.base + entry.len;
 
-                    if bitmap_start >= entry.base {
-                        return PhysAddr::new(bitmap_start);
+                    // Região deve conter espaço APÓS next_huge_page
+                    if entry_end > next_huge_page {
+                        // Calcular início efetivo dentro desta região
+                        let effective_start = core::cmp::max(entry_start, next_huge_page);
+
+                        // Verificar se há espaço suficiente
+                        if entry_end >= effective_start + size_bytes as u64 {
+                            // Alinhar
+                            let bitmap_start =
+                                (effective_start + PAGE_SIZE as u64 - 1) & !(PAGE_SIZE as u64 - 1);
+
+                            if bitmap_start + size_bytes as u64 <= entry_end {
+                                crate::kdebug!(
+                                    "(PMM) Encontrada região para bitmap: {:#x} (após kernel)",
+                                    bitmap_start
+                                );
+                                return PhysAddr::new(bitmap_start);
+                            }
+                        }
                     }
                 }
             }
