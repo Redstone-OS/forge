@@ -19,10 +19,12 @@
 // - DEBUG: Informações de debugging
 // - TRACE: Detalhes extremos (cada operação)
 //
-// FEATURES:
+// FEATURES (MUTUAMENTE EXCLUSIVAS):
 // - no_logs:   Remove 100% dos logs (custo zero no binário)
-// - log_info:  Apenas ERROR, WARN, INFO
-// - log_trace: Todos os níveis (padrão)
+// - log_error: Apenas ERROR, WARN, [OK]
+// - log_info:  ERROR, WARN, INFO, [OK]
+// - log_debug: ERROR, WARN, INFO, DEBUG, [OK] (sem TRACE)
+// - log_trace: Todos os níveis (padrão para dev)
 //
 // COMO USAR (NOVA SINTAXE):
 //
@@ -126,11 +128,12 @@ macro_rules! kwarn {
 // MACROS DE LOG - NÍVEL INFO
 // =============================================================================
 //
-// kinfo! - Ativo exceto com no_logs
+// kinfo! - Ativo com log_info, log_debug, ou log_trace
+// Desabilitado com log_error ou no_logs.
 // Usado para eventos importantes do fluxo normal.
 //
 
-#[cfg(not(feature = "no_logs"))]
+#[cfg(any(feature = "log_info", feature = "log_debug", feature = "log_trace"))]
 #[macro_export]
 macro_rules! kinfo {
     ($msg:expr) => {{
@@ -146,7 +149,7 @@ macro_rules! kinfo {
     }};
 }
 
-#[cfg(feature = "no_logs")]
+#[cfg(not(any(feature = "log_info", feature = "log_debug", feature = "log_trace")))]
 #[macro_export]
 macro_rules! kinfo {
     ($($t:tt)*) => {{}};
@@ -156,11 +159,12 @@ macro_rules! kinfo {
 // MACROS DE LOG - NÍVEL DEBUG
 // =============================================================================
 //
-// kdebug! - Ativo apenas com log_trace ou log_info
+// kdebug! - Ativo apenas com log_trace ou log_debug
 // Usado para informações de debugging.
+// NOTA: NÃO é ativado por log_info (log_info = INFO/WARN/ERROR apenas)
 //
 
-#[cfg(any(feature = "log_trace", feature = "log_info"))]
+#[cfg(any(feature = "log_trace", feature = "log_debug"))]
 #[macro_export]
 macro_rules! kdebug {
     ($msg:expr) => {{
@@ -176,7 +180,7 @@ macro_rules! kdebug {
     }};
 }
 
-#[cfg(not(any(feature = "log_trace", feature = "log_info")))]
+#[cfg(not(any(feature = "log_trace", feature = "log_debug")))]
 #[macro_export]
 macro_rules! kdebug {
     ($($t:tt)*) => {{}};

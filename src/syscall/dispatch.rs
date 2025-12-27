@@ -17,8 +17,12 @@ pub extern "C" fn syscall_dispatcher(ctx: &mut ContextFrame) {
     let args = SyscallArgs::from_context(ctx);
 
     crate::ktrace!("(Syscall) num=", args.num);
-    crate::klog!(" arg1=", args.arg1, " arg2=", args.arg2);
-    crate::knl!();
+    // Args só aparecem em log_trace (muito verbose para desenvolvimento normal)
+    #[cfg(feature = "log_trace")]
+    {
+        crate::klog!(" arg1=", args.arg1, " arg2=", args.arg2);
+        crate::knl!();
+    }
 
     let result = dispatch(&args);
 

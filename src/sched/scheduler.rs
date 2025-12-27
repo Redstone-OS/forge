@@ -126,6 +126,8 @@ impl Scheduler {
             static mut TICK_COUNT: u64 = 0;
             unsafe {
                 TICK_COUNT += 1;
+                // Apenas em log_trace e a cada 100 ticks
+                #[cfg(feature = "log_trace")]
                 if TICK_COUNT % 100 == 1 {
                     crate::klog!("[TRAC] (Sched) switch: [", old_rsp_ptr, " -> ", next_rsp);
                     crate::klog!("] tarefa=", next_id.as_u64());

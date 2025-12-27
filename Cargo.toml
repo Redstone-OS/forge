@@ -18,7 +18,7 @@
 
 [package]
 name = "forge"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 authors = ["Redstone OS Team"]
 description = "Industrial-Grade Microkernel for Redstone OS"
@@ -66,17 +66,24 @@ default = ["log_trace", "self_test"]
 # ---------------------------------------------------------------------------
 # Estes são MUTUAMENTE EXCLUSIVOS. Use apenas um por vez.
 #
-# no_logs:   RELEASE - Remove TODOS os logs do binário. Custo ZERO.
-#            Os macros kinfo!, kdebug!, etc. viram expressões vazias.
+# no_logs:   PRODUÇÃO - Remove TODOS os logs do binário. Custo ZERO.
 #
-# log_info:  DEV - Apenas logs importantes (INFO, WARN, ERROR).
-#            DEBUG e TRACE são removidos.
+# log_error: PRODUÇÃO LEVE - Apenas ERROR, WARN, [OK].
+#            Sem INFO/DEBUG/TRACE. Minimal output.
 #
-# log_trace: DEBUG - Todos os níveis de log ativos.
-#            Mais verbose, ideal para debugging profundo.
+# log_info:  RELEASE - ERROR, WARN, INFO, [OK].
+#            Sem DEBUG/TRACE. Bom para releases com diagnóstico básico.
+#
+# log_debug: DESENVOLVIMENTO - ERROR, WARN, INFO, DEBUG, [OK].
+#            Sem TRACE. Ideal para desenvolvimento diário.
+#
+# log_trace: DEBUGGING PROFUNDO - Todos os níveis de log ativos.
+#            Máxima verbosidade. Cada syscall, alocação, etc.
 # ---------------------------------------------------------------------------
 no_logs = []
+log_error = []
 log_info = []
+log_debug = []
 log_trace = []
 
 # ---------------------------------------------------------------------------
@@ -122,22 +129,81 @@ numa = [] # NUMA-aware allocation
 # =============================================================================
 # PROFILES
 # =============================================================================
+#
+# ESTRATÉGIA DE BUILD:
+# - Use release-debug como PADRÃO de desenvolvimento
+# - Use release-trace para debugging profundo
+# - Use release-test para CI/CD
+# - Use release (ou release-minimal) para produção
+#
+# O perfil 'dev' é mantido para compatibilidade, mas opt-level=0 para evitar
+# problemas de otimização com funções naked/asm.
+# =============================================================================
 
 [profile.dev]
 panic = "abort"
-opt-level = 1
+opt-level = 0          # MUDANÇA: Era 1, causava bugs com naked functions
 lto = false
 codegen-units = 1
 debug = true
 strip = false
 overflow-checks = true
 
-
 [profile.release]
 panic = "abort"
-opt-level = 3
-lto = true
+opt-level = 2            # MUDANÇA: 3 era muito agressivo, corrompia o RSP
+lto = "thin"             # MUDANÇA: "true" (full) era muito agressivo
 codegen-units = 1
-debug = false
-strip = true
+debug = true             # MUDANÇA: Manter símbolos para debugging
+strip = false            # MUDANÇA: Não strippar
+debug-assertions = false # CRÍTICO: debug_assert usa formatting que gera SSE
 overflow-checks = false
+
+# -----------------------------------------------------------------------------
+# RELEASE-DEBUG: Padrão para Desenvolvimento
+# -----------------------------------------------------------------------------
+# Otimizado o suficiente para não causar problemas, mas com símbolos debug
+# e logs completos. Use com: --features log_debug
+[profile.release-debug]
+inherits = "release"
+lto = false              # Build mais rápido
+strip = false            # Mantém símbolos para GDB
+debug = true             # Debug info completo
+debug-assertions = false # CRÍTICO: debug_assert usa formatting que gera SSE
+opt-level = 2            # Otimização moderada
+
+# -----------------------------------------------------------------------------
+# RELEASE-TRACE: Debugging Profundo
+# -----------------------------------------------------------------------------
+# Máxima verbosidade e verificações. Use quando algo está muito errado.
+# Use com: --features log_trace
+[profile.release-trace]
+inherits = "release"
+lto = false
+strip = false
+debug = true
+debug-assertions = false # CRÍTICO: debug_assert usa formatting que gera SSE
+opt-level = 2
+overflow-checks = true   # Detecta overflows aritméticos
+
+# -----------------------------------------------------------------------------
+# RELEASE-TEST: Para CI/CD e Testes Automatizados
+# -----------------------------------------------------------------------------
+# Rápido de compilar, logs moderados. Use com: --features log_info
+[profile.release-test]
+inherits = "release"
+lto = "thin"         # LTO mais rápido
+strip = false
+debug = false
+opt-level = 2
+
+# -----------------------------------------------------------------------------
+# RELEASE-MINIMAL: Produção Final
+# -----------------------------------------------------------------------------
+# Zero overhead, binário mínimo. Use com: --no-default-features --features no_logs
+[profile.release-minimal]
+inherits = "release"
+lto = true
+strip = true
+debug = false
+opt-level = 3

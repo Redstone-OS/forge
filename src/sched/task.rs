@@ -121,14 +121,17 @@ impl Task {
     /// * `user_stack_top`: Endereço virtual (RSP) da stack no userspace.
     /// * `cr3`: Endereço físico da tabela de páginas do processo.
     pub fn new_user(entry_point: u64, user_stack_top: u64, cr3: u64) -> PinnedTask {
-        crate::klog!(
-            "[TRAC] (Task) new_user: entrada=",
-            entry_point,
-            " pilha=",
-            user_stack_top
-        );
-        crate::klog!(" cr3=", cr3);
-        crate::knl!();
+        #[cfg(feature = "log_trace")]
+        {
+            crate::klog!(
+                "[TRAC] (Task) new_user: entrada=",
+                entry_point,
+                " pilha=",
+                user_stack_top
+            );
+            crate::klog!(" cr3=", cr3);
+            crate::knl!();
+        }
 
         let mut task = Box::pin(Self::create_base());
 
@@ -146,9 +149,12 @@ impl Task {
     fn create_base() -> Self {
         const STACK_SIZE: usize = 32 * 1024; // 32KB
 
-        serial::emit_str("[TRAC] (Task) create_base: Alocando ");
-        serial::emit_dec(STACK_SIZE);
-        serial::emit_str(" bytes para pilha...\n\r");
+        #[cfg(feature = "log_trace")]
+        {
+            serial::emit_str("[TRAC] (Task) create_base: Alocando ");
+            serial::emit_dec(STACK_SIZE);
+            serial::emit_str(" bytes para pilha...\n\r");
+        }
 
         // SEGURO: Vec::resize inicializa memória sem unsafe
         let mut kstack = Vec::with_capacity(STACK_SIZE);
@@ -187,13 +193,16 @@ impl Task {
             panic!("Task kstack_top out of bounds");
         }
 
-        crate::klog!(
-            "[DEBG] [Task] setup_stack: rip=",
-            rip,
-            " kstack_top=",
-            self.kstack_top
-        );
-        crate::knl!();
+        #[cfg(any(feature = "log_debug", feature = "log_trace"))]
+        {
+            crate::klog!(
+                "[DEBG] [Task] setup_stack: rip=",
+                rip,
+                " kstack_top=",
+                self.kstack_top
+            );
+            crate::knl!();
+        }
 
         unsafe {
             let mut ptr = self.kstack_top as *mut u64;

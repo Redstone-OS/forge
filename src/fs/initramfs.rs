@@ -19,18 +19,18 @@ impl Initramfs {
     /// Cria o FS a partir de um slice de memória contendo o TAR.
     pub fn new(data: &'static [u8]) -> Self {
         crate::kdebug!("(Initramfs) Parsing arquivo TAR. bytes=", data.len() as u64);
-        crate::ktrace!("(Initramfs) [1] Criando Vec...");
+        crate::kdebug!("(Initramfs) [1] Criando Vec...");
 
         // Criar Vec vazio primeiro, sem pré-alocação para evitar SSE
         let files: Vec<Arc<TarFile>> = Vec::new();
 
-        crate::ktrace!("(Initramfs) [2] Vec criado, construindo struct...");
+        crate::kdebug!("(Initramfs) [2] Vec criado, construindo struct...");
 
         let mut fs = Self { data, files };
 
-        crate::ktrace!("(Initramfs) [3] Struct pronta, chamando parse...");
+        crate::kdebug!("(Initramfs) [3] Struct pronta, chamando parse...");
         fs.parse();
-        crate::ktrace!("(Initramfs) [4] Parse concluído");
+        crate::kdebug!("(Initramfs) [4] Parse concluído");
         fs
     }
 
@@ -40,8 +40,24 @@ impl Initramfs {
         // Parsing simplificado de TAR (USTAR)
         let mut offset = 0usize;
 
+        crate::ktrace!(
+            "(Initramfs) parse: [0] offset=0, data.len=",
+            self.data.len() as u64
+        );
+        crate::ktrace!(
+            "(Initramfs) parse: [0a] data.ptr=",
+            self.data.as_ptr() as u64
+        );
+
         while offset + 512 <= self.data.len() {
-            let header = &self.data[offset..offset + 512];
+            crate::ktrace!("(Initramfs) parse: [LOOP] offset=", offset as u64);
+
+            // Criar slice do header manualmente para evitar panic de bounds
+            let header_ptr = unsafe { self.data.as_ptr().add(offset) };
+            crate::ktrace!("(Initramfs) parse: [LOOP] header_ptr=", header_ptr as u64);
+
+            let header = unsafe { core::slice::from_raw_parts(header_ptr, 512) };
+            crate::ktrace!("(Initramfs) parse: [LOOP] header criado OK");
 
             // Verificar fim do arquivo (bloco de zeros) usando while manual
             let mut all_zero = true;

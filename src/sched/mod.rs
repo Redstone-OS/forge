@@ -51,7 +51,18 @@ extern "C" {
 }
 
 /// Trampolim para pular para Userspace.
+///
+/// # Safety
+/// Esta função NUNCA deve ser chamada diretamente. É um alvo de salto
+/// preparado na stack pela `Task::setup_stack`. Ela executa IRETQ para
+/// transicionar de Ring 0 para Ring 3.
+///
+/// # Atributos Críticos
+/// - `#[naked]`: Sem preâmbulo/epílogo de função (também impede inlining)
+/// - `#[no_mangle]`: Nome de símbolo estável - ESSENCIAL para que o endereço
+///   seja resolvido corretamente em TODOS os níveis de otimização (opt-level 0-3)
 #[naked]
+#[no_mangle]
 pub unsafe extern "C" fn user_entry_trampoline() {
     core::arch::asm!(
         // Restaurar segmentos de dados de usuário (Ring 3)
