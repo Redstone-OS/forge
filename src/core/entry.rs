@@ -43,6 +43,8 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     crate::kinfo!("Protocolo de Boot v", boot_info.version as u64);
 
+    crate::kok!("Iniciando o Forge v0.0.4");
+
     // 3. Inicializar Arquitetura (HAL)
     // Configura GDT (segmentação) e IDT (tratamento de interrupções/exceções).
     // Crítico fazer isso antes de qualquer operação que possa gerar falhas (ex: acesso a memória inválida).
@@ -52,7 +54,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::arch::platform::idt::init();
     }
 
-    // Testes de arch movidos para bloco unificado antes do PID1
+    crate::kok!("CPU Inicializada");
 
     // 4. Gerenciamento de Memória (PMM, VMM, Heap)
     // Inicializa o alocador de frames físicos, paginação e o Heap do kernel.
@@ -62,7 +64,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::mm::init(boot_info);
     }
 
-    // Testes de MM movidos para bloco unificado antes do PID1
+    crate::kok!("Memória Inicializada");
 
     // 5. Drivers Básicos (Hardware Timer & Interrupt Controller)
     // Configura o PIC (Programmable Interrupt Controller) para não conflitar com exceções da CPU
@@ -84,27 +86,30 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         );
     }
 
-    // Testes de drivers movidos para bloco unificado antes do PID1
+    crate::kok!("Drivers Inicializados");
 
     // 6. Subsistemas Lógicos
     // Inicializa estruturas de IPC (Portas, Mensagens) e Filesystem (VFS).
     crate::ipc::init();
-    // Testes de IPC movidos para bloco unificado antes do PID1
+
+    crate::kok!("IPC Inicializado");
 
     crate::fs::init(boot_info);
-    // Testes de FS movidos para bloco unificado antes do PID1
+
+    crate::kok!("FS Inicializado");
 
     // Inicializar Vídeo (após memória e antes do console real)
     // Agora inicializamos o CONSOLE, que gerencia o vídeo + texto.
     crate::drivers::console::init_console(boot_info.framebuffer);
 
-    crate::kinfo!("[Video] Video ativado");
-    crate::kinfo!("[Console] Redstone OS v0.1.0 - Console Ativado!");
+    crate::kok!("Video Inicializado");
 
     // 7. Scheduler (Multitarefa)
     // Inicializa a fila de processos e cria as tarefas iniciais (Kernel Tasks).
     crate::kinfo!("(Core) Ativando escalonador multitarefa...");
     crate::sched::scheduler::init();
+
+    crate::kok!("Scheduler Inicializado");
 
     // =========================================================================
     // SELF-TESTS: Executados APÓS todos os inits, ANTES do PID1
@@ -155,7 +160,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 8. O Grande Salto (Enable Interrupts)
     // Habilita interrupções (STI). A partir deste ponto, o Timer vai disparar
     // e o Scheduler assumirá o controle da CPU periodicamente.
-    crate::kinfo!("Habilitando Interrupções - Sistema Ativo");
+    crate::kok!("Habilitando Interrupções - Sistema Ativo");
 
     // SAFETY: Tudo está configurado. Habilitar interrupções é seguro e necessário.
     unsafe {

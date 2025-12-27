@@ -97,8 +97,6 @@ pub unsafe fn init(boot_info: &'static crate::core::handoff::BootInfo) {
     // 4. Guard Page: desmapeia página de guarda da stack para detectar stack overflow
     crate::kinfo!("(MM) Configurando guard page da stack...");
     setup_guard_page();
-
-    crate::kok!("(MM) Subsistema de memória inicializado com sucesso!");
 }
 
 /// Configura a guard page da stack do kernel.
