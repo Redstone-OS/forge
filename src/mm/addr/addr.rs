@@ -22,12 +22,13 @@ use crate::mm::pmm::FRAME_SIZE;
 
 /// Offset para conversão físico → virtual
 ///
-/// O bootloader cria identity map 0-4GB, então:
+/// O bootloader agora cria identity map para toda a RAM disponível, então:
 /// - phys 0x1000 → virt 0x1000 (identity)
 ///
-/// Para endereços físicos < 4GB, podemos usar identity map diretamente.
-/// Para endereços > 4GB, precisaríamos de um mapeamento explícito.
-pub const PHYS_IDENTITY_LIMIT: u64 = 0x1_0000_0000; // 4 GB
+/// O limite é aumentado para 512GB para suportar sistemas com muita RAM.
+/// Na prática, o bootloader mapeia apenas até o endereço físico máximo
+/// reportado pelo memory map + margem.
+pub const PHYS_IDENTITY_LIMIT: u64 = 0x80_0000_0000; // 512 GB
 
 /// Converte endereço físico para ponteiro virtual acessível.
 ///
