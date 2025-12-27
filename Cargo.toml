@@ -24,6 +24,20 @@ authors = ["Redstone OS Team"]
 description = "Industrial-Grade Microkernel for Redstone OS"
 license = "MIT"
 
+[lib]
+test = false
+doctest = false
+harness = false
+bench = false
+
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+test = false
+harness = false
+bench = false
+
+
 [dependencies]
 # Sincronização e Concorrência (Essencial para Mutex/Spinlocks)
 spin = "0.10.0"
