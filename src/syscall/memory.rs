@@ -45,7 +45,7 @@ pub fn sys_alloc(size: usize, flags: usize) -> SysResult<usize> {
 
     // Arredondar para páginas
     let page_size = 4096usize;
-    let pages = (size + page_size - 1) / page_size;
+    let _pages = (size + page_size - 1) / page_size;
 
     let _flags = flags as u32;
 

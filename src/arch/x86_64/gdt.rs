@@ -198,7 +198,7 @@ pub unsafe fn init() {
     };
     // Copiar campos packed para variáveis locais (evita E0793)
     let gdt_base = gdt_ptr.base;
-    let gdt_limit = gdt_ptr.limit;
+    let _gdt_limit = gdt_ptr.limit;
     crate::ktrace!("(GDT) GDTR base=", gdt_base);
 
     asm!("lgdt [{}]", in(reg) &gdt_ptr, options(readonly, nostack, preserves_flags));

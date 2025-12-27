@@ -4,6 +4,7 @@ use core::ptr::NonNull;
 // use crate::mm::config::PAGE_SIZE;
 
 /// Tamanho mínimo de bloco no Slab (16 bytes)
+#[allow(dead_code)]
 const MIN_BLOCK_SIZE: usize = 16;
 /// Tamanho máximo de bloco gerenciado pelo Slab (2048 bytes)
 /// Alocações maiores vão direto para o Buddy.
@@ -15,6 +16,7 @@ const CANARY_END: u64 = 0xBAAD_F00D_DEAD_C0DE;
 const CANARY_SIZE: usize = core::mem::size_of::<u64>();
 
 /// Cabeçalho de um bloco livre dentro de um Slab
+#[allow(dead_code)]
 struct FreeObject {
     next: Option<NonNull<FreeObject>>,
 }

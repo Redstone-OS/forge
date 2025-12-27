@@ -76,6 +76,7 @@ impl TestCase {
 ///
 /// Se algum teste falhar, o kernel entra em panic.
 /// Isso garante que o kernel só prossegue se todos os testes passarem.
+#[allow(unused_assignments)]
 pub fn run_test_suite(suite_name: &str, tests: &[TestCase]) {
     // Output simplificado - apenas 1 linha de abertura
     crate::klog!(crate::core::logging::P_INFO);
@@ -86,6 +87,7 @@ pub fn run_test_suite(suite_name: &str, tests: &[TestCase]) {
     crate::klog!(" testes)\n");
 
     let mut passed = 0usize;
+    #[allow(unused_variables, unused_assignments)]
     let mut failed = 0usize;
     let mut skipped = 0usize;
 

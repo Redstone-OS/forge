@@ -138,7 +138,7 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
 
                 crate::ktrace!("(Elf) map_page: virt=", curr);
                 crate::ktrace!("(Elf) map_page: phys=", frame.addr());
-                if let Err(e) = vmm::map_page(curr, frame.addr(), page_flags) {
+                if let Err(_e) = vmm::map_page(curr, frame.addr(), page_flags) {
                     crate::kerror!("(Elf) map_page failed at curr=", curr);
                     return Err(Errno::ENOMEM);
                 }

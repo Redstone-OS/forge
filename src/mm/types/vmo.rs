@@ -109,7 +109,7 @@ pub struct VMO {
     /// Estado de cada página
     pages: Vec<PageState>,
     /// Número de mappings ativos
-    mapping_count: AtomicUsize,
+    // mapping_count: AtomicUsize,
     /// Contagem de referências
     ref_count: AtomicUsize,
 }
@@ -146,7 +146,7 @@ impl VMO {
             size: aligned_size,
             flags,
             pages,
-            mapping_count: AtomicUsize::new(0),
+            // mapping_count: AtomicUsize::new(0),
             ref_count: AtomicUsize::new(1),
         };
 

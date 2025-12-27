@@ -134,7 +134,7 @@ pub unsafe fn init() {
     };
     // Copiar campos packed para variáveis locais (evita E0793)
     let idt_base = idt_ptr.base;
-    let idt_limit = idt_ptr.limit;
+    let _idt_limit = idt_ptr.limit;
     crate::ktrace!("(IDT) IDTR base=", idt_base);
 
     asm!("lidt [{}]", in(reg) &idt_ptr, options(readonly, nostack, preserves_flags));

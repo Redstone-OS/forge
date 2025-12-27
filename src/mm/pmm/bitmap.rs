@@ -401,6 +401,7 @@ impl BitmapFrameAllocator {
     }
 
     /// Verifica se memória contém dados
+    #[allow(dead_code)]
     unsafe fn is_memory_dirty(&self, start: u64, size: u64) -> bool {
         let ptr = addr::phys_to_virt(PhysAddr::new(start)).as_mut_ptr() as *const u64;
         let offsets = [0usize, (size / 2 / 8) as usize, ((size - 8) / 8) as usize];

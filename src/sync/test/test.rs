@@ -15,7 +15,7 @@ pub fn run_sync_tests() {
 
 /// Simula lock/unlock single-thread
 fn test_spinlock_api() -> TestResult {
-    let mut locked = false;
+    let mut locked;
 
     // Lock
     locked = true;

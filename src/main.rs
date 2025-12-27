@@ -46,7 +46,8 @@ pub const KERNEL_STACK_SIZE: usize = 512 * 1024; // 512 KB para debug (508KB út
 #[cfg(not(debug_assertions))]
 pub const KERNEL_STACK_SIZE: usize = 32 * 1024; // 32 KB para release (28KB úteis)
 
-#[repr(align(4096))] // Alinhar a 4KB para guard page funcionar
+#[repr(align(4096))] // Alinha para 4KB para o guard page
+#[allow(dead_code)]
 struct KernelStack([u8; KERNEL_STACK_SIZE]);
 
 /// Guard page size (4KB) - não mapeada, detecta stack overflow
@@ -62,7 +63,7 @@ static mut KERNEL_STACK: KernelStack = KernelStack([0; KERNEL_STACK_SIZE]);
 /// Guard page marker (deve ser NOT PRESENT no VMM após init)
 /// O VMM deve chamar unmap_page() para este endereço durante init.
 pub fn guard_page_virt() -> u64 {
-    unsafe { &KERNEL_STACK as *const _ as u64 - GUARD_PAGE_SIZE as u64 }
+    unsafe { core::ptr::addr_of!(KERNEL_STACK) as u64 - GUARD_PAGE_SIZE as u64 }
 }
 
 /// Ponto de entrada Naked.

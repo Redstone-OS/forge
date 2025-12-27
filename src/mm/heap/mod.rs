@@ -32,7 +32,7 @@
 //!   - *Risco:* Detectar Heap Overflow antes que corrompa dados vizinhos.
 //! - [ ] **TODO: (Safety)** Implementar **Randomization (ASLR-like)** para o heap base.
 
-use crate::drivers::serial;
+// use crate::drivers::serial;
 use crate::mm::alloc::{BuddyAllocator, SlabAllocator};
 use crate::sync::Mutex;
 use core::alloc::{GlobalAlloc, Layout};
