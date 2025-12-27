@@ -101,13 +101,18 @@ impl Initramfs {
                 crate::ktrace!("(Initramfs) parse: [B1] name.as_bytes()...");
                 let name_bytes = name.as_bytes();
 
-                crate::ktrace!("(Initramfs) parse: [B2] Vec::with_capacity...");
-                // CORREÇÃO: Pre-alocar e usar extend_from_slice em vez de push byte a byte
-                // O loop de pushes consumia stack excessiva em debug mode
-                let mut name_vec: Vec<u8> = Vec::with_capacity(name_bytes.len());
+                crate::ktrace!("(Initramfs) parse: [B2] Vec::new...");
+                // CORREÇÃO: Usar Vec::new() + push byte-a-byte em vez de extend_from_slice
+                // extend_from_slice pode gerar código SSE para cópia otimizada
+                let mut name_vec: Vec<u8> = Vec::new();
 
-                crate::ktrace!("(Initramfs) parse: [B3] extend_from_slice...");
-                name_vec.extend_from_slice(name_bytes);
+                crate::ktrace!("(Initramfs) parse: [B3] copiando bytes manualmente...");
+                // Loop manual para evitar SSE de memcpy/memmove
+                let mut byte_idx = 0usize;
+                while byte_idx < name_bytes.len() {
+                    name_vec.push(name_bytes[byte_idx]);
+                    byte_idx += 1;
+                }
                 crate::ktrace!("(Initramfs) parse: [B4] cópia concluída");
 
                 crate::ktrace!("(Initramfs) parse: [C] convertendo para String...");

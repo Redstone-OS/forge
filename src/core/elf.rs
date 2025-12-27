@@ -83,11 +83,6 @@ pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
         let ph = &*(data.as_ptr().add(offset) as *const ProgramHeader);
 
         if ph.typ == PT_LOAD {
-            crate::ktrace!("(Elf) PT_LOAD: vaddr=", ph.vaddr);
-            crate::klog!(" (memsz=", ph.memsz, " filesz=", ph.filesz);
-            crate::klog!(")");
-            crate::knl!();
-
             if ph.memsz == 0 {
                 continue;
             }
