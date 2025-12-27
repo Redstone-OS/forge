@@ -42,6 +42,10 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_SEND_MSG] = Some(super::super::ipc::sys_send_msg_wrapper);
     table[SYS_RECV_MSG] = Some(super::super::ipc::sys_recv_msg_wrapper);
 
+    // === TEMPO (0x50-0x5F) ===
+    table[SYS_CLOCK_GET] = Some(super::super::time::sys_clock_get_wrapper);
+    table[SYS_SLEEP] = Some(super::super::time::sys_sleep_wrapper);
+
     // === FILESYSTEM (0x60-0x6F) ===
     table[SYS_OPEN] = Some(super::super::fs::sys_open_wrapper);
     table[SYS_CLOSE] = Some(super::super::fs::sys_close_wrapper);
@@ -54,12 +58,12 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     // === EVENTS (0x80-0x8F) ===
     table[SYS_POLL] = Some(super::super::event::sys_poll_wrapper);
 
-    // === TEMPO (0x50-0x5F) ===
-    table[SYS_CLOCK_GET] = Some(super::super::time::sys_clock_get_wrapper);
-    table[SYS_SLEEP] = Some(super::super::time::sys_sleep_wrapper);
-
     // === SISTEMA (0xF0-0xFF) ===
     table[SYS_SYSINFO] = Some(super::super::system::sys_sysinfo_wrapper);
+    table[SYS_REBOOT] = Some(super::super::system::sys_reboot_wrapper);
+    table[SYS_POWEROFF] = Some(super::super::system::sys_poweroff_wrapper);
+    table[SYS_CONSOLE_WRITE] = Some(super::super::system::sys_console_write_wrapper);
+    table[SYS_CONSOLE_READ] = Some(super::super::system::sys_console_read_wrapper);
     table[SYS_DEBUG] = Some(super::super::system::sys_debug_wrapper);
 
     table

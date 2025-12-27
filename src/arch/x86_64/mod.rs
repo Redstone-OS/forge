@@ -47,6 +47,7 @@ pub mod interrupts;
 pub mod iommu; // IOMMU (Intel VT-d / AMD-Vi) para isolamento de DMA
 pub mod memory;
 pub mod ports;
+pub mod syscall; // Suporte à instrução syscall
 
 // Re-exporta a implementação concreta de CPU para uso genérico
 pub use cpu::CpuidResult;

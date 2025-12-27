@@ -59,8 +59,9 @@ pub use numbers::*;
 pub fn init() {
     crate::kinfo!("(Syscall) Inicializando subsistema de syscalls...");
 
-    // TODO: Setup MSRs para syscall instruction
-    // init_syscall_msr();
+    unsafe {
+        crate::arch::x86_64::syscall::init();
+    }
 
     crate::kinfo!("(Syscall) ABI version=", abi::version::ABI_VERSION as u64);
     crate::kdebug!("(Syscall) Table size=", dispatch::table::TABLE_SIZE as u64);

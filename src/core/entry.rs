@@ -110,6 +110,12 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     crate::kok!("Scheduler Inicializado");
 
+    // 8. Syscall (MSRs para instrução syscall)
+    // Configura STAR, LSTAR, SFMASK para permitir chamadas de sistema via syscall/sysret.
+    crate::syscall::init();
+
+    crate::kok!("Syscall Inicializado");
+
     // =========================================================================
     // SELF-TESTS: Executados APÓS todos os inits, ANTES do PID1
     // =========================================================================

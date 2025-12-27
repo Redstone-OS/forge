@@ -21,8 +21,10 @@ use core::mem::size_of;
 
 pub const KERNEL_CODE_SEL: u16 = 0x08;
 pub const KERNEL_DATA_SEL: u16 = 0x10;
-pub const USER_CODE_SEL: u16 = 0x18 | 3; // RPL 3
-pub const USER_DATA_SEL: u16 = 0x20 | 3; // RPL 3
+// SYSRET: SS = base+8, CS = base+16
+// Com base=0x10: SS=0x18|3=0x1B, CS=0x20|3=0x23
+pub const USER_DATA_SEL: u16 = 0x18 | 3; // RPL 3 - DEVE vir antes de USER_CODE para SYSRET!
+pub const USER_CODE_SEL: u16 = 0x20 | 3; // RPL 3
 pub const TSS_SEL: u16 = 0x28;
 
 // --- Estruturas de Hardware ---
@@ -52,8 +54,9 @@ struct Gdt {
     null: GdtEntry,
     kernel_code: GdtEntry,
     kernel_data: GdtEntry,
-    user_code: GdtEntry,
+    // ORDEM para SYSRET: user_data primeiro, user_code depois
     user_data: GdtEntry,
+    user_code: GdtEntry,
     tss: SystemSegmentEntry,
 }
 
@@ -102,9 +105,11 @@ static mut GDT: Gdt = Gdt {
     // Ring 0 - Kernel
     kernel_code: GdtEntry::new(0x9A, 0x20), // Present, Ring0, Code, Exec/Read, LongMode
     kernel_data: GdtEntry::new(0x92, 0),    // Present, Ring0, Data, Read/Write
-    // Ring 3 - User
-    user_code: GdtEntry::new(0xFA, 0x20), // Present, Ring3, Code, Exec/Read, LongMode
-    user_data: GdtEntry::new(0xF2, 0),    // Present, Ring3, Data, Read/Write
+    // Ring 3 - User (ORDEM IMPORTANTE para SYSRET!)
+    // SYSRET carrega SS de STAR[63:48]+8 e CS de STAR[63:48]+16
+    // Com base=0x10: SS=0x18, CS=0x20
+    user_data: GdtEntry::new(0xF2, 0), // 0x18: Present, Ring3, Data, Read/Write
+    user_code: GdtEntry::new(0xFA, 0x20), // 0x20: Present, Ring3, Code, Exec/Read, LongMode
     // TSS (Preenchido dinamicamente no init)
     tss: SystemSegmentEntry::null(),
 };

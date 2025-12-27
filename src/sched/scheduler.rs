@@ -129,9 +129,9 @@ impl Scheduler {
                 // Apenas em log_trace e a cada 100 ticks
                 #[cfg(feature = "log_trace")]
                 if TICK_COUNT % 100 == 1 {
-                    crate::klog!("[TRAC] (Sched) switch: [", old_rsp_ptr, " -> ", next_rsp);
-                    crate::klog!("] tarefa=", next_id.as_u64());
-                    crate::knl!();
+                    crate::ktrace!("(Sched) Removendo:=", old_rsp_ptr);
+                    crate::ktrace!("(Sched) Adicionando:=", next_rsp);
+                    crate::ktrace!("(Sched) Tarefa=", next_id.as_u64());
                 }
             };
 

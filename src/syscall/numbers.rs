@@ -186,6 +186,26 @@ pub const SYS_POLL: usize = 0x80;
 /// Retorno: bytes escritos ou erro
 pub const SYS_SYSINFO: usize = 0xF0;
 
+/// Reinicia o sistema.
+/// Args: nenhum
+/// Retorno: nunca retorna
+pub const SYS_REBOOT: usize = 0xF1;
+
+/// Desliga o sistema.
+/// Args: nenhum
+/// Retorno: nunca retorna
+pub const SYS_POWEROFF: usize = 0xF2;
+
+/// Escreve na console (serial).
+/// Args: (buf_ptr, len)
+/// Retorno: bytes escritos
+pub const SYS_CONSOLE_WRITE: usize = 0xF3;
+
+/// Lê da console (serial).
+/// Args: (buf_ptr, max_len)
+/// Retorno: bytes lidos
+pub const SYS_CONSOLE_READ: usize = 0xF4;
+
 /// Comandos de debug (apenas em builds debug).
 /// Args: (cmd, arg_ptr, arg_len)
 /// Retorno: depende do comando

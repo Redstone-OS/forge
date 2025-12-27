@@ -118,14 +118,9 @@ pub unsafe fn init() {
     IDT.entries[32] = IdtEntry::new(interrupts::timer_handler as usize);
     crate::ktrace!("(IDT) IRQ 0 (Timer) registrado");
 
-    // Syscall API (Vector 0x80)
-    extern "C" {
-        fn syscall_handler();
-    }
-    let mut syscall_entry = IdtEntry::new(syscall_handler as usize);
-    syscall_entry.type_attr = 0xEE; // Set DPL=3
-    IDT.entries[0x80] = syscall_entry;
-    crate::ktrace!("(IDT) Vetor 0x80 (Syscall) configurado");
+    // Syscall: agora usamos a instrução 'syscall' via MSRs (não int 0x80)
+    // A configuração é feita em arch::x86_64::syscall::init()
+    crate::ktrace!("(IDT) Syscall via instrução syscall (MSRs)");
 
     // Carregar IDT
     let idt_ptr = IdtDescriptor {
