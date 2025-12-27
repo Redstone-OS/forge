@@ -35,7 +35,7 @@ impl SizeClass {
         }
     }
 
-    /// NOTA: Usa assembly para evitar SSE
+    /// NOTA: SSE desabilitado no target, write_volatile é seguro.
     unsafe fn push(&mut self, ptr: *mut u8) {
         let obj_ptr = ptr as *mut usize; // Ponteiro para o campo 'next'
         let next_val = match self.free_list {
@@ -43,30 +43,19 @@ impl SizeClass {
             None => 0, // null
         };
 
-        // Escrever usando assembly
-        core::arch::asm!(
-            "mov [{0}], {1}",
-            in(reg) obj_ptr,
-            in(reg) next_val,
-            options(nostack, preserves_flags)
-        );
+        // Escrever usando write_volatile (seguro: SSE desabilitado no target)
+        core::ptr::write_volatile(obj_ptr, next_val);
 
         self.free_list = NonNull::new(ptr as *mut FreeObject);
     }
 
-    /// NOTA: Usa assembly para evitar SSE na leitura
+    /// NOTA: SSE desabilitado no target, read_volatile é seguro.
     unsafe fn pop(&mut self) -> Option<*mut u8> {
         if let Some(obj) = self.free_list {
             let obj_ptr = obj.as_ptr() as *const usize;
 
-            // Ler o campo 'next' usando assembly
-            let next_val: usize;
-            core::arch::asm!(
-                "mov {0}, [{1}]",
-                out(reg) next_val,
-                in(reg) obj_ptr,
-                options(nostack, preserves_flags, readonly)
-            );
+            // Ler o campo 'next' usando read_volatile (seguro: SSE desabilitado)
+            let next_val = core::ptr::read_volatile(obj_ptr);
 
             // Converter o valor lido para Option<NonNull<FreeObject>>
             if next_val == 0 {
@@ -158,23 +147,13 @@ impl SlabAllocator {
         // User = ptr + header_size (header_size ajustado para alinhar User)
         // F = User + payload_size
 
-        // 1. Escrever Start Canary usando assembly
+        // 1. Escrever Start Canary usando write_volatile
         let canary_start_ptr = ptr as *mut u64;
-        core::arch::asm!(
-            "mov [{0}], {1}",
-            in(reg) canary_start_ptr,
-            in(reg) CANARY_START,
-            options(nostack, preserves_flags)
-        );
+        core::ptr::write_volatile(canary_start_ptr, CANARY_START);
 
-        // 2. Escrever End Canary usando assembly
+        // 2. Escrever End Canary usando write_volatile
         let footer_ptr = user_ptr.add(payload_size) as *mut u64;
-        core::arch::asm!(
-            "mov [{0}], {1}",
-            in(reg) footer_ptr,
-            in(reg) CANARY_END,
-            options(nostack, preserves_flags)
-        );
+        core::ptr::write_volatile(footer_ptr, CANARY_END);
 
         user_ptr
     }

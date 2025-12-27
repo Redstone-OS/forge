@@ -199,7 +199,7 @@ impl BuddyAllocator {
 
     /// Insere um bloco na free list de uma ordem
     ///
-    /// NOTA: Usa assembly para evitar SSE em write_volatile
+    /// NOTA: SSE desabilitado no target, write_volatile é seguro.
     unsafe fn push(&mut self, addr: usize, order: usize) {
         use core::sync::atomic::{compiler_fence, Ordering};
 
@@ -211,13 +211,8 @@ impl BuddyAllocator {
             None => 0, // null
         };
 
-        // Escrever usando assembly em vez de write_volatile
-        core::arch::asm!(
-            "mov [{0}], {1}",
-            in(reg) block_ptr,
-            in(reg) next_val,
-            options(nostack, preserves_flags)
-        );
+        // Escrever usando write_volatile (seguro: SSE desabilitado no target)
+        core::ptr::write_volatile(block_ptr, next_val);
 
         compiler_fence(Ordering::SeqCst);
 

@@ -32,10 +32,9 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         Cpu::hang();
     }
 
-    // 1.5. Garantir SSE/FPU inicializado (redundante com _start, mas seguro)
-    unsafe {
-        crate::arch::x86_64::cpu::X64Cpu::init_sse();
-    }
+    // 1.5. SSE DESABILITADO
+    // SSE foi desabilitado no target spec (x86_64-redstone.json).
+    // O compilador não gera instruções SSE, então não precisamos inicializar.
 
     // 2. Inicializar Sistema de Logs
     crate::kinfo!("╔════════════════════════════════════════╗");

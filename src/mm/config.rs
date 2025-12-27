@@ -103,23 +103,8 @@ pub const PAGE_GLOBAL: u64 = 1 << 8;
 pub const PAGE_NO_EXEC: u64 = 1 << 63;
 
 // =============================================================================
-// FUNÇÕES UTILITÁRIAS
+// FUNÇÕES UTILITÁRIAS (Re-exportadas da klib)
 // =============================================================================
 
-/// Alinha valor para cima ao múltiplo de align
-#[inline(always)]
-pub const fn align_up(val: usize, align: usize) -> usize {
-    (val + align - 1) & !(align - 1)
-}
-
-/// Alinha valor para baixo ao múltiplo de align
-#[inline(always)]
-pub const fn align_down(val: usize, align: usize) -> usize {
-    val & !(align - 1)
-}
-
-/// Verifica se valor está alinhado
-#[inline(always)]
-pub const fn is_aligned(val: usize, align: usize) -> bool {
-    val & (align - 1) == 0
-}
+// Funções de alinhamento centralizadas em klib/align.rs
+pub use crate::klib::{align_down, align_up, is_aligned};

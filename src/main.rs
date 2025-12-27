@@ -24,17 +24,18 @@ extern "C" {
     static __bss_end: u8;
 }
 
-// Stack do kernel (64 KB) + Guard Page.
+// Stack do kernel (256 KB) + Guard Page.
+// Aumentado para suportar operações de memória grandes durante testes.
 // A guard page é uma página NÃO mapeada após a stack que causa page fault
 // em caso de stack overflow, permitindo detecção precoce do problema.
 #[repr(align(16))]
-struct KernelStack([u8; 64 * 1024]);
+struct KernelStack([u8; 256 * 1024]);
 
 /// Guard page size (4KB) - não mapeada, detecta stack overflow
 pub const GUARD_PAGE_SIZE: usize = 4096;
 
 #[no_mangle]
-static KERNEL_STACK: KernelStack = KernelStack([0; 64 * 1024]);
+static KERNEL_STACK: KernelStack = KernelStack([0; 256 * 1024]);
 
 /// Guard page marker (deve ser NOT PRESENT no VMM após init)
 /// O VMM deve chamar unmap_page() para este endereço durante init.
@@ -71,15 +72,11 @@ pub unsafe extern "C" fn _start(boot_info_addr: u64) -> ! {
         "xor rbp, rbp",
 
         // ============================================================
-        // 4. Habilitar SSE (necessário para código Rust)
+        // 4. SSE DESABILITADO no target spec
         // ============================================================
-        "mov rax, cr0",
-        "and ax, 0xFFFB",      // Limpar CR0.EM (bit 2)
-        "or ax, 0x2",          // Setar CR0.MP (bit 1)
-        "mov cr0, rax",
-        "mov rax, cr4",
-        "or ax, 0x600",        // Setar CR4.OSFXSR (bit 9) e CR4.OSXMMEXCPT (bit 10)
-        "mov cr4, rax",
+        // SSE foi desabilitado via x86_64-redstone.json (-sse,-sse2,+soft-float)
+        // O compilador não gerará instruções SSE/AVX, então não precisamos
+        // configurar CR0/CR4 para SSE aqui.
 
         // ============================================================
         // 5. ZERAR BSS (CRÍTICO!)
@@ -112,7 +109,7 @@ pub unsafe extern "C" fn _start(boot_info_addr: u64) -> ! {
         "jmp 2b",
 
         stack = sym KERNEL_STACK,
-        stack_size = const 64 * 1024,
+        stack_size = const 256 * 1024,
         bss_start = sym __bss_start,
         bss_end = sym __bss_end,
         kernel_main = sym kernel_core::entry::kernel_main,
