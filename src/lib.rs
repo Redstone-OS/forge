@@ -60,6 +60,7 @@ pub mod sys; // Definições de Sistema (ABI, Erros) // Primitivas de Sincroniza
 // --- Subsistemas Avançados ---
 pub mod fs; // Sistema de Arquivos Virtual (VFS)
 pub mod ipc; // Comunicação entre Processos
+pub mod module; // Sistema de Módulos de Kernel (Drivers privilegiados)
 pub mod sched; // Scheduler e Tarefas
 pub mod security; // Capabilities
 pub mod syscall; // Interface com Userspace

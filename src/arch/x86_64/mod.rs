@@ -44,6 +44,7 @@ pub mod cpu;
 pub mod gdt;
 pub mod idt;
 pub mod interrupts;
+pub mod iommu; // IOMMU (Intel VT-d / AMD-Vi) para isolamento de DMA
 pub mod memory;
 pub mod ports;
 
