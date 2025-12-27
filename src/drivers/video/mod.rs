@@ -47,7 +47,7 @@ pub unsafe fn init(info: &FramebufferInfo) {
     }
 
     // Limpar tela com cor escura
-    clear_screen(0x001005);
+    clear_screen(0x000000);
 }
 
 /// Limpa a tela com uma cor sólida (formato 0x00RRGGBB).
