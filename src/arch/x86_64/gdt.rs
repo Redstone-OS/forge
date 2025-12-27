@@ -237,6 +237,6 @@ pub unsafe fn init() {
 
     crate::kinfo!("(GDT) Inicializada com sucesso");
 
-    // 4. Inicializar FPU/SSE (Essencial para Rust: memcpy/String)
-    crate::arch::x86_64::cpu::X64Cpu::init_sse();
+    // NOTA: SSE desabilitado no target x86_64-redstone.json
+    // init_sse() removido para evitar problemas com instruções SSE
 }

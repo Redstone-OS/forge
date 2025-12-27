@@ -41,12 +41,32 @@ impl TestCase {
 
     /// Executa o teste e retorna o resultado.
     pub fn run(&self) -> TestResult {
-        crate::kinfo!("[Test] ", self.name);
+        crate::klog!(crate::core::logging::P_INFO);
+        crate::klog!("[Test] ");
+        crate::klog!(self.name);
+        crate::knl!();
+
         let result = (self.func)();
+
         match result {
-            TestResult::Pass => crate::kinfo!("[Test] ✓ ", self.name),
-            TestResult::Fail => crate::kerror!("[Test] ✗ ", self.name),
-            TestResult::Skip => crate::kwarn!("[Test] ⊘ ", self.name),
+            TestResult::Pass => {
+                crate::klog!(crate::core::logging::P_INFO);
+                crate::klog!("[Test] ✓ ");
+                crate::klog!(self.name);
+                crate::knl!();
+            }
+            TestResult::Fail => {
+                crate::klog!(crate::core::logging::P_ERROR);
+                crate::klog!("[Test] ✗ ");
+                crate::klog!(self.name);
+                crate::knl!();
+            }
+            TestResult::Skip => {
+                crate::klog!(crate::core::logging::P_WARN);
+                crate::klog!("[Test] ⊘ ");
+                crate::klog!(self.name);
+                crate::knl!();
+            }
         }
         result
     }
@@ -57,15 +77,19 @@ impl TestCase {
 /// Se algum teste falhar, o kernel entra em panic.
 /// Isso garante que o kernel só prossegue se todos os testes passarem.
 pub fn run_test_suite(suite_name: &str, tests: &[TestCase]) {
-    crate::kinfo!("╔════════════════════════════════════════╗");
-    crate::kinfo!("║  🧪 TEST SUITE: ", suite_name);
-    crate::kinfo!("╚════════════════════════════════════════╝");
+    // Output simplificado - apenas 1 linha de abertura
+    crate::klog!(crate::core::logging::P_INFO);
+    crate::klog!("🧪 [");
+    crate::klog!(suite_name);
+    crate::klog!("] Iniciando (");
+    crate::drivers::serial::emit_hex(tests.len() as u64);
+    crate::klog!(" testes)\n");
 
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut skipped = 0usize;
 
-    // Usar while para evitar iteradores (caso SSE ainda seja problema)
+    // Usar while para evitar iteradores
     let mut i = 0;
     while i < tests.len() {
         let test = &tests[i];
@@ -74,7 +98,10 @@ pub fn run_test_suite(suite_name: &str, tests: &[TestCase]) {
             TestResult::Fail => {
                 failed += 1;
                 // Falha crítica - parar imediatamente
-                crate::kerror!("SUITE FAILED: ", suite_name);
+                crate::klog!(crate::core::logging::P_ERROR);
+                crate::klog!("SUITE FAILED: ");
+                crate::klog!(suite_name);
+                crate::knl!();
                 panic!("Test suite failed - kernel halted");
             }
             TestResult::Skip => skipped += 1,
@@ -82,13 +109,19 @@ pub fn run_test_suite(suite_name: &str, tests: &[TestCase]) {
         i += 1;
     }
 
-    crate::kinfo!("╔════════════════════════════════════════╗");
-    crate::kinfo!("║  ✅ SUITE PASSED: ", suite_name);
-    crate::kinfo!("║  Passed: ", passed as u64);
+    // Output de sucesso simplificado - apenas 1 linha
+    crate::klog!(crate::core::logging::P_INFO);
+    crate::klog!("✅ [");
+    crate::klog!(suite_name);
+    crate::klog!("] ");
+    crate::drivers::serial::emit_hex(passed as u64);
+    crate::klog!(" OK");
     if skipped > 0 {
-        crate::kinfo!("║  Skipped: ", skipped as u64);
+        crate::klog!(", ");
+        crate::drivers::serial::emit_hex(skipped as u64);
+        crate::klog!(" skip");
     }
-    crate::kinfo!("╚════════════════════════════════════════╝");
+    crate::klog!("\n");
 }
 
 /// Macro para criar asserções em testes.

@@ -22,7 +22,7 @@ pub fn run_memory_tests() {
     // Address Tests
     run_test_suite("Addr", super::addr_test::ADDR_TESTS);
 
-    // Allocator Tests (Buddy/Slab)
+    // Allocator Tests (Buddy/Slab) - usa seu próprio run_test_suite internamente
     super::allocator_test::run_alloc_tests();
 
     crate::kinfo!("╔════════════════════════════════════════╗");

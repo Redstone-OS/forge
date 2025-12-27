@@ -85,16 +85,14 @@ impl Initramfs {
                 crate::ktrace!("(Initramfs) parse: [B1] name.as_bytes()...");
                 let name_bytes = name.as_bytes();
 
-                crate::ktrace!("(Initramfs) parse: [B2] Vec::new()...");
-                let mut name_vec: Vec<u8> = Vec::new();
+                crate::ktrace!("(Initramfs) parse: [B2] Vec::with_capacity...");
+                // CORREÇÃO: Pre-alocar e usar extend_from_slice em vez de push byte a byte
+                // O loop de pushes consumia stack excessiva em debug mode
+                let mut name_vec: Vec<u8> = Vec::with_capacity(name_bytes.len());
 
-                crate::ktrace!("(Initramfs) parse: [B3] loop push...");
-                let mut i = 0usize;
-                while i < name_bytes.len() {
-                    name_vec.push(name_bytes[i]);
-                    i += 1;
-                }
-                crate::ktrace!("(Initramfs) parse: [B4] loop concluído");
+                crate::ktrace!("(Initramfs) parse: [B3] extend_from_slice...");
+                name_vec.extend_from_slice(name_bytes);
+                crate::ktrace!("(Initramfs) parse: [B4] cópia concluída");
 
                 crate::ktrace!("(Initramfs) parse: [C] convertendo para String...");
                 let name_str = unsafe { String::from_utf8_unchecked(name_vec) };

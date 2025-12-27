@@ -38,7 +38,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 2. Inicializar Sistema de Logs
     crate::kinfo!("╔════════════════════════════════════════╗");
-    crate::kinfo!("║   Kernel Redstone OS (Forge) - v0.0.3  ║");
+    crate::kinfo!("║   Kernel Redstone OS (Forge) - v0.0.4  ║");
     crate::kinfo!("╚════════════════════════════════════════╝");
 
     crate::kinfo!("Protocolo de Boot v", boot_info.version as u64);
@@ -52,17 +52,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::arch::platform::idt::init();
     }
 
-    #[cfg(feature = "self_test")]
-    {
-        // Agora que temos GDT/IDT, podemos rodar testes com segurança de que exceções serão capturadas.
-        crate::arch::test::run_arch_tests();
-
-        crate::kinfo!("(SelfTest) Validando Core & Bibliotecas...");
-        crate::core::test::run_core_tests();
-        crate::klib::test::run_klib_tests();
-        crate::sys::test::run_sys_tests();
-        crate::sync::test::run_sync_tests();
-    }
+    // Testes de arch movidos para bloco unificado antes do PID1
 
     // 4. Gerenciamento de Memória (PMM, VMM, Heap)
     // Inicializa o alocador de frames físicos, paginação e o Heap do kernel.
@@ -72,11 +62,7 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::mm::init(boot_info);
     }
 
-    #[cfg(feature = "self_test")]
-    {
-        crate::kinfo!("(MM) Executando testes de memória...");
-        crate::mm::test::run_memory_tests();
-    }
+    // Testes de MM movidos para bloco unificado antes do PID1
 
     // 5. Drivers Básicos (Hardware Timer & Interrupt Controller)
     // Configura o PIC (Programmable Interrupt Controller) para não conflitar com exceções da CPU
@@ -98,18 +84,15 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
         );
     }
 
-    #[cfg(feature = "self_test")]
-    crate::drivers::test::run_driver_tests();
+    // Testes de drivers movidos para bloco unificado antes do PID1
 
     // 6. Subsistemas Lógicos
     // Inicializa estruturas de IPC (Portas, Mensagens) e Filesystem (VFS).
     crate::ipc::init();
-    #[cfg(feature = "self_test")]
-    crate::ipc::test::run_ipc_tests();
+    // Testes de IPC movidos para bloco unificado antes do PID1
 
     crate::fs::init(boot_info);
-    #[cfg(feature = "self_test")]
-    crate::fs::test::run_fs_tests();
+    // Testes de FS movidos para bloco unificado antes do PID1
 
     // Inicializar Vídeo (após memória e antes do console real)
     // Agora inicializamos o CONSOLE, que gerencia o vídeo + texto.
@@ -123,11 +106,47 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("(Core) Ativando escalonador multitarefa...");
     crate::sched::scheduler::init();
 
+    // =========================================================================
+    // SELF-TESTS: Executados APÓS todos os inits, ANTES do PID1
+    // =========================================================================
+    // Isso garante que:
+    // 1. Todos os subsistemas estão inicializados
+    // 2. A stack foi liberada dos inits
+    // 3. Se algum teste falhar, o kernel para antes de iniciar userspace
+    // =========================================================================
     #[cfg(feature = "self_test")]
     {
+        crate::kinfo!("═══════════════════════════════════════");
+        crate::kinfo!("        🧪 SELF-TEST");
+        crate::kinfo!("═══════════════════════════════════════");
+
+        // Arch tests
+        crate::arch::test::run_arch_tests();
+
+        // Core subsystems
+        crate::core::test::run_core_tests();
+        crate::klib::test::run_klib_tests();
+        crate::sys::test::run_sys_tests();
+        crate::sync::test::run_sync_tests();
+
+        // Memory subsystem
+        crate::mm::test::run_memory_tests();
+
+        // Drivers
+        crate::drivers::test::run_driver_tests();
+
+        // Logical subsystems
+        crate::ipc::test::run_ipc_tests();
+        crate::fs::test::run_fs_tests();
+
+        // Scheduler & Security
         crate::sched::test::run_sched_tests();
         crate::security::test::run_security_tests();
         crate::syscall::test::run_syscall_tests();
+
+        crate::kinfo!("═══════════════════════════════════════");
+        crate::kinfo!("    ✅ Todos os testes passaram!");
+        crate::kinfo!("═══════════════════════════════════════");
     }
 
     // Tenta carregar o processo de usuário (/init)

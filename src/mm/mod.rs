@@ -103,17 +103,22 @@ pub unsafe fn init(boot_info: &'static crate::core::handoff::BootInfo) {
 
 /// Configura a guard page da stack do kernel.
 ///
-/// Desmapeia a página imediatamente antes da stack do kernel,
-/// causando Page Fault se ocorrer stack overflow.
+/// A guard page é a PRIMEIRA página da struct KernelStack.
+/// Desmapeamos ela para detectar stack overflow quando a stack
+/// crescer até lá (lembre: stack cresce para baixo em x86_64).
+///
+/// Layout da stack:
+///   KERNEL_STACK + 0          : Guard page (4KB) - NÃO MAPEADA
+///   KERNEL_STACK + 4KB        : Início da stack utilizável
+///   KERNEL_STACK + STACK_SIZE : Topo da stack (RSP inicial)
 unsafe fn setup_guard_page() {
-    // Obter endereço da guard page do main.rs
-    // A guard page está ANTES da stack (endereço menor)
     extern "C" {
         static KERNEL_STACK: u8;
     }
 
-    let stack_base = &KERNEL_STACK as *const u8 as u64;
-    let guard_page_addr = stack_base.saturating_sub(4096);
+    // A guard page é DENTRO da stack, nos primeiros 4KB
+    // Isso evita desmapear acidentalmente .data ou outra seção
+    let guard_page_addr = &KERNEL_STACK as *const u8 as u64;
 
     // Desmapear a guard page (marcar como NOT PRESENT)
     // Se já não está mapeada, unmap_page é um no-op seguro

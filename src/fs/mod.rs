@@ -58,17 +58,30 @@ pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
         );
         crate::kdebug!("(VFS) Tamanho do initfs=", boot_info.initramfs_size as u64);
 
+        crate::ktrace!("(VFS) [1] Criando slice...");
+
+        // DEBUG: Verificar se o endereço está acessível
+        let initramfs_ptr = boot_info.initramfs_addr as *const u8;
+        crate::ktrace!("(VFS) [1a] ptr=", initramfs_ptr as u64);
+
+        // Tentar ler primeiro byte para verificar se está mapeado
+        let first_byte = unsafe { core::ptr::read_volatile(initramfs_ptr) };
+        crate::ktrace!("(VFS) [1b] primeiro_byte=", first_byte as u64);
+
+        crate::ktrace!("(VFS) [1c] preparando from_raw_parts...");
+
         // Criar slice unsafe para a memória do initramfs
-        let data = unsafe {
-            core::slice::from_raw_parts(
-                boot_info.initramfs_addr as *const u8,
-                boot_info.initramfs_size as usize,
-            )
-        };
+        let size = boot_info.initramfs_size as usize;
+        crate::ktrace!("(VFS) [1d] size=", size as u64);
+
+        let data = unsafe { core::slice::from_raw_parts(initramfs_ptr, size) };
+        crate::ktrace!("(VFS) [2] Slice criado, len=", data.len() as u64);
 
         // Montar Initramfs como raiz
         crate::kinfo!("(VFS) Montando Initramfs...");
+        crate::ktrace!("(VFS) [3] Chamando Initramfs::new...");
         let initfs = Arc::new(initramfs::Initramfs::new(data));
+        crate::ktrace!("(VFS) [4] Arc criado, montando...");
         vfs::ROOT_VFS.lock().mount_root(initfs);
 
         crate::kinfo!("(VFS) Sistema de arquivos raiz montado com sucesso");

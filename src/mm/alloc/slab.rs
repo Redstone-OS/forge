@@ -139,21 +139,38 @@ impl SlabAllocator {
         crate::ktrace!("(Slab) alloc: [S5] ptr=", ptr as u64);
         // --- Fim Inner Alloc ---
 
+        crate::ktrace!("(Slab) alloc: [S6] header_size=", header_size as u64);
         // Escrever Canaries
         let user_ptr = ptr.add(header_size);
+        crate::ktrace!("(Slab) alloc: [S7] user_ptr=", user_ptr as u64);
 
         // Bloco: [ H | P | User | F ]
         // H = ptr (block start)
         // User = ptr + header_size (header_size ajustado para alinhar User)
         // F = User + payload_size
 
-        // 1. Escrever Start Canary usando write_volatile
-        let canary_start_ptr = ptr as *mut u64;
-        core::ptr::write_volatile(canary_start_ptr, CANARY_START);
+        // 1. Escrever Start Canary byte-a-byte (evita alinhamento u64)
+        let canary_start_ptr = ptr;
+        crate::ktrace!("(Slab) alloc: [S8] escrevendo start canary...");
+        let start_bytes = CANARY_START.to_le_bytes();
+        let mut i = 0usize;
+        while i < 8 {
+            core::ptr::write_volatile(canary_start_ptr.add(i), start_bytes[i]);
+            i += 1;
+        }
+        crate::ktrace!("(Slab) alloc: [S9] start canary OK");
 
-        // 2. Escrever End Canary usando write_volatile
-        let footer_ptr = user_ptr.add(payload_size) as *mut u64;
-        core::ptr::write_volatile(footer_ptr, CANARY_END);
+        // 2. Escrever End Canary byte-a-byte (footer_ptr pode não estar alinhado!)
+        let footer_ptr = user_ptr.add(payload_size);
+        crate::ktrace!("(Slab) alloc: [S10] footer_ptr=", footer_ptr as u64);
+        crate::ktrace!("(Slab) alloc: [S11] escrevendo end canary...");
+        let end_bytes = CANARY_END.to_le_bytes();
+        let mut j = 0usize;
+        while j < 8 {
+            core::ptr::write_volatile(footer_ptr.add(j), end_bytes[j]);
+            j += 1;
+        }
+        crate::ktrace!("(Slab) alloc: [S12] end canary OK");
 
         user_ptr
     }

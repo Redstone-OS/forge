@@ -15,7 +15,7 @@ pub fn run_sys_tests() {
 
 /// Valida formato de versão
 fn test_kernel_version_format() -> TestResult {
-    let version = "0.0.3";
+    let version = "0.0.4";
 
     // Verificação simples: contém pelo menos 2 pontos (SemVer)
     let dot_count = version.as_bytes().iter().filter(|&&b| b == b'.').count();

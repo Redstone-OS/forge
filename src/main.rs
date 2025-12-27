@@ -24,18 +24,40 @@ extern "C" {
     static __bss_end: u8;
 }
 
-// Stack do kernel (256 KB) + Guard Page.
-// Aumentado para suportar operações de memória grandes durante testes.
-// A guard page é uma página NÃO mapeada após a stack que causa page fault
-// em caso de stack overflow, permitindo detecção precoce do problema.
-#[repr(align(16))]
-struct KernelStack([u8; 256 * 1024]);
+// =============================================================================
+// STACK DO KERNEL - TAMANHO DINÂMICO DEBUG/RELEASE
+// =============================================================================
+//
+// Release: 32 KB + 4KB guard = 36 KB total
+// Debug:   512 KB + 4KB guard = 516 KB total
+//
+// A guard page (primeiros 4KB) é desmapeada para detectar stack overflow.
+// A stack cresce de cima para baixo: RSP inicia em (base + size) e decresce.
+// Quando RSP chegar nos primeiros 4KB, ocorre page fault.
+//
+// Layout:
+//   [Guard 4KB | Stack utilizável (SIZE - 4KB) ]
+//    ^base                                    ^RSP inicial
+
+/// Tamanho da stack em bytes (condicional) - INCLUI guard page de 4KB
+#[cfg(debug_assertions)]
+pub const KERNEL_STACK_SIZE: usize = 512 * 1024; // 512 KB para debug (508KB úteis)
+
+#[cfg(not(debug_assertions))]
+pub const KERNEL_STACK_SIZE: usize = 32 * 1024; // 32 KB para release (28KB úteis)
+
+#[repr(align(4096))] // Alinhar a 4KB para guard page funcionar
+struct KernelStack([u8; KERNEL_STACK_SIZE]);
 
 /// Guard page size (4KB) - não mapeada, detecta stack overflow
 pub const GUARD_PAGE_SIZE: usize = 4096;
 
+// CRÍTICO: link_section=".bss" força a stack para o final da memória do kernel.
+// Sem isso, a stack vai para .rodata (logo após .text), e a guard page
+// calculada como (stack_base - 4KB) acaba DENTRO do .text, desmapeando código!
+#[link_section = ".bss"]
 #[no_mangle]
-static KERNEL_STACK: KernelStack = KernelStack([0; 256 * 1024]);
+static mut KERNEL_STACK: KernelStack = KernelStack([0; KERNEL_STACK_SIZE]);
 
 /// Guard page marker (deve ser NOT PRESENT no VMM após init)
 /// O VMM deve chamar unmap_page() para este endereço durante init.
@@ -109,7 +131,7 @@ pub unsafe extern "C" fn _start(boot_info_addr: u64) -> ! {
         "jmp 2b",
 
         stack = sym KERNEL_STACK,
-        stack_size = const 256 * 1024,
+        stack_size = const KERNEL_STACK_SIZE,
         bss_start = sym __bss_start,
         bss_end = sym __bss_end,
         kernel_main = sym kernel_core::entry::kernel_main,

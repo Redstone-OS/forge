@@ -72,26 +72,38 @@ impl Vfs {
 
     /// Resolve um caminho absoluto (ex: "/bin/init").
     pub fn lookup(&self, path: &str) -> Result<Arc<dyn VfsNode>, VfsError> {
-        crate::ktrace!("(Vfs) lookup: Buscando caminho: ");
-        crate::klog!(path);
-        crate::knl!();
+        crate::ktrace!("(Vfs) lookup: [1] entrada");
+
+        crate::ktrace!("(Vfs) lookup: [2] verificando root...");
         let root = self.root.as_ref().ok_or(VfsError::NotFound)?;
+        crate::ktrace!("(Vfs) lookup: [3] root OK");
 
         if path == "/" {
             return Ok(root.clone());
         }
 
+        crate::ktrace!("(Vfs) lookup: [4] clonando root...");
         let current = root.clone();
+        crate::ktrace!("(Vfs) lookup: [5] clone OK");
 
         // Simplificado: normalizar path removendo / inicial
+        crate::ktrace!("(Vfs) lookup: [6] trimming path...");
         let path_trimmed = path.trim_start_matches('/');
+        crate::ktrace!("(Vfs) lookup: [7] trim OK");
 
         // Buscar arquivo na lista (comparando diretamente)
+        crate::ktrace!("(Vfs) lookup: [8] verificando tipo...");
         if current.kind() != NodeType::Directory {
             return Err(VfsError::NotDirectory);
         }
+        crate::ktrace!("(Vfs) lookup: [9] é diretório");
 
+        crate::ktrace!("(Vfs) lookup: [10] listando filhos...");
         let children = current.list()?;
+        crate::ktrace!(
+            "(Vfs) lookup: [11] filhos obtidos, count=",
+            children.len() as u64
+        );
 
         for child in children.iter() {
             let child_name = child.name();
@@ -120,17 +132,13 @@ impl Vfs {
                     }
                 }
                 if is_match {
-                    crate::ktrace!("(Vfs) lookup: Encontrado: ");
-                    crate::klog!(path);
-                    crate::knl!();
+                    crate::ktrace!("(Vfs) lookup: [12] Encontrado!");
                     return Ok(child.clone());
                 }
             }
         }
 
-        crate::ktrace!("(Vfs) lookup: Não encontrado: ");
-        crate::klog!(path);
-        crate::knl!();
+        crate::ktrace!("(Vfs) lookup: [13] Não encontrado");
         Err(VfsError::NotFound)
     }
 }
