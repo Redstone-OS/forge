@@ -1,158 +1,315 @@
+//! # Timer Driver - 100% Assembly Implementation
+//!
 //! Driver do PIT (Programmable Interval Timer) - Intel 8253/8254.
 //!
-//! Este é o timer legado da arquitetura x86. Em sistemas modernos, ele atua como
-//! fallback ou timer de boot até que o APIC Timer ou HPET sejam inicializados.
+//! ## GARANTIAS
+//! - **Zero SSE/AVX**: Todo código I/O é assembly inline puro
+//! - **Determinístico**: Comportamento idêntico em todos os perfis de compilação
 //!
-//! # Responsabilidades
-//! 1. Gerar o "Heartbeat" do sistema (Timer Interrupt).
-//! 2. Contabilizar o tempo global (Ticks/Uptime).
-//! 3. Acionar o Scheduler para preempção.
+//! ## Responsabilidades
+//! 1. Gerar o "Heartbeat" do sistema (Timer Interrupt)
+//! 2. Contabilizar o tempo global (Ticks/Uptime)
+//! 3. Acionar o Scheduler para preempção
 //!
-//! # Limitações
-//! - Frequência base fixa de ~1.19 MHz.
-//! - Depende do PIC (IRQ 0) ou IO-APIC (IRQ 2 override).
-//! - Não é preciso para medições de alta resolução (usar TSC/HPET para isso).
+//! ## Limitações
+//! - Frequência base fixa de ~1.19 MHz
+//! - Depende do PIC (IRQ 0 → Vector 32)
+//! - Não é preciso para medições de alta resolução (usar TSC/HPET para isso)
 
-use crate::arch::x86_64::ports::Port;
-use crate::sync::Mutex;
-use crate::sys::Errno;
-use core::sync::atomic::{AtomicU64, Ordering};
-
-/// Frequência base do oscilador do PIT (1.193182 MHz).
-const BASE_FREQUENCY: u32 = 1_193_182;
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 // Portas de I/O do PIT
-const PORT_CHANNEL0: u16 = 0x40; // Canal 0 (System Timer)
-const PORT_COMMAND: u16 = 0x43; // Registrador de Comando
+const PIT_CHANNEL0: u16 = 0x40; // Channel 0 data (System Timer)
+const PIT_CHANNEL2: u16 = 0x42; // Channel 2 data (PC Speaker)
+const PIT_COMMAND: u16 = 0x43; // Command register
 
-/// Contador global de ticks do sistema (Monotonic Clock).
-/// Incrementado a cada interrupção do timer.
+// Frequência base do oscilador (~1.193182 MHz)
+const PIT_BASE_FREQ: u32 = 1_193_182;
+
+// Contador global de ticks (monotonic clock)
 pub static TICKS: AtomicU64 = AtomicU64::new(0);
 
-/// Driver do Programmable Interval Timer.
-pub struct Pit {
-    channel0: Port<u8>,
-    command: Port<u8>,
-    frequency: u32,
+// Frequência atual configurada
+static FREQUENCY: AtomicU32 = AtomicU32::new(0);
+
+/// Inicializa o PIT com a frequência especificada.
+///
+/// # Arguments
+/// * `freq_hz` - Frequência desejada em Hz (ex: 100 = 10ms tick)
+///
+/// # Returns
+/// Frequência real configurada (pode diferir devido à precisão do divisor).
+///
+/// 100% Assembly I/O - Zero SSE.
+#[inline(never)]
+pub fn init(freq_hz: u32) -> u32 {
+    if freq_hz == 0 || freq_hz > PIT_BASE_FREQ {
+        return 0;
+    }
+
+    let divisor = PIT_BASE_FREQ / freq_hz;
+
+    // Divisor máximo é 65535 (0 = 65536)
+    let divisor = if divisor > 65535 {
+        65535
+    } else {
+        divisor as u16
+    };
+
+    let actual_freq = PIT_BASE_FREQ / (divisor as u32);
+    FREQUENCY.store(actual_freq, Ordering::Relaxed);
+
+    unsafe {
+        core::arch::asm!(
+            // Command: Channel 0, Access mode lobyte/hibyte, Mode 2 (rate generator)
+            // 0x34 = 00 11 010 0 = Channel 0, lo/hi, Mode 2, Binary
+            // Ou usar Mode 3 (square wave) = 0x36
+            "mov dx, {cmd}",
+            "mov al, 0x36",      // Mode 3: Square Wave Generator
+            "out dx, al",
+
+            // Send divisor low byte
+            "mov dx, {ch0}",
+            "mov al, {div_lo}",
+            "out dx, al",
+
+            // Send divisor high byte
+            "mov al, {div_hi}",
+            "out dx, al",
+
+            cmd = const PIT_COMMAND,
+            ch0 = const PIT_CHANNEL0,
+            div_lo = in(reg_byte) (divisor & 0xFF) as u8,
+            div_hi = in(reg_byte) ((divisor >> 8) & 0xFF) as u8,
+            out("al") _,
+            out("dx") _,
+            options(nostack, preserves_flags)
+        );
+    }
+
+    actual_freq
 }
 
-impl Pit {
-    /// Cria uma interface para o PIT.
-    ///
-    /// # Safety
-    /// O caller deve garantir que está rodando em hardware compatível com x86/IBM PC
-    /// e que tem acesso exclusivo às portas 0x40 e 0x43.
-    pub const unsafe fn new() -> Self {
-        Self {
-            channel0: Port::new(PORT_CHANNEL0),
-            command: Port::new(PORT_COMMAND),
-            frequency: 0,
-        }
+/// Lê o contador atual do Channel 0.
+///
+/// Útil para medições precisas de tempo ou one-shot timing.
+///
+/// # Returns
+/// Valor atual do contador (16-bit, decrementa de divisor até 0).
+///
+/// 100% Assembly - Zero SSE.
+#[inline(never)]
+pub fn read_count() -> u16 {
+    let count: u16;
+
+    unsafe {
+        core::arch::asm!(
+            // Latch command for Channel 0 (0x00 = Channel 0, latch)
+            "mov dx, {cmd}",
+            "xor al, al",
+            "out dx, al",
+
+            // Read low byte
+            "mov dx, {ch0}",
+            "in al, dx",
+            "mov ah, al",
+
+            // Read high byte
+            "in al, dx",
+            "xchg al, ah",       // al = low, ah = high
+
+            cmd = const PIT_COMMAND,
+            ch0 = const PIT_CHANNEL0,
+            out("ax") count,
+            out("dx") _,
+            options(nostack, preserves_flags)
+        );
     }
 
-    /// Configura a frequência do Timer (em Hz).
-    ///
-    /// # Arguments
-    /// * `freq`: Frequência desejada (ex: 100Hz = 10ms).
-    ///
-    /// # Returns
-    /// * `Ok(u32)`: Frequência real configurada (devido à precisão do divisor).
-    /// * `Err(Errno)`: Se a frequência for inválida (0 ou muito alta).
-    pub fn set_frequency(&mut self, freq: u32) -> Result<u32, Errno> {
-        crate::kdebug!("(PIT) set_frequency: Desejado freq=", freq as u64);
-
-        if freq == 0 || freq > BASE_FREQUENCY {
-            crate::kwarn!("(PIT) set_frequency: Frequência inválida");
-            return Err(Errno::EINVAL);
-        }
-
-        // Divisor = Base / Freq
-        let divisor = BASE_FREQUENCY / freq;
-
-        // O divisor deve caber em 16 bits (exceto 0 que significa 65536)
-        if divisor > 65535 {
-            crate::kwarn!(
-                "(PIT) set_frequency: Divisor muito grande para freq=",
-                freq as u64
-            );
-            return Err(Errno::EINVAL); // Frequência muito baixa (< 18.2 Hz)
-        }
-
-        let actual_freq = BASE_FREQUENCY / divisor;
-        crate::ktrace!("(PIT) set_frequency: Divisor=", divisor as u64);
-        crate::ktrace!("(PIT) set_frequency: Freq real=", actual_freq as u64);
-
-        unsafe {
-            // Modo de Operação:
-            self.command.write(0x36);
-            crate::ktrace!("(PIT) set_frequency: Comando 0x36 (Square Wave) enviado");
-
-            // Enviar divisor (Low byte, depois High byte)
-            self.channel0.write((divisor & 0xFF) as u8);
-            self.channel0.write((divisor >> 8) as u8);
-            crate::ktrace!("(PIT) set_frequency: LSB/MSB do divisor enviados");
-        }
-
-        self.frequency = actual_freq;
-        crate::kinfo!("(PIT) Frequência configurada para Hz=", actual_freq as u64);
-        Ok(actual_freq)
-    }
-
-    /// Retorna a frequência atual configurada.
-    pub fn frequency(&self) -> u32 {
-        self.frequency
-    }
+    count
 }
-
-/// Instância global do PIT protegida por Mutex.
-/// Usada apenas para configuração inicial; o handler de interrupção não precisa lockar isso
-/// para incrementar ticks (usa Atomic).
-pub static PIT: Mutex<Pit> = Mutex::new(unsafe { Pit::new() });
 
 /// Handler de Interrupção do Timer (IRQ 0 / Vector 32).
 ///
-/// Chamado pelo stub assembly (`interrupts.rs`).
+/// Chamado pelo stub assembly em interrupts.rs.
 /// Este é o "maestro" que dita o ritmo do sistema operacional.
-pub fn handle_timer_interrupt() {
+///
+/// # Responsabilidades
+/// 1. **Timekeeping**: Incrementar contador de ticks (atômico)
+/// 2. **Scheduling**: Verificar quantum e decidir context switch
+/// 3. **Hardware ACK**: Enviar EOI ao PIC
+/// 4. **Context Switch**: Executar troca de contexto se necessário
+pub fn handle_interrupt() {
     // 1. Timekeeping (Crítico e Atômico)
     TICKS.fetch_add(1, Ordering::Relaxed);
 
-    // 2. Scheduling (Política)
-    // Verifica se a tarefa atual estourou seu quantum e precisa ser trocada.
-    // O lock do scheduler deve ser rápido. Em sistemas RT, isso seria separado.
+    // 2. Scheduling
+    // Verifica se a tarefa atual estourou seu quantum e precisa ser trocada
     let switch_info = {
-        // Tenta lockar o scheduler. Se falhar (reentrância?), pulamos este tick.
-        // Em um kernel simples, lock direto é aceitável se garantirmos que IRQs estão off no lock.
         let mut sched = crate::sched::scheduler::SCHEDULER.lock();
         sched.schedule()
     };
 
-    // 3. Hardware ACK (Mecanismo)
-    // Avisa o PIC que a interrupção foi processada para recebermos a próxima.
-    // TODO: Abstrair via trait `InterruptController` para suportar APIC futuramente.
-    unsafe {
-        crate::drivers::pic::PICS.lock().notify_eoi(32); // 32 = Vetor remapeado do IRQ0
-    }
+    // 3. Hardware ACK
+    // Enviar EOI para o PIC para podermos receber a próxima interrupção
+    crate::drivers::pic::send_eoi(0); // IRQ 0
 
-    // 4. Context Switch (Despacho)
-    // Se o scheduler decidiu trocar de tarefa, realizamos a troca de pilhas agora.
-    // Isso deve ser a ÚLTIMA coisa feita na função, pois não retornaremos para a linha seguinte
-    // no contexto da tarefa antiga imediatamente.
+    // 4. Context Switch
+    // Se o scheduler decidiu trocar de tarefa, realizar a troca agora.
+    // DEVE ser a última coisa na função!
     if let Some((old_ptr, new_ptr)) = switch_info {
         unsafe {
-            // IMPORTANTE: Configurar TSS.rsp0 com a kstack da nova tarefa
-            // Quando uma interrupção ocorre em Ring 3, a CPU usa TSS.rsp0 como kernel stack
+            // Configurar TSS.rsp0 com a kstack da nova tarefa
             crate::arch::x86_64::gdt::set_kernel_stack(new_ptr);
 
+            // Executar context switch
             crate::sched::context_switch(old_ptr as *mut u64, new_ptr);
         }
     }
 }
 
-/// Retorna o tempo de atividade do sistema em segundos (aproximado).
+/// Retorna o número total de ticks desde o boot.
+#[inline(always)]
+pub fn ticks() -> u64 {
+    TICKS.load(Ordering::Relaxed)
+}
+
+/// Retorna a frequência configurada atual em Hz.
+#[inline(always)]
+pub fn frequency() -> u32 {
+    FREQUENCY.load(Ordering::Relaxed)
+}
+
+/// Retorna o tempo de uptime em segundos (aproximado).
+///
+/// A precisão depende da frequência configurada.
+#[inline(always)]
 pub fn uptime_seconds() -> u64 {
-    let ticks = TICKS.load(Ordering::Relaxed);
-    // Assumindo 100Hz (configurado no entry.rs).
-    // TODO: Ler a frequência real do driver em vez de hardcoded.
-    ticks / 100
+    let freq = frequency();
+    if freq == 0 {
+        return 0;
+    }
+    ticks() / (freq as u64)
+}
+
+/// Retorna o tempo de uptime em milissegundos (aproximado).
+#[inline(always)]
+pub fn uptime_ms() -> u64 {
+    let freq = frequency();
+    if freq == 0 {
+        return 0;
+    }
+    (ticks() * 1000) / (freq as u64)
+}
+
+/// Espera ativa por um número de ticks.
+///
+/// **AVISO**: Bloqueante! Use apenas para delays curtos em early boot.
+///
+/// # Arguments
+/// * `ticks_to_wait` - Número de ticks para esperar
+pub fn delay_ticks(ticks_to_wait: u64) {
+    let start = ticks();
+    while ticks() - start < ticks_to_wait {
+        core::hint::spin_loop();
+    }
+}
+
+/// Espera ativa por um número de milissegundos.
+///
+/// **AVISO**: Bloqueante! Use apenas para delays curtos em early boot.
+///
+/// # Arguments
+/// * `ms` - Tempo em milissegundos para esperar
+pub fn delay_ms(ms: u64) {
+    let freq = frequency();
+    if freq == 0 {
+        return;
+    }
+    let ticks_needed = (ms * freq as u64) / 1000;
+    delay_ticks(ticks_needed);
+}
+
+// =============================================================================
+// PC Speaker (Channel 2) - Opcional, para beeps de diagnóstico
+// =============================================================================
+
+/// Gera um beep no PC Speaker com a frequência especificada.
+///
+/// Usa Channel 2 do PIT conectado ao speaker via port 0x61.
+///
+/// # Arguments
+/// * `freq_hz` - Frequência do tom em Hz (ex: 440 = Lá4)
+///
+/// 100% Assembly - Zero SSE.
+#[inline(never)]
+pub fn beep_start(freq_hz: u32) {
+    if freq_hz == 0 || freq_hz > PIT_BASE_FREQ {
+        return;
+    }
+
+    let divisor = (PIT_BASE_FREQ / freq_hz) as u16;
+
+    unsafe {
+        core::arch::asm!(
+            // Configure Channel 2 for square wave
+            "mov dx, {cmd}",
+            "mov al, 0xB6",      // Channel 2, lo/hi, Mode 3
+            "out dx, al",
+
+            // Set frequency divisor
+            "mov dx, {ch2}",
+            "mov al, {div_lo}",
+            "out dx, al",
+            "mov al, {div_hi}",
+            "out dx, al",
+
+            // Enable speaker (bits 0 and 1 of port 0x61)
+            "mov dx, 0x61",
+            "in al, dx",
+            "or al, 0x03",
+            "out dx, al",
+
+            cmd = const PIT_COMMAND,
+            ch2 = const PIT_CHANNEL2,
+            div_lo = in(reg_byte) (divisor & 0xFF) as u8,
+            div_hi = in(reg_byte) ((divisor >> 8) & 0xFF) as u8,
+            out("al") _,
+            out("dx") _,
+            options(nostack, preserves_flags)
+        );
+    }
+}
+
+/// Para o beep do PC Speaker.
+///
+/// 100% Assembly - Zero SSE.
+#[inline(never)]
+pub fn beep_stop() {
+    unsafe {
+        core::arch::asm!(
+            // Disable speaker (clear bits 0 and 1 of port 0x61)
+            "mov dx, 0x61",
+            "in al, dx",
+            "and al, 0xFC",
+            "out dx, al",
+
+            out("al") _,
+            out("dx") _,
+            options(nostack, preserves_flags)
+        );
+    }
+}
+
+/// Toca um beep curto para diagnóstico.
+///
+/// Útil para indicar checkpoints durante boot sem depender de vídeo/serial.
+///
+/// # Arguments
+/// * `freq_hz` - Frequência do beep
+/// * `duration_ms` - Duração em milissegundos
+pub fn beep(freq_hz: u32, duration_ms: u64) {
+    beep_start(freq_hz);
+    delay_ms(duration_ms);
+    beep_stop();
 }

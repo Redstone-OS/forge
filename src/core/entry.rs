@@ -70,21 +70,17 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Configura o PIC (Programmable Interrupt Controller) para não conflitar com exceções da CPU
     // e o PIT (Programmable Interval Timer) para gerar o "heartbeat" do scheduler.
     crate::kinfo!("(Core) Configurando controladores de interrupção (PIC/PIT)...");
-    unsafe {
-        let mut pic = crate::drivers::pic::PICS.lock();
-        pic.init();
-        pic.unmask(0); // Habilita IRQ0 (Timer)
-    }
 
-    {
-        let mut pit = crate::drivers::timer::PIT.lock();
-        // Configura frequência para 100Hz (10ms por tick).
-        let freq = pit.set_frequency(100).expect("Falha ao configurar timer");
-        crate::kdebug!(
-            "(Core) Temporizador configurado para frequencia=",
-            freq as u64
-        );
-    }
+    // Inicializar PIC (100% ASM)
+    crate::drivers::pic::init();
+    crate::drivers::pic::unmask(0); // Habilita IRQ0 (Timer)
+    crate::kdebug!("(PIC) Inicializado e remapeado para vectors 32-47");
+
+    // Inicializar PIT (100% ASM I/O)
+    // Configura frequência para 250Hz (4ms por tick)
+    // TODO: Receber a frequência do bootloader
+    let freq = crate::drivers::timer::init(250);
+    crate::kdebug!("(PIT) Frequência configurada para Hz=", freq as u64);
 
     crate::kok!("Drivers Inicializados");
 
@@ -98,9 +94,12 @@ pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     crate::kok!("FS Inicializado");
 
-    // Inicializar Vídeo (após memória e antes do console real)
-    // Agora inicializamos o CONSOLE, que gerencia o vídeo + texto.
-    crate::drivers::console::init_console(boot_info.framebuffer);
+    // Inicializar Vídeo (framebuffer mínimo)
+    // O kernel apenas mapeia o framebuffer e limpa a tela.
+    // Console gráfico é responsabilidade do PID1 (userspace).
+    unsafe {
+        crate::drivers::video::init(&boot_info.framebuffer);
+    }
 
     crate::kok!("Video Inicializado");
 

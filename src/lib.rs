@@ -41,6 +41,7 @@
 #![feature(const_mut_refs)]
 #![feature(naked_functions)]
 #![feature(panic_info_message)]
+#![feature(asm_const)]
 
 // Habilitar alocação dinâmica (necessário para Vec/Box/Arc)
 extern crate alloc;

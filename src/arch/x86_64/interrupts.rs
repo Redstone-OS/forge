@@ -133,7 +133,7 @@ extern "C" fn general_protection_fault_handler_impl(frame: &ContextFrame) {
 
 extern "C" fn timer_handler_impl(_frame: &ContextFrame) {
     // Chama o driver do timer para processar ticks e scheduling
-    crate::drivers::timer::handle_timer_interrupt();
+    crate::drivers::timer::handle_interrupt();
 }
 
 /// Handler de Invalid Opcode (#UD) - SEGURO (sem formatação)
