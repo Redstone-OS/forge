@@ -1,160 +1,116 @@
-//! # Kernel Error System
+//! # Syscall Error Codes
 //!
-//! A taxonomia de falhas do Redstone OS.
-//!
-//! ## 🎯 Propósito
-//! - **Unification:** Um único enum `SysError` cobre todos os módulos (IPC, Memória, Processo).
-//! - **Transport:** Projetado para caber em um registrador (valores negativos pequenos) e ser convertido para `isize`.
-//!
-//! ## 🏗️ Arquitetura
-//! - **Categorized Ranges:** Erros agrupados (1-15 Geral, 16-31 Handle, etc) para facilitar identificação de subsistema.
-//! - **Zero-Panic:** O kernel SÓ retorna erros, nunca panica por input de usuário (exceto bugs internos graves).
-//!
-//! ## 🔍 Análise Crítica
-//!
-//! ### ✅ Pontos Fortes
-//! - **Explicidade semântica:** `HandleTypeMismatch` é muito mais claro que o genérico `EINVAL` do POSIX.
-//!
-//! ### ⚠️ Pontos de Atenção
-//! - **Translation:** Esses códigos NÃO mapeiam 1:1 para `errno` do Linux. A `libc` terá que traduzir se quiser compatibilidade POSIX.
-//!
-//! ## 🛠️ TODOs
-//! - [ ] **TODO: (DevEx)** Adicionar `#[must_use]` em `SysResult` para forçar check de erros.
-//! - [ ] **TODO: (Feature)** Criar mecanismo de **Error String** estendida? (Provavelmente não no kernel, mas no userspace tracing).
-//!
-//! --------------------------------------------------------------------------------
-//!
-//! Sistema de erros unificado para todas as syscalls.
-//! Erros são retornados como valores negativos em RAX.
+//! Códigos de erro retornados por syscalls.
 
-/// Enum de erros do sistema.
-///
-/// Valores são i32 para permitir representação negativa em isize.
+/// Resultado de syscall
+pub type SysResult<T> = Result<T, SysError>;
+
+/// Erros de syscall
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum SysError {
-    // === Erros Gerais (1-15) ===
-    /// Operação não permitida
-    PermissionDenied = 1,
-    /// Objeto não encontrado
-    NotFound = 2,
-    /// Objeto já existe
-    AlreadyExists = 3,
+    /// Operação não implementada
+    NotImplemented = -1,
+    /// Syscall inválida
+    InvalidSyscall = -2,
     /// Argumento inválido
-    InvalidArgument = 4,
-    /// Operação bloquearia (non-blocking mode)
-    WouldBlock = 5,
-    /// Operação interrompida
-    Interrupted = 6,
-    /// Timeout expirado
-    TimedOut = 7,
+    InvalidArgument = -3,
+    /// Handle inválido
+    InvalidHandle = -4,
+    /// Permissão negada
+    PermissionDenied = -5,
+    /// Recurso não encontrado
+    NotFound = -6,
+    /// Recurso já existe
+    AlreadyExists = -7,
     /// Recurso ocupado
-    Busy = 8,
-
-    // === Erros de Handle (16-31) ===
-    /// Handle inválido ou fechado
-    BadHandle = 16,
-    /// Tipo de objeto incompatível com operação
-    HandleTypeMismatch = 17,
-    /// Direitos insuficientes no handle
-    InsufficientRights = 18,
-    /// Tabela de handles cheia
-    HandleTableFull = 19,
-
-    // === Erros de Memória (32-47) ===
-    /// Sem memória disponível
-    OutOfMemory = 32,
-    /// Endereço inválido ou não mapeado
-    BadAddress = 33,
-    /// Região de memória em uso
-    AddressInUse = 34,
-    /// Alinhamento incorreto
-    BadAlignment = 35,
-
-    // === Erros de IO (48-63) ===
-    /// Erro genérico de IO
-    IoError = 48,
-    /// Fim de arquivo/stream
-    EndOfFile = 49,
-    /// Conexão/Pipe quebrado
-    BrokenPipe = 50,
-
-    // === Erros de IPC (64-79) ===
-    /// Fila da porta cheia
-    PortFull = 64,
-    /// Porta fechada
-    PortClosed = 65,
-    /// Mensagem excede tamanho máximo
-    MessageTooLarge = 66,
-    /// Nenhuma mensagem disponível
-    NoMessage = 67,
-
-    // === Erros de Processo (80-95) ===
-    /// Processo não encontrado
-    ProcessNotFound = 80,
-    /// Limite de processos atingido
-    TooManyProcesses = 81,
-
-    // === Erros de Sistema (240-255) ===
-    /// Syscall não implementada
-    NotImplemented = 254,
-    /// Erro desconhecido
-    Unknown = 255,
+    Busy = -8,
+    /// Timeout
+    Timeout = -9,
+    /// Sem memória
+    OutOfMemory = -10,
+    /// Buffer muito pequeno
+    BufferTooSmall = -11,
+    /// Operação interrompida
+    Interrupted = -12,
+    /// Fim de arquivo
+    EndOfFile = -13,
+    /// Pipe quebrado
+    BrokenPipe = -14,
+    /// É um diretório
+    IsDirectory = -15,
+    /// Não é um diretório
+    NotDirectory = -16,
+    /// Diretório não vazio
+    NotEmpty = -17,
+    /// Erro de I/O
+    IoError = -18,
+    /// Limite atingido
+    LimitReached = -19,
+    /// Operação não suportada
+    NotSupported = -20,
+    /// Ponteiro inválido (bad address)
+    BadAddress = -21,
 }
 
 impl SysError {
-    /// Converte para isize negativo (formato de retorno da syscall)
-    #[inline]
+    /// Converte para isize (para retorno em RAX)
     pub fn as_isize(self) -> isize {
-        -(self as i32 as isize)
+        self as i32 as isize
     }
 
-    /// Cria erro a partir de código negativo
-    pub fn from_code(code: isize) -> Option<Self> {
-        if code >= 0 {
-            return None;
-        }
-        let abs = (-code) as i32;
-        match abs {
-            1 => Some(Self::PermissionDenied),
-            2 => Some(Self::NotFound),
-            3 => Some(Self::AlreadyExists),
-            4 => Some(Self::InvalidArgument),
-            5 => Some(Self::WouldBlock),
-            6 => Some(Self::Interrupted),
-            7 => Some(Self::TimedOut),
-            8 => Some(Self::Busy),
-            16 => Some(Self::BadHandle),
-            17 => Some(Self::HandleTypeMismatch),
-            18 => Some(Self::InsufficientRights),
-            19 => Some(Self::HandleTableFull),
-            32 => Some(Self::OutOfMemory),
-            33 => Some(Self::BadAddress),
-            34 => Some(Self::AddressInUse),
-            35 => Some(Self::BadAlignment),
-            48 => Some(Self::IoError),
-            49 => Some(Self::EndOfFile),
-            50 => Some(Self::BrokenPipe),
-            64 => Some(Self::PortFull),
-            65 => Some(Self::PortClosed),
-            66 => Some(Self::MessageTooLarge),
-            67 => Some(Self::NoMessage),
-            80 => Some(Self::ProcessNotFound),
-            81 => Some(Self::TooManyProcesses),
-            254 => Some(Self::NotImplemented),
-            255 => Some(Self::Unknown),
-            _ => Some(Self::Unknown),
+    /// Converte de isize
+    pub fn from_isize(val: isize) -> Option<Self> {
+        match val as i32 {
+            -1 => Some(Self::NotImplemented),
+            -2 => Some(Self::InvalidSyscall),
+            -3 => Some(Self::InvalidArgument),
+            -4 => Some(Self::InvalidHandle),
+            -5 => Some(Self::PermissionDenied),
+            -6 => Some(Self::NotFound),
+            -7 => Some(Self::AlreadyExists),
+            -8 => Some(Self::Busy),
+            -9 => Some(Self::Timeout),
+            -10 => Some(Self::OutOfMemory),
+            -11 => Some(Self::BufferTooSmall),
+            -12 => Some(Self::Interrupted),
+            -13 => Some(Self::EndOfFile),
+            -14 => Some(Self::BrokenPipe),
+            -15 => Some(Self::IsDirectory),
+            -16 => Some(Self::NotDirectory),
+            -17 => Some(Self::NotEmpty),
+            -18 => Some(Self::IoError),
+            -19 => Some(Self::LimitReached),
+            -20 => Some(Self::NotSupported),
+            -21 => Some(Self::BadAddress),
+            _ => None,
         }
     }
-}
 
-/// Resultado de syscall: Ok(valor) ou Err(SysError)
-pub type SysResult<T> = Result<T, SysError>;
-
-/// Helper para converter SysResult<usize> em isize para retorno
-pub fn result_to_isize(result: SysResult<usize>) -> isize {
-    match result {
-        Ok(val) => val as isize,
-        Err(e) => e.as_isize(),
+    /// Nome do erro para debug
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::NotImplemented => "NOT_IMPLEMENTED",
+            Self::InvalidSyscall => "INVALID_SYSCALL",
+            Self::InvalidArgument => "INVALID_ARGUMENT",
+            Self::InvalidHandle => "INVALID_HANDLE",
+            Self::PermissionDenied => "PERMISSION_DENIED",
+            Self::NotFound => "NOT_FOUND",
+            Self::AlreadyExists => "ALREADY_EXISTS",
+            Self::Busy => "BUSY",
+            Self::Timeout => "TIMEOUT",
+            Self::OutOfMemory => "OUT_OF_MEMORY",
+            Self::BufferTooSmall => "BUFFER_TOO_SMALL",
+            Self::Interrupted => "INTERRUPTED",
+            Self::EndOfFile => "END_OF_FILE",
+            Self::BrokenPipe => "BROKEN_PIPE",
+            Self::IsDirectory => "IS_DIRECTORY",
+            Self::NotDirectory => "NOT_DIRECTORY",
+            Self::NotEmpty => "NOT_EMPTY",
+            Self::IoError => "IO_ERROR",
+            Self::LimitReached => "LIMIT_REACHED",
+            Self::NotSupported => "NOT_SUPPORTED",
+            Self::BadAddress => "BAD_ADDRESS",
+        }
     }
 }
