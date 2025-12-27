@@ -184,7 +184,12 @@ fn spawn_init_process() {
     crate::kinfo!("[Init] Acesso ao VFS OK");
 
     // Procura pelo arquivo "/system/core/init" (estrutura moderna Redstone)
-    if let Ok(node) = vfs.lookup("/system/core/init") {
+    crate::ktrace!("[Init] [A] Chamando vfs.lookup...");
+    let lookup_result = vfs.lookup("/system/core/init");
+    crate::ktrace!("[Init] [B] lookup retornou");
+
+    if let Ok(node) = lookup_result {
+        crate::ktrace!("[Init] [C] Pattern match OK");
         crate::kinfo!("(Init) Carregando processo inicial '/system/core/init'...");
 
         if let Ok(handle) = node.open() {
