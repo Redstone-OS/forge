@@ -24,7 +24,7 @@ default = []
 
 [profile.release]
 panic = "abort"
-opt-level = "z"
+opt-level = "s"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
