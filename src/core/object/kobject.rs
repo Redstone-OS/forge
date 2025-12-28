@@ -1,31 +1,40 @@
-//! Trait base para objetos do kernel
+/// Arquivo: core/object/kobject.rs
+///
+/// Propósito: Definição base para Objetos do Kernel (Kernel Objects).
+/// Todo recurso gerenciável via Handle (Processo, Thread, VMO, Canal, etc.)
+/// deve implementar o trait `KObject`.
+///
+/// Detalhes de Implementação:
+/// - IDs únicos globais (KOID).
+/// - Polimorfismo via Trait Objects (dyn KObject).
+/// - Integração com RefCount (geralmente via Arc<KObject> ou similar customizado).
 
-use super::Rights;
+//! Kernel Object Base
 
-/// Tipos de objetos do kernel
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum ObjectType {
-    None = 0,
-    Process = 1,
-    Thread = 2,
-    Vmo = 3,        // Virtual Memory Object
-    Port = 4,       // IPC Port
-    Channel = 5,    // IPC Channel
-    Event = 6,
-    Timer = 7,
-    Interrupt = 8,
-    Pager = 9,
+use core::sync::atomic::{AtomicU64, Ordering};
+
+/// Kernel Object ID
+pub type Koid = u64;
+
+/// Gerador de KOIDs
+static KOID_GENERATOR: AtomicU64 = AtomicU64::new(1);
+
+/// Gera um novo KOID único
+pub fn generate_koid() -> Koid {
+    KOID_GENERATOR.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Trait que todo objeto do kernel deve implementar
-pub trait KernelObject: Send + Sync {
-    /// Tipo do objeto
-    fn object_type(&self) -> ObjectType;
-    
-    /// Direitos padrão para este tipo de objeto
-    fn default_rights(&self) -> Rights;
-    
-    /// Chamado quando última referência é liberada
-    fn on_destroy(&mut self) {}
+/// Trait base que todos os objetos do kernel gerenciáveis devem implementar.
+pub trait KObject: Send + Sync {
+    /// Retorna o ID único do objeto.
+    fn koid(&self) -> Koid;
+
+    /// Retorna o nome do tipo do objeto (para debug/diagnóstico).
+    fn type_name(&self) -> &'static str;
+
+    /// Chamado quando a última referência (handle ou pointer) ao objeto é solta.
+    /// É o destrutor lógico.
+    fn on_final_release(&self) {
+        // Default: nada (Rust Drop cuida da memória)
+    }
 }

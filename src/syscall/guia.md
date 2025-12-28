@@ -1,4 +1,4 @@
-# Guia de Implementação: `syscall/`
+# Guia de Revisao: `syscall/`
 
 > **ATENÇÃO**: Este guia deve ser seguido LITERALMENTE.
 

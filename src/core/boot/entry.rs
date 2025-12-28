@@ -1,66 +1,63 @@
-//! Ponto de entrada do kernel
+/// Arquivo: core/boot/entry.rs
+///
+/// Propósito: Ponto de Entrada do Kernel (Kernel Entry Point).
+/// Esta função é chamada pelo Bootloader (Ignite) após o salto para o modo Longo.
+/// Responsável por orquestrar a inicialização de todos os subsistemas na ordem correta.
+///
+/// Detalhes de Implementação:
+/// - Assinatura `extern "C"` para ABI estável.
+/// - Recebe `BootInfo` do bootloader.
+/// - Nunca retorna (loop infinito ou shutdown).
 
-use crate::core::boot::BootInfo;
+use super::handoff::BootInfo;
+use crate::core::power::cpuidle;
 
-/// Ponto de entrada principal do kernel.
-///
-/// Chamado pelo `_start` em main.rs após setup inicial.
-///
-/// # Ordem de Inicialização
-///
-/// 1. Debug/Logging
-/// 2. Memória (PMM → VMM → Heap)
-/// 3. Interrupções (IDT, APIC)
-/// 4. Scheduler
-/// 5. Syscalls
-/// 6. Drivers
-/// 7. Filesystem
-/// 8. Init process
-pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    // 1. Inicializar logging primeiro
-    // crate::drivers::serial::init(); // Serial init may be called inside mod init or managed here if exposed
-    crate::kinfo!("Forge kernel inicializando...");
+/// Ponto de entrada do Kernel Rust.
+/// O Bootloader configura a stack e salta para cá.
+#[no_mangle]
+pub extern "C" fn kernel_entry(boot_info: &'static BootInfo) -> ! {
+    // 1. Inicialização Precoce (Early Init) - Antes do Heap
+    // Configurar Log Serial para que possamos ver o que está acontecendo.
+    // (Serial driver geralmente não precisa de heap)
+    // crate::drivers::serial::init_early(); // TODO: Implementar init_early no serial
     
-    // 2. Inicializar memória
-    unsafe { crate::mm::init(boot_info); }
-    
-    // 3. Inicializar interrupções
-    unsafe { 
-        crate::arch::x86_64::idt::init();
-        crate::arch::x86_64::apic::init();
+    crate::kinfo!("--- Iniciando Kernel RedstoneOS ---");
+    crate::kinfo!("Versão do Protocolo de Boot: ", boot_info.version);
+
+    // 2. Inicialização da Arquitetura (CPU, GDT, IDT, Interrupções)
+    crate::kinfo!("Inicializando Arquitetura...");
+    unsafe {
+        // crate::arch::init_basics(); // TODO: Expor init unificado em arch
     }
+
+    // 3. Inicialização de Memória (PMM, VMM, Heap)
+    crate::kinfo!("Inicializando Memória...");
+    // crate::mm::init(boot_info.memory_map); // TODO
+
+    // 4. Inicialização do Core (Time, SMP, Sched)
+    crate::kinfo!("Inicializando Subsistemas do Núcleo...");
+    // crate::core::time::init(); // TODO
     
-    // 4. Inicializar scheduler
-    crate::sched::init();
-    
-    // 5. Inicializar syscalls
-    crate::syscall::init();
-    
-    // 6. Inicializar drivers
-    crate::drivers::init();
-    
-    // 7. Inicializar filesystem
-    crate::fs::init();
-    
-    // 8. Inicializar IPC
-    crate::ipc::init();
-    
-    // 9. Inicializar módulos
-    crate::module::init();
-    
-    crate::kinfo!("Kernel inicializado, buscando init...");
-    
-    // Carregar e executar init
-    match crate::sched::exec::spawn("/system/core/init") {
-        Ok(_pid) => {
-            crate::kinfo!("Init spawned, entrando no scheduler...");
-        }
-        Err(e) => {
-            crate::kerror!("Falha ao spawnar init:", e as u64);
-            panic!("Não foi possível iniciar o processo init");
-        }
+    // 5. ACPI e Descoberta de Hardware
+    crate::kinfo!("Inicializando ACPI...");
+    if boot_info.rsdp_addr != 0 {
+        // crate::drivers::acpi::init(boot_info.rsdp_addr); // TODO
     }
-    
-    // Entrar no loop do scheduler (nunca retorna)
-    crate::sched::scheduler::run()
+
+    // 6. SMP Bringup (Acordar outros cores)
+    // crate::core::smp::bringup::init(); // TODO
+
+    // 7. Executar Initcalls (Drivers, Filesystems, etc.)
+    crate::kinfo!("Executando Initcalls...");
+    crate::core::boot::initcall::run_initcalls();
+
+    // 8. Inicialização do Userspace (Init Process)
+    crate::kinfo!("Iniciando Processo Init...");
+    // crate::core::process::spawn_init(); // TODO
+
+    crate::kinfo!("Inicialização do Kernel Concluída. Entrando em Loop Ocioso.");
+
+    // 9. Loop de Ociosidade (Idle Loop)
+    // A thread de boot se torna a thread idle da CPU 0 (ou morre se spawnarmos uma task idle separada)
+    cpuidle::enter_idle_loop();
 }

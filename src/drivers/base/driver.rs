@@ -1,5 +1,7 @@
 //! Trait base para drivers
 
+use super::device::Device;
+
 /// Tipo de dispositivo
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DeviceType {
@@ -33,18 +35,18 @@ pub trait Driver: Send + Sync {
     fn device_type(&self) -> DeviceType;
     
     /// Chamado quando dispositivo é detectado
-    fn probe(&self, dev: &mut super::device::Device) -> Result<(), DriverError>;
+    fn probe(&self, dev: &mut Device) -> Result<(), DriverError>;
     
     /// Chamado quando dispositivo é removido
-    fn remove(&self, dev: &mut super::device::Device) -> Result<(), DriverError>;
+    fn remove(&self, dev: &mut Device) -> Result<(), DriverError>;
     
     /// Chamado durante suspend
-    fn suspend(&self, _dev: &mut super::device::Device) -> Result<(), DriverError> {
+    fn suspend(&self, _dev: &mut Device) -> Result<(), DriverError> {
         Ok(())
     }
     
     /// Chamado durante resume
-    fn resume(&self, _dev: &mut super::device::Device) -> Result<(), DriverError> {
+    fn resume(&self, _dev: &mut Device) -> Result<(), DriverError> {
         Ok(())
     }
 }

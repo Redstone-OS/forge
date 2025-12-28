@@ -1,3 +1,15 @@
+/// Arquivo: x86_64/gdt.rs
+///
+/// Propósito: Gerenciamento da Global Descriptor Table (GDT) e Task State Segment (TSS).
+/// A GDT é usada para definir segmentos de memória (Código/Dados) para Kernel e Usuário.
+/// O TSS é essencial para trocar de stacks durante interrupções (Interrupt Stack Table).
+///
+/// Detalhes de Implementação:
+/// - Define seletores para Kernel Code/Data, User Code/Data e TSS.
+/// - Inicializa a GDT estática e o TSS.
+/// - Implementa o carregamento da GDT (`lgdt`) e recarregamento dos registradores de segmento.
+/// - Configura a stack de interrupção no TSS (IST).
+
 //! Global Descriptor Table
 
 use core::mem::size_of;
@@ -14,6 +26,12 @@ impl SegmentSelector {
 }
 
 /// Constantes de seletores
+// Index 0: Null
+// Index 1: Kernel Code
+// Index 2: Kernel Data
+// Index 3: User Code
+// Index 4: User Data
+// Index 5: TSS (ocupa 2 slots em 64-bit)
 pub const KERNEL_CODE_SEL: SegmentSelector = SegmentSelector::new(1, 0);
 pub const KERNEL_DATA_SEL: SegmentSelector = SegmentSelector::new(2, 0);
 pub const USER_CODE_SEL: SegmentSelector = SegmentSelector::new(3, 3);
@@ -87,14 +105,39 @@ impl GdtEntry {
             base_high: 0,
         }
     }
+
+    /// Cria descritor TSS (System Segment). TSS em 64-bit ocupa 16 bytes (2 entradas).
+    /// Esta função cria a parte BAIXA.
+    pub fn tss_low(base: u64, limit: u32) -> Self {
+        Self {
+            limit_low: (limit & 0xFFFF) as u16,
+            base_low: (base & 0xFFFF) as u16,
+            base_mid: ((base >> 16) & 0xFF) as u8,
+            access: 0x89, // Present, Ring 0, Available TSS (0x9)
+            flags_limit_high: (((limit >> 16) & 0xF) as u8) | 0x00, // Granularity 0
+            base_high: ((base >> 24) & 0xFF) as u8,
+        }
+    }
+
+    /// Cria a parte ALTA do descritor TSS.
+    pub fn tss_high(base: u64) -> Self {
+        Self {
+            limit_low: ((base >> 32) & 0xFFFF) as u16,
+            base_low: ((base >> 48) & 0xFFFF) as u16,
+            base_mid: 0,
+            access: 0,
+            flags_limit_high: 0,
+            base_high: 0,
+        }
+    }
 }
 
-/// Task State Segment
+/// Task State Segment (TSS)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct Tss {
     reserved0: u32,
-    pub rsp0: u64,      // Stack para Ring 0
+    pub rsp0: u64,      // Stack para Ring 0 (usado em irq)
     pub rsp1: u64,
     pub rsp2: u64,
     reserved1: u64,
@@ -133,25 +176,72 @@ impl Tss {
 }
 
 // GDT global estática
+// 7 Entradas: Null, KCode, KData, UCode, UData, TSS-Low, TSS-High
 static mut GDT: [GdtEntry; 7] = [
     GdtEntry::null(),
     GdtEntry::kernel_code(),
     GdtEntry::kernel_data(),
     GdtEntry::user_code(),
     GdtEntry::user_data(),
-    GdtEntry::null(), // TSS low
-    GdtEntry::null(), // TSS high
+    GdtEntry::null(), // TSS low (será preenchido no init)
+    GdtEntry::null(), // TSS high (será preenchido no init)
 ];
 
+// TSS global estática
 static mut TSS: Tss = Tss::new();
+
+/// Estrutura do Ponteiro da GDT (GDTR)
+#[repr(C, packed)]
+struct GdtDescriptor {
+    limit: u16,
+    base: u64,
+}
 
 /// Inicializa a GDT
 /// 
 /// # Safety
 /// 
-/// Deve ser chamado apenas uma vez durante boot.
+/// Deve ser chamado apenas uma vez durante boot (BSP).
+/// Recarrega CS, DS, ES, SS, TR.
 pub unsafe fn init() {
-    // TODO: Configurar TSS entries na GDT
-    // TODO: Carregar GDT com lgdt
-    // TODO: Recarregar seletores de segmento
+    // 1. Configurar entradas do TSS na GDT
+    let tss_base = (&raw const TSS) as u64;
+    let tss_limit = (size_of::<Tss>() - 1) as u32;
+
+    GDT[5] = GdtEntry::tss_low(tss_base, tss_limit);
+    GDT[6] = GdtEntry::tss_high(tss_base);
+
+    // 2. Carregar GDT
+    let gdtr = GdtDescriptor {
+        limit: (size_of::<[GdtEntry; 7]>() - 1) as u16,
+        base: (&raw const GDT) as u64,
+    };
+
+    core::arch::asm!("lgdt [{}]", in(reg) &gdtr, options(readonly, nostack, preserves_flags));
+
+    // 3. Recarregar Segmentos
+    // CS deve ser recarregado com um salto distante (retq hack) ou push/retq
+    // DS, ES, SS devem ser carregados com KERNEL_DATA_SEL
+    
+    let kcode = KERNEL_CODE_SEL.0;
+    let kdata = KERNEL_DATA_SEL.0;
+    let tss_sel = TSS_SEL.0;
+
+    core::arch::asm!(
+        "push {0}",         // Push CS Selector
+        "leaq 1f(%rip), {1}", // Push Return RIP
+        "push {1}",
+        "lretq",            // "Return" to new CS:RIP
+        "1:",
+        "mov ds, {2:e}",    // Reload DS
+        "mov es, {2:e}",    // Reload ES
+        "mov ss, {2:e}",    // Reload SS
+        "mov ax, {3:x}",    // Load TSS selector
+        "ltr ax",           // Load Task Register
+        in(reg) kcode,
+        out(reg) _,
+        in(reg) kdata,
+        in(reg) tss_sel,
+        options(att_syntax, nostack)
+    );
 }

@@ -8,34 +8,6 @@
 //! - Definir traits abstratos para CPU, MMU, Interrupts
 //! - Expor implementação da plataforma atual
 //!
-//! ## Estrutura
-//!
-//! ```text
-//! arch/
-//! ├── _traits/     → Contratos abstratos (Cpu, Mmu, Irq)
-//! |── aarch64/     → Implementação para ARM64
-//! |   ├── cpu.rs      → CSRs, CR0-4, CPUID
-//! |   ├── gdt.rs      → Segmentos de memória
-//! |   ├── idt.rs      → Tabela de interrupções
-//! |   ├── apic/       → LAPIC, IOAPIC
-//! |   ├── acpi/       → Tabelas ACPI (MADT, FADT)
-//! |   └── iommu/      → ARM SMMU
-//! |── riscv64/     → Implementação para RISC-V 64-bit
-//! |   ├── cpu.rs      → CSRs, CR0-4, CPUID
-//! |   ├── gdt.rs      → Segmentos de memória
-//! |   ├── idt.rs      → Tabela de interrupções
-//! |   ├── apic/       → LAPIC, IOAPIC
-//! |   ├── acpi/       → Tabelas ACPI (MADT, FADT)
-//! |   └── iommu/      → ARM SMMU
-//! └── x86_64/     → Implementação para Intel/AMD 64-bit
-//!     ├── cpu.rs      → MSRs, CR0-4, CPUID
-//!     ├── gdt.rs      → Segmentos de memória
-//!     ├── idt.rs      → Tabela de interrupções
-//!     ├── apic/       → LAPIC, IOAPIC
-//!     ├── acpi/       → Tabelas ACPI (MADT, FADT)
-//!     └── iommu/      → Intel VT-d
-//! ```
-//!
 //! ## Uso
 //!
 //! ```ignore

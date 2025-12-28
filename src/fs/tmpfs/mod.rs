@@ -1,1 +1,3 @@
-//! TODO: TmpFS
+//! TmpFS module
+
+pub mod tmpfs;

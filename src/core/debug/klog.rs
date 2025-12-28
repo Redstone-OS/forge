@@ -1,5 +1,17 @@
+/// Arquivo: core/debug/klog.rs
+///
+/// Propósito: Sistema centralizado de logging do kernel.
+/// Substitui macros ad-hoc println/print. Envia saída para serial (e futuramente framebuffer/log buffer).
+///
+/// Detalhes de Implementação:
+/// - Define níveis de severidade (Debug, Info, Warn, Error).
+/// - Macros expandem para chamadas de função estáticas para reduzir inchaço de código.
+/// - Depende de `crate::drivers::serial` para saída física.
+
 //! Sistema de logging do kernel
 
+// Nota: Assumimos que crate::drivers::serial existe e tem write_str/write_hex.
+// Se ainda não existir, isso causará erro de compilação até que o módulo drivers seja criado.
 use crate::drivers::serial;
 
 /// Nível de log
@@ -21,9 +33,10 @@ pub fn log(level: LogLevel, message: &str) {
         LogLevel::Error => "[ERROR] ",
     };
     
-    serial::write(prefix);
-    serial::write(message);
-    serial::write("\n");
+    // SAFETY: Acesso à serial deve ser sincronizado internamente ou aceitamos corrupção em panic
+    serial::write_str(prefix);
+    serial::write_str(message);
+    serial::write_str("\n");
 }
 
 /// Emite log com valor hexadecimal
@@ -35,16 +48,15 @@ pub fn log_hex(level: LogLevel, message: &str, value: u64) {
         LogLevel::Error => "[ERROR] ",
     };
     
-    serial::write(prefix);
-    serial::write(message);
-    serial::write(" 0x");
-    // serial::write_hex(value); // Removido pois driver serial nao tem write_hex exposto, usando placeholder
-    // TODO: Implementar write_hex no serial ou usar formatação manual aqui se necessário
-    serial::write("HEX_VAL_TODO"); 
-    serial::write("\n");
+    serial::write_str(prefix);
+    serial::write_str(message);
+    serial::write_str(" 0x");
+    serial::write_hex(value);
+    serial::write_str("\n");
 }
 
 // Macros de conveniência
+
 #[macro_export]
 macro_rules! kinfo {
     ($msg:expr) => {

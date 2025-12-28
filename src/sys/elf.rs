@@ -1,126 +1,89 @@
-//! Loader de Executáveis ELF64
-//!
-//! Parseia binário ELF, aloca memória e prepara entry point.
+//! Estruturas ELF para loading de executáveis
 
-use crate::mm::pmm::FRAME_ALLOCATOR;
-use crate::mm::vmm::{self, PAGE_PRESENT, PAGE_USER, PAGE_WRITABLE};
-use crate::sys::Errno;
-use core::mem::size_of;
+/// Magic number ELF
+pub const ELF_MAGIC: [u8; 4] = [0x7F, b'E', b'L', b'F'];
 
-const ELF_MAGIC: [u8; 4] = [0x7F, b'E', b'L', b'F'];
-const PT_LOAD: u32 = 1;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-struct ElfHeader {
-    magic: [u8; 4],
-    class: u8,
-    data: u8,
-    version: u8,
-    osabi: u8,
-    abiversion: u8,
-    pad: [u8; 7],
-    typ: u16,
-    machine: u16,
-    version2: u32,
-    entry: u64,
-    phoff: u64,
-    shoff: u64,
-    flags: u32,
-    ehsize: u16,
-    phentsize: u16,
-    phnum: u16,
-    shentsize: u16,
-    shnum: u16,
-    shstrndx: u16,
+/// Classe ELF
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u8)]
+pub enum ElfClass {
+    None = 0,
+    Elf32 = 1,
+    Elf64 = 2,
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-struct ProgramHeader {
-    typ: u32,
-    flags: u32,
-    offset: u64,
-    vaddr: u64,
-    paddr: u64,
-    filesz: u64,
-    memsz: u64,
-    align: u64,
+/// Tipo de arquivo ELF
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u16)]
+pub enum ElfType {
+    None = 0,
+    Relocatable = 1,
+    Executable = 2,
+    SharedObject = 3,
+    Core = 4,
 }
 
-/// Carrega binário ELF no espaço de endereçamento atual.
-/// Retorna entry point ou erro.
-pub unsafe fn load(data: &[u8]) -> Result<u64, Errno> {
-    if data.len() < size_of::<ElfHeader>() {
-        return Err(Errno::ENOEXEC);
+/// Header ELF64
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Elf64Header {
+    pub magic: [u8; 4],
+    pub class: u8,
+    pub endian: u8,
+    pub version: u8,
+    pub os_abi: u8,
+    pub abi_version: u8,
+    pub _pad: [u8; 7],
+    pub elf_type: u16,
+    pub machine: u16,
+    pub version2: u32,
+    pub entry: u64,
+    pub phoff: u64,
+    pub shoff: u64,
+    pub flags: u32,
+    pub ehsize: u16,
+    pub phentsize: u16,
+    pub phnum: u16,
+    pub shentsize: u16,
+    pub shnum: u16,
+    pub shstrndx: u16,
+}
+
+/// Tipo de program header
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u32)]
+pub enum PhType {
+    Null = 0,
+    Load = 1,
+    Dynamic = 2,
+    Interp = 3,
+    Note = 4,
+    Phdr = 6,
+    Tls = 7,
+}
+
+/// Program Header ELF64
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Elf64Phdr {
+    pub p_type: u32,
+    pub p_flags: u32,
+    pub p_offset: u64,
+    pub p_vaddr: u64,
+    pub p_paddr: u64,
+    pub p_filesz: u64,
+    pub p_memsz: u64,
+    pub p_align: u64,
+}
+
+/// Flags de program header
+pub const PF_X: u32 = 1; // Executável
+pub const PF_W: u32 = 2; // Escrevível
+pub const PF_R: u32 = 4; // Legível
+
+impl Elf64Header {
+    /// Verifica se é ELF válido
+    pub fn is_valid(&self) -> bool {
+        self.magic == ELF_MAGIC && self.class == ElfClass::Elf64 as u8
     }
-
-    let header = &*(data.as_ptr() as *const ElfHeader);
-
-    if header.magic != ELF_MAGIC || header.class != 2 {
-        return Err(Errno::ENOEXEC);
-    }
-
-    let ph_offset = header.phoff as usize;
-    let ph_size = header.phentsize as usize;
-    let ph_count = header.phnum as usize;
-
-    for i in 0..ph_count {
-        let offset = ph_offset + i * ph_size;
-        if offset + size_of::<ProgramHeader>() > data.len() {
-            return Err(Errno::ENOEXEC);
-        }
-
-        let ph = &*(data.as_ptr().add(offset) as *const ProgramHeader);
-
-        if ph.typ == PT_LOAD && ph.memsz > 0 {
-            let page_flags = PAGE_PRESENT | PAGE_USER | PAGE_WRITABLE;
-
-            let start_addr = ph.vaddr;
-            let end_addr = start_addr + ph.memsz;
-            let start_page = start_addr & !0xFFF;
-            let end_page = (end_addr + 0xFFF) & !0xFFF;
-
-            let mut curr = start_page;
-            while curr < end_page {
-                if let Some((_phys, flags)) = vmm::translate_addr_with_flags(curr) {
-                    if flags & vmm::PAGE_USER != 0 {
-                        curr += 4096;
-                        continue;
-                    }
-                }
-
-                let frame = FRAME_ALLOCATOR
-                    .lock()
-                    .allocate_frame()
-                    .ok_or(Errno::ENOMEM)?;
-
-                if let Err(_) = vmm::map_page(curr, frame.addr(), page_flags) {
-                    return Err(Errno::ENOMEM);
-                }
-
-                core::arch::asm!("invlpg [{0}]", in(reg) curr, options(nostack, preserves_flags));
-
-                let ptr = curr as *mut u8;
-                for j in 0..4096 {
-                    core::ptr::write_volatile(ptr.add(j), 0);
-                }
-
-                curr += 4096;
-            }
-
-            if ph.filesz > 0 {
-                let dest = start_addr as *mut u8;
-                let src_offset = ph.offset as usize;
-                let src_len = ph.filesz as usize;
-
-                for j in 0..src_len {
-                    let byte = data[src_offset + j];
-                    core::ptr::write_volatile(dest.add(j), byte);
-                }
-            }
-        }
-    }
-
-    Ok(header.entry)
 }

@@ -1,102 +1,45 @@
-//! # Syscall Dispatcher
-//!
-//! O ponto central onde o kernel atende pedidos do userspace.
-//!
-//! ## 🎯 Propósito e Responsabilidade
-//! - **Dispatching:** Roteia o número da syscall (`RAX`) para a função rust correspondente.
-//! - **Argument decoding:** Extrai argumentos dos registradores (`RDI`, `RSI`, `RDX`...).
-//! - **Safety Boundary:** É a **primeira linha de defesa** do kernel. Tudo que vem daqui é não-confiável.
-//!
-//! ## 🏗️ Arquitetura: Synchronous Handler
-//! - A função `syscall_dispatcher` é chamada pelo trampoline assembly (`syscall_entry`).
-//! - Ela roda no contexto da thread atual, mas em Ring 0 (Kernel Mode).
-//! - O retorno é escrito em `context.rax`, que o assembly restaurará antes de `sysret`.
-//!
-//! ## 🔍 Análise Crítica (Kernel Engineer's View)
-//!
-//! ### ✅ Pontos Fortes
-//! - **Register Mapping:** Mapeamento claro dos registradores SysV ABI para variáveis locais.
-//! - **Centralized Handling:** Um único `match` facilita instrumentação e debugging de todas as chamadas.
-//!
-//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
-//! - **Unsafe Pointer Dereference:** O código acessa `ptr` (ponteiro de usuário) DIRETAMENTE!
-//!   - *Vulnerabilidade:* Se o usuário passar um endereço de kernel (ex: `0xFFFF...`), o kernel vai ler/escrever sua própria memória, permitindo **Privilege Escalation** ou **Crash**.
-//!   - *Correção:* É OBRIGATÓRIO usar funções como `copy_from_user` que verificam limites (`ptr < USER_MAX_ADDR`).
-//! - **Blocking I/O:** `SYS_WRITE` em console serial bloqueia a CPU. Se o buffer serial encher, o sistema trava.
-//!
-//! ## 🛠️ TODOs e Roadmap
-//! - [ ] **TODO: (Critical/Security)** Implementar **User Access Validation**.
-//!   - *Meta:* Criar `UserPtr<T>` que encapsula verificação de range (0..UserMax).
-//! - [ ] **TODO: (Feature)** Expandir Tabela de Syscalls.
-//!   - *Necessário:* `mmap`, `spawn`, `ipc_send`, `ipc_recv`.
-//! - [ ] **TODO: (Debug)** Adicionar **Strace** (Syscall Tracing).
-//!   - *Meta:* Logar cada entrada/saída de syscall se uma flag de debug estiver ativa na Task.
-//!
-//! --------------------------------------------------------------------------------
-//!
-//! Handler de Syscalls chamado pelo Assembly.
-//!
-//! # Arguments
-//! * `context`: Ponteiro para o stack frame com todos registradores salvos.
-//!
-//!
-use crate::arch::x86_64::idt::ContextFrame;
-use core::ffi::c_void;
+/// Arquivo: sys/syscall.rs
+///
+/// Propósito: Definição dos Números de Chamada de Sistema (Syscall Numbers).
+/// Deve estar sincronizado com o user space (libc/syscall wrappers).
 
-// Syscall Numbers
-const SYS_WRITE: u64 = 1;
-const SYS_YIELD: u64 = 158; // Exemplo
+//! Números de Syscall
 
-#[no_mangle]
-pub extern "C" fn syscall_dispatcher(context: &mut ContextFrame) {
-    let syscall_num = context.rax;
-    let arg1 = context.rdi;
-    let arg2 = context.rsi;
-    let arg3 = context.rdx;
+// Processo
+pub const SYS_EXIT: usize = 60;
+pub const SYS_FORK: usize = 57;
+pub const SYS_EXECVE: usize = 59;
+pub const SYS_WAIT4: usize = 61;
+pub const SYS_GETPID: usize = 39;
+pub const SYS_KILL: usize = 62;
 
-    match syscall_num {
-        SYS_WRITE => {
-            let fd = arg1;
-            let ptr = arg2 as *const u8;
-            let len = arg3 as usize;
+// Arquivos
+pub const SYS_READ: usize = 0;
+pub const SYS_WRITE: usize = 1;
+pub const SYS_OPEN: usize = 2;
+pub const SYS_CLOSE: usize = 3;
+pub const SYS_STAT: usize = 4;
+pub const SYS_FSTAT: usize = 5;
+pub const SYS_LSEEK: usize = 8;
+pub const SYS_IOCTL: usize = 16;
 
-            crate::ktrace!("(Sys) sys_write: fd=", fd);
-            crate::klog!(" ptr=", ptr as u64, " len=", len as u64);
-            crate::knl!();
+// Memória
+pub const SYS_MMAP: usize = 9;
+pub const SYS_MPROTECT: usize = 10;
+pub const SYS_MUNMAP: usize = 11;
+pub const SYS_BRK: usize = 12;
 
-            if fd == 1 {
-                // STDOUT
-                if ptr.is_null() {
-                    crate::kwarn!("(Sys) sys_write: Ponteiro nulo recebido");
-                    context.rax = -1i64 as u64;
-                    return;
-                }
+// Outros
+pub const SYS_GETCWD: usize = 79;
+pub const SYS_CHDIR: usize = 80;
+pub const SYS_RENAME: usize = 82;
+pub const SYS_MKDIR: usize = 83;
+pub const SYS_RMDIR: usize = 84;
+pub const SYS_LINK: usize = 86;
+pub const SYS_UNLINK: usize = 87;
 
-                let slice = unsafe { core::slice::from_raw_parts(ptr, len) };
-
-                // Tenta converter para UTF-8 string
-                if let Ok(s) = core::str::from_utf8(slice) {
-                    crate::klog!(s);
-                } else {
-                    for &b in slice {
-                        crate::drivers::serial::emit(b);
-                    }
-                }
-
-                context.rax = len as u64; // Retorna bytes escritos
-            } else {
-                crate::kdebug!("(Sys) sys_write: FD não suportado FD=", fd);
-                context.rax = -1i64 as u64; // EBADF
-            }
-        }
-        SYS_YIELD => {
-            crate::ktrace!("(Sys) sys_yield: Cedendo tempo de CPU voluntariamente");
-            crate::sched::scheduler::yield_now();
-            context.rax = 0;
-        }
-        _ => {
-            crate::kwarn!("(Sys) Chamada inesperada: syscall num=", syscall_num);
-            context.rax = -1i64 as u64; // ENOSYS
-        }
-    }
-}
+// Redstone específico
+pub const SYS_DEBUG_PRINT: usize = 1000;
+pub const SYS_THREAD_SPAWN: usize = 1001;
+pub const SYS_CHANNEL_CREATE: usize = 1002;
+// ...

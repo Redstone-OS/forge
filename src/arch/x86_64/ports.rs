@@ -1,10 +1,21 @@
+/// Arquivo: x86_64/ports.rs
+///
+/// Propósito: Abstração para instruções de entrada/saída (I/O Ports) legadas do x86.
+/// Permite leitura e escrita em portas de I/O (inb, outb, etc.), essenciais para configurar
+/// hardware legado como PIC, PIT, PS/2 e Serial, além de alguns registradores de PCI/DMA.
+///
+/// Detalhes de Implementação:
+/// - Usa `core::arch::asm!` para emitir instruções `in` e `out`.
+/// - Todas as funções são marcadas como `#[inline]` para evitar overhead.
+/// - Implementa `io_wait` usando a porta 0x80 para garantir atrasos de barramento.
+
 //! IO Ports (legado x86)
 
 /// Lê um byte de uma porta IO
 #[inline]
 pub fn inb(port: u16) -> u8 {
     let value: u8;
-    // SAFETY: IO ports são operações privilegiadas mas seguras
+    // SAFETY: IO ports são operações privilegiadas mas seguras do ponto de vista de memória
     unsafe {
         core::arch::asm!(
             "in al, dx",
@@ -19,7 +30,7 @@ pub fn inb(port: u16) -> u8 {
 /// Escreve um byte em uma porta IO
 #[inline]
 pub fn outb(port: u16, value: u8) {
-    // SAFETY: IO ports são operações privilegiadas mas seguras
+    // SAFETY: IO ports são operações privilegiadas mas seguras do ponto de vista de memória
     unsafe {
         core::arch::asm!(
             "out dx, al",
@@ -34,7 +45,7 @@ pub fn outb(port: u16, value: u8) {
 #[inline]
 pub fn inw(port: u16) -> u16 {
     let value: u16;
-    // SAFETY: IO ports são operações privilegiadas mas seguras
+    // SAFETY: IO ports são operações privilegiadas mas seguras do ponto de vista de memória
     unsafe {
         core::arch::asm!(
             "in ax, dx",
@@ -49,7 +60,7 @@ pub fn inw(port: u16) -> u16 {
 /// Escreve um word em uma porta IO
 #[inline]
 pub fn outw(port: u16, value: u16) {
-    // SAFETY: IO ports são operações privilegiadas mas seguras
+    // SAFETY: IO ports são operações privilegiadas mas seguras do ponto de vista de memória
     unsafe {
         core::arch::asm!(
             "out dx, ax",
@@ -64,7 +75,7 @@ pub fn outw(port: u16, value: u16) {
 #[inline]
 pub fn inl(port: u16) -> u32 {
     let value: u32;
-    // SAFETY: IO ports são operações privilegiadas mas seguras
+    // SAFETY: IO ports são operações privilegiadas mas seguras do ponto de vista de memória
     unsafe {
         core::arch::asm!(
             "in eax, dx",
@@ -79,7 +90,7 @@ pub fn inl(port: u16) -> u32 {
 /// Escreve um dword em uma porta IO
 #[inline]
 pub fn outl(port: u16, value: u32) {
-    // SAFETY: IO ports são operações privilegiadas mas seguras
+    // SAFETY: IO ports são operações privilegiadas mas seguras do ponto de vista de memória
     unsafe {
         core::arch::asm!(
             "out dx, eax",
@@ -91,8 +102,11 @@ pub fn outl(port: u16, value: u32) {
 }
 
 /// Delay de IO (espera ciclo de barramento)
+///
+/// Usado quando o hardware precisa de um pequeno tempo para processar um comando
+/// antes de receber o próximo (ex: PIC remapping).
 #[inline]
 pub fn io_wait() {
-    // Porta 0x80 é usada para POST codes, escrever lá causa delay
+    // Porta 0x80 é usada para POST codes, escrever lá é seguro e causa um pequeno delay
     outb(0x80, 0);
 }

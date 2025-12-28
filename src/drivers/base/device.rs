@@ -28,8 +28,6 @@ impl Device {
     pub fn new(id: DeviceId, name: &str) -> Self {
         let mut name_buf = [0u8; 32];
         let len = name.len().min(31);
-        // Implementação manual de copy_from_slice para evitar dependências extras se necessário,
-        // mas slice::copy_from_slice é core.
         name_buf[..len].copy_from_slice(&name.as_bytes()[..len]);
         
         Self {

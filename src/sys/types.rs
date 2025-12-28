@@ -1,41 +1,69 @@
-//! # Standard System Types
-//!
-//! Define os tipos primitivos usados nas interfaces do kernel (Syscalls).
-//!
-//! ## 🎯 Propósito e Responsabilidade
-//! - **ABI Stability:** Usar `Pid` (alias para `usize`) permite mudar a representação interna sem quebrar a assinatura das funções públicas.
-//! - **Clarity:** `Time` é mais semântico que `i64`.
-//!
-//! ## 🔍 Análise Crítica (Kernel Engineer's View)
-//!
-//! ### ✅ Pontos Fortes
-//! - **Separation:** Centralizar tipos evita "magic numbers" espalhados.
-//!
-//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
-//! - **Identity Crisis:** O Redstone OS é um sistema Capability-Based, mas define `Uid` e `Gid` (Access Control List - ACL).
-//!   - *Problema:* A presença desses tipos sugere que o kernel ainda pensa em "usuários UNIX", o que contradiz a filosofia Zero Trust/Capabilities.
-//! - **Architecture Dependent:** `usize` varia entre 32/64 bits. Se quisermos compatibilidade 32-bits (compat layer), `Pid` deveria ser `u32` fixo na ABI?
-//!
-//! ## 🛠️ TODOs e Roadmap
-//! - [ ] **TODO: (Critical/Architecture)** Deprecar **Uid/Gid**.
-//!   - *Motivo:* Substituir por `SubjectId` ou remover totalmente em favor de Capabilities anônimas.
-//! - [ ] **TODO: (Cleanup)** Mover `STDIN/OUT/ERR` para constants em `unistd.rs` ou similar.
-//!
-//! --------------------------------------------------------------------------------
-//!
-//! Define aliases padrão para garantir consistência em todo o OS.
+//! Tipos fundamentais do sistema
 
-pub type Pid = usize; // Process ID
-pub type Tid = usize; // Thread ID
-pub type Uid = u32; // User ID
-pub type Gid = u32; // Group ID
-pub type Mode = u16; // File Mode/Permissions
-pub type Dev = u64; // Device ID
-pub type Ino = u64; // Inode Number
-pub type Off = i64; // File Offset
-pub type Time = i64; // Timestamp (Unix)
+/// Process ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Pid(pub u32);
 
-// File Descriptor
-pub const STDIN_FILENO: usize = 0;
-pub const STDOUT_FILENO: usize = 1;
-pub const STDERR_FILENO: usize = 2;
+impl Pid {
+    pub const KERNEL: Pid = Pid(0);
+    pub const INIT: Pid = Pid(1);
+    
+    pub const fn new(id: u32) -> Self {
+        Self(id)
+    }
+    
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
+/// Thread ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Tid(pub u32);
+
+impl Tid {
+    pub const fn new(id: u32) -> Self {
+        Self(id)
+    }
+    
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
+/// User ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Uid(pub u32);
+
+impl Uid {
+    pub const ROOT: Uid = Uid(0);
+    
+    pub const fn new(id: u32) -> Self {
+        Self(id)
+    }
+}
+
+/// Group ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Gid(pub u32);
+
+impl Gid {
+    pub const ROOT: Gid = Gid(0);
+    
+    pub const fn new(id: u32) -> Self {
+        Self(id)
+    }
+}
+
+/// Offset em arquivo
+pub type FileOffset = i64;
+
+/// Tamanho
+pub type Size = usize;
+
+/// Tempo
+pub type Time = i64;

@@ -1,61 +1,32 @@
-//! Driver de porta serial (UART 16550)
+//! Driver de porta serial simplificado (QEMU Debug Port)
+//!
+//! Escreve diretamente na porta 0xE9 (Hack do Bochs/QEMU) para debug.
+//! Não requer inicialização de UART, baud rate, etc.
 
-use crate::arch::x86_64::ports::{inb, outb};
+use crate::arch::x86_64::ports::outb;
 use crate::sync::Spinlock;
 
-/// Porta COM1
-const COM1_PORT: u16 = 0x3F8;
+/// Porta de debug do QEMU/Bochs
+const QEMU_PORT: u16 = 0xE9;
 
-/// Estado da serial
-static SERIAL: Spinlock<SerialPort> = Spinlock::new(SerialPort::new(COM1_PORT));
+/// Serial "fake" que apenas escreve no QEMU
+pub struct SerialPort;
 
-struct SerialPort {
-    port: u16,
-    initialized: bool,
-}
+static SERIAL: Spinlock<SerialPort> = Spinlock::new(SerialPort);
 
 impl SerialPort {
-    const fn new(port: u16) -> Self {
-        Self { port, initialized: false }
+    /// Inicialização "fake" (não necessária para 0xE9)
+    pub fn init(&self) {
+        // Nada a fazer para porta 0xE9
     }
     
-    fn init(&mut self) {
-        if self.initialized {
-            return;
-        }
-        
-        // Desabilitar interrupções
-        outb(self.port + 1, 0x00);
-        // Habilitar DLAB (set baud rate)
-        outb(self.port + 3, 0x80);
-        // Divisor low byte (115200 baud)
-        outb(self.port + 0, 0x03);
-        // Divisor high byte
-        outb(self.port + 1, 0x00);
-        // 8 bits, no parity, 1 stop bit
-        outb(self.port + 3, 0x03);
-        // Enable FIFO
-        outb(self.port + 2, 0xC7);
-        // IRQs enabled, RTS/DSR set
-        outb(self.port + 4, 0x0B);
-        
-        self.initialized = true;
-    }
-    
-    fn is_transmit_empty(&self) -> bool {
-        (inb(self.port + 5) & 0x20) != 0
-    }
-    
-    fn write_byte(&self, byte: u8) {
-        // Esperar FIFO estar pronto
-        while !self.is_transmit_empty() {
-            core::hint::spin_loop();
-        }
-        outb(self.port, byte);
+    /// Escreve byte diretamente
+    pub fn write_byte(&self, byte: u8) {
+        unsafe { outb(QEMU_PORT, byte); }
     }
 }
 
-/// Inicializa serial
+/// Inicializa serial (No-op para QEMU port, mantido para compatibilidade de API)
 pub fn init() {
     SERIAL.lock().init();
 }
@@ -63,11 +34,6 @@ pub fn init() {
 /// Escreve byte
 pub fn write_byte(byte: u8) {
     SERIAL.lock().write_byte(byte);
-}
-
-/// Escreve string por referência (fixando a assinatura usada anteriormente em klog)
-pub fn write(s: &str) {
-    write_str(s);
 }
 
 /// Escreve string
@@ -81,8 +47,6 @@ pub fn write_str(s: &str) {
 /// Escreve número hexadecimal
 pub fn write_hex(value: u64) {
     let serial = SERIAL.lock();
-    
-    // Escrever dígitos
     for i in (0..16).rev() {
         let digit = ((value >> (i * 4)) & 0xF) as u8;
         let c = if digit < 10 {

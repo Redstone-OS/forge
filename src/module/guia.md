@@ -1,4 +1,4 @@
-# Guia de Implementação: `module/`
+# Guia de Revisão: `module/`
 
 > **ATENÇÃO**: Este guia deve ser seguido LITERALMENTE.
 

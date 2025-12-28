@@ -16,6 +16,7 @@ pub struct TestCase {
 
 /// Executa suite de testes
 pub fn run_test_suite(name: &str, tests: &[TestCase]) -> (usize, usize, usize) {
+    // Nota: Imprime o endereço da string do nome porque o klog atual não suporta %s
     crate::kinfo!("=== Executando suite:", name.as_ptr() as u64);
     
     let mut passed = 0;

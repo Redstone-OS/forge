@@ -56,6 +56,8 @@ pub mod procfs;
 /// SysFS (/sys)
 pub mod sysfs;
 
+pub mod rfs;
+
 /// TmpFS (volatile storage)
 pub mod tmpfs;
 

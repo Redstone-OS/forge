@@ -1,80 +1,74 @@
-//! # Standard Error Codes (Errno)
-//!
-//! Define os códigos de erro retornados pelo kernel.
-//! Baseado no padrão POSIX para compatibilidade com ferramentas existentes.
-//!
-//! ## 🎯 Propósito e Responsabilidade
-//! - **Uniformidade:** Todas as syscalls retornam códigos padronizados.
-//! - **Conversion:** Métodos `as_isize` facilitam o retorno negativo no registrador RAX.
-//!
-//! ## 🔍 Análise Crítica (Kernel Engineer's View)
-//!
-//! ### ✅ Pontos Fortes
-//! - **Standard Compliance:** Seguir a numeração do Linux/POSIX evita reinvenção da roda e facilita porting de `std`.
-//!
-//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
-//! - **Limited Scope:** Erros POSIX são focados em Arquivos e Processos. Eles descrevem mal erros de **IPC, Capabilities e Microkernel**.
-//!   - *Problema:* O que retornar quando uma Capability é inválida? `EBADF`? `EPERM`? `EINVAL`? Nenhum serve perfeitamente.
-//!
-//! ## 🛠️ TODOs e Roadmap
-//! - [ ] **TODO: (Architecture)** Definir estratégia de erros para Capabilities.
-//!   - *Opção A:* Mapear tudo para códigos POSIX (perde semântica).
-//!   - *Opção B:* Estender `Errno` com códigos customizados (ex: `ECAP = 1000`).
-//! - [ ] **TODO: (DevEx)** Implementar `impl Display` para imprimir mensagens de erro legíveis no log do kernel.
-//!
-//! --------------------------------------------------------------------------------
-//!
-//! Segue o padrão POSIX/Linux para facilitar compatibilidade futura e entendimento.
-//! Valores negativos são usados em retornos de syscalls (isize).
+//! Códigos de erro do kernel
 
-#[repr(i32)]
+/// Erro genérico do kernel
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Errno {
+#[repr(i32)]
+pub enum KernelError {
+    /// Sucesso (não é erro)
     Success = 0,
-    EPERM = 1,    // Operation not permitted
-    ENOENT = 2,   // No such file or directory
-    ESRCH = 3,    // No such process
-    EINTR = 4,    // Interrupted system call
-    EIO = 5,      // I/O error
-    ENXIO = 6,    // No such device or address
-    E2BIG = 7,    // Argument list too long
-    ENOEXEC = 8,  // Exec format error
-    EBADF = 9,    // Bad file number
-    ECHILD = 10,  // No child processes
-    EAGAIN = 11,  // Try again
-    ENOMEM = 12,  // Out of memory
-    EACCES = 13,  // Permission denied
-    EFAULT = 14,  // Bad address
-    EBUSY = 16,   // Device or resource busy
-    EEXIST = 17,  // File exists
-    EXDEV = 18,   // Cross-device link
-    ENODEV = 19,  // No such device
-    ENOTDIR = 20, // Not a directory
-    EISDIR = 21,  // Is a directory
-    EINVAL = 22,  // Invalid argument
-    ENFILE = 23,  // File table overflow
-    EMFILE = 24,  // Too many open files
-    ENOTTY = 25,  // Not a typewriter
-    EFBIG = 27,   // File too large
-    ENOSPC = 28,  // No space left on device
-    ESPIPE = 29,  // Illegal seek
-    EROFS = 30,   // Read-only file system
-    EMLINK = 31,  // Too many links
-    EPIPE = 32,   // Broken pipe
-    EDOM = 33,    // Math argument out of domain of func
-    ERANGE = 34,  // Math result not representable
-    ENOSYS = 38,  // Function not implemented
-
-    // Redstone Specific
-    ECAP = 1000, // Capability error (Invalid permissions/slot)
+    /// Permissão negada
+    PermissionDenied = -1,
+    /// Não encontrado
+    NotFound = -2,
+    /// Já existe
+    AlreadyExists = -3,
+    /// Sem memória
+    OutOfMemory = -4,
+    /// Argumento inválido
+    InvalidArgument = -5,
+    /// Operação não suportada
+    NotSupported = -6,
+    /// Recurso ocupado
+    Busy = -7,
+    /// Timeout
+    Timeout = -8,
+    /// Handle inválido
+    InvalidHandle = -9,
+    /// Buffer muito pequeno
+    BufferTooSmall = -10,
+    /// Fim de arquivo
+    EndOfFile = -11,
+    /// IO Error
+    IoError = -12,
+    /// Interrompido
+    Interrupted = -13,
+    /// Novamente (tente de novo)
+    Again = -14,
+    /// Operação cancelada
+    Cancelled = -15,
+    /// Erro interno
+    Internal = -99,
 }
 
-impl Errno {
-    pub fn as_usize(self) -> usize {
-        self as usize
-    }
+/// Result type do kernel
+pub type KernelResult<T> = Result<T, KernelError>;
 
-    pub fn as_isize(self) -> isize {
-        -(self as i32) as isize
+impl KernelError {
+    /// Converte para código numérico
+    pub const fn as_code(self) -> i32 {
+        self as i32
+    }
+    
+    /// Cria a partir de código
+    pub const fn from_code(code: i32) -> Self {
+        match code {
+            0 => Self::Success,
+            -1 => Self::PermissionDenied,
+            -2 => Self::NotFound,
+            -3 => Self::AlreadyExists,
+            -4 => Self::OutOfMemory,
+            -5 => Self::InvalidArgument,
+            -6 => Self::NotSupported,
+            -7 => Self::Busy,
+            -8 => Self::Timeout,
+            -9 => Self::InvalidHandle,
+            -10 => Self::BufferTooSmall,
+            -11 => Self::EndOfFile,
+            -12 => Self::IoError,
+            -13 => Self::Interrupted,
+            -14 => Self::Again,
+            -15 => Self::Cancelled,
+            _ => Self::Internal,
+        }
     }
 }
