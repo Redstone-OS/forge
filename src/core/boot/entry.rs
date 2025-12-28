@@ -15,14 +15,6 @@ use crate::core::power::cpuidle;
 /// O Bootloader configura a stack e salta para cá.
 #[no_mangle]
 pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    // DEBUG: Trap CPU here to verify entry point
-    unsafe {
-        core::arch::asm!("cli");
-    }
-    loop {
-        core::hint::spin_loop();
-    }
-
     // 1. Inicialização Precoce (Early Init) - Antes do Heap
     // Configurar Log Serial para que possamos ver o que está acontecendo.
     // (Serial driver geralmente não precisa de heap)

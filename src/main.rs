@@ -30,15 +30,6 @@ use forge::core::boot as kernel_boot;
 extern crate alloc;
 
 // =============================================================================
-// LINKER SYMBOLS
-// =============================================================================
-
-extern "C" {
-    static __bss_start: u8;
-    static __bss_end: u8;
-}
-
-// =============================================================================
 // KERNEL STACK
 // =============================================================================
 
@@ -89,13 +80,9 @@ core::arch::global_asm!(
     "xor rbp, rbp",
 
     // -------------------------------------------------------------------------
-    // 4. Zerar BSS (CRÍTICO!)
+    // 4. BSS já foi zerado pelo bootloader (elf/loader.rs)
+    //    Não precisamos zerar aqui novamente
     // -------------------------------------------------------------------------
-    "lea rdi, [rip + {bss_start}]",
-    "lea rcx, [rip + {bss_end}]",
-    "sub rcx, rdi",
-    "xor eax, eax",
-    "rep stosb",
 
     // -------------------------------------------------------------------------
     // 5. Alinhar stack (System V ABI: 16 bytes)
@@ -118,7 +105,5 @@ core::arch::global_asm!(
 
     stack = sym KERNEL_STACK,
     stack_size = const KERNEL_STACK_SIZE,
-    bss_start = sym __bss_start,
-    bss_end = sym __bss_end,
     kernel_main = sym kernel_boot::kernel_main,
 );
