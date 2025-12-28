@@ -1,4 +1,4 @@
-//! # Power - Gerenciamento de Energia
+//! Gerenciamento de Energia
 
 pub mod cpufreq;
 pub mod cpuidle;

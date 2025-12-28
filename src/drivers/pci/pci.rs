@@ -1,1 +1,2 @@
-//! TODO: PCI impl
+//! PCI Enumeration
+// TODO: Scan PCI bus

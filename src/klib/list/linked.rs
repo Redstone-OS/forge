@@ -1,1 +1,2 @@
-//! TODO: Linked list
+//! Intrusive Linked List
+// TODO: Listas intrusivas

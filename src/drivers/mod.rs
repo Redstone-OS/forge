@@ -1,119 +1,38 @@
 //! # Drivers
 //!
 //! Drivers de hardware e modelo de dispositivos.
-//!
-//! ## Arquitetura
-//!
-//! ```text
-//! ┌─────────────────────────────────────────────────────┐
-//! │                   DRIVER MANAGER                    │
-//! │         probe() → match() → bind() → init()         │
-//! └─────────────────────────────────────────────────────┘
-//!                          ↓
-//! ┌─────────────────────────────────────────────────────┐
-//! │                    BUS LAYER                        │
-//! │              PCI │ USB │ Platform                   │
-//! └─────────────────────────────────────────────────────┘
-//!                          ↓
-//! ┌─────────────────────────────────────────────────────┐
-//! │                 DEVICE DRIVERS                      │
-//! │   Serial │ Timer │ Video │ Block │ Net │ Input      │
-//! └─────────────────────────────────────────────────────┘
-//! ```
-//!
-//! ## Categorias
-//!
-//! | Categoria | Drivers                    | Interface      |
-//! |-----------|----------------------------|----------------|
-//! | Block     | AHCI, NVMe, Ramdisk        | read/write     |
-//! | Char      | Serial, Console            | read/write     |
-//! | Net       | VirtIO-Net, E1000          | send/recv      |
-//! | Input     | Keyboard, Mouse            | events         |
-//! | Timer     | PIT, HPET, TSC             | ticks          |
-//! | Video     | Framebuffer                | draw           |
 
-// =============================================================================
-// DRIVER MODEL
-// =============================================================================
-
-/// Modelo base de drivers
 pub mod base;
+pub mod block;
+pub mod input;
+pub mod irq;
+pub mod net;
+pub mod pci;
+pub mod serial;
+pub mod timer;
+pub mod video;
+pub mod pic; // Legacy
 
 pub use base::{Device, DeviceType, Driver, DriverError};
 
-// =============================================================================
-// BUS DRIVERS
-// =============================================================================
-
-/// PCI Express
-pub mod pci;
-
-/// IRQ routing
-pub mod irq;
-
-// =============================================================================
-// CHARACTER DEVICES
-// =============================================================================
-
-/// Serial port (UART)
-pub mod serial;
-
-// =============================================================================
-// TIMER DEVICES
-// =============================================================================
-
-/// Timer sources
-pub mod timer;
-
-// =============================================================================
-// BLOCK DEVICES
-// =============================================================================
-
-/// Block storage
-pub mod block;
-
-// =============================================================================
-// INPUT DEVICES
-// =============================================================================
-
-/// Input devices (keyboard, mouse)
-pub mod input;
-
-// =============================================================================
-// NETWORK DEVICES
-// =============================================================================
-
-/// Network interfaces
-pub mod net;
-
-// =============================================================================
-// VIDEO DEVICES
-// =============================================================================
-
-/// Video/display output
-pub mod video;
-
-// =============================================================================
-// LEGACY (TO BE REMOVED)
-// =============================================================================
-
-// Drivers legados que precisam ser migrados para o novo modelo
-pub mod pic;
-
-// =============================================================================
-// INITIALIZATION
-// =============================================================================
-
 /// Inicializa sistema de drivers
 pub fn init() {
-    crate::kinfo!("(Drivers) Inicializando modelo de drivers...");
+    crate::kinfo!("(Drivers) Inicializando sistema de drivers...");
+    
+    // 1. Inicializar drivers base
     base::init();
-    crate::kinfo!("(Drivers) Drivers inicializados");
+    
+    // 2. Inicializar Serial (já deve ter sido init no boot, mas aqui registra driver)
+    serial::init();
+    
+    // 3. Inicializar Timers
+    timer::init_pit(1000); // 1000 Hz
+    
+    // 4. Inicializar Vídeo (se possível)
+    // video::init_fb(...); // Precisa de info do bootloader
+    
+    // 5. Detectar PCI
+    // pci::scan();
+    
+    crate::kinfo!("(Drivers) Drivers inicializados.");
 }
-
-// =============================================================================
-// TESTS
-// =============================================================================
-
-#[cfg(feature = "self_test")]
-pub mod test;

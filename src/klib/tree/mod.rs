@@ -1,1 +1,3 @@
-//! TODO: Tree
+//! Tree implementations
+
+pub mod rbtree;

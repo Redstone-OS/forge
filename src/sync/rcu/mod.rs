@@ -1,1 +1,3 @@
-//! TODO: RCU
+//! RCU implementation
+
+pub mod rcu;

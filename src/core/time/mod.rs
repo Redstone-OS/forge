@@ -1,4 +1,4 @@
-//! # Time - Tempo e Timers
+//! Tempo e Timers
 
 pub mod clock;
 pub mod hrtimer;

@@ -1,1 +1,2 @@
-//! TODO: Device Class
+//! Classes de Dispositivo
+// TODO: Class definitions

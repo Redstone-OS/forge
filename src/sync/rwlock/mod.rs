@@ -1,1 +1,3 @@
-//! TODO: RwLock
+//! RwLock implementation
+
+pub mod rwlock;

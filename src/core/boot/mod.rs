@@ -1,9 +1,10 @@
-//! # Boot - Inicialização do Sistema
-//!
-//! Sequência de boot e handoff do bootloader.
+//! Inicialização do kernel
 
 pub mod cmdline;
 pub mod entry;
 pub mod handoff;
 pub mod initcall;
 pub mod panic;
+
+pub use entry::kernel_main;
+pub use handoff::BootInfo;

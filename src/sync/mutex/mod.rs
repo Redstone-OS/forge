@@ -1,1 +1,3 @@
-//! TODO: Mutex
+//! Mutex implementation
+
+pub mod mutex;

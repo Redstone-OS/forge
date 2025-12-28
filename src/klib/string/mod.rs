@@ -1,1 +1,3 @@
-//! TODO: String utils
+//! String implementation
+
+pub mod string;

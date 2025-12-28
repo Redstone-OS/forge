@@ -1,1 +1,3 @@
-//! TODO: Spinlock
+//! Spinlock implementation
+
+pub mod spinlock;

@@ -1,1 +1,3 @@
-//! TODO: CondVar
+//! Condition Variable implementation
+
+pub mod condvar;

@@ -1,4 +1,4 @@
-//! # SMP - Suporte a Multi-Processador
+//! Multiprocessamento
 
 pub mod bringup;
 pub mod ipi;

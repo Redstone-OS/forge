@@ -1,1 +1,2 @@
-//! TODO: HPET
+//! High Precision Event Timer
+// TODO: Implementar HPET

@@ -1,247 +1,157 @@
-//! Global Descriptor Table (GDT) & Task State Segment (TSS).
-//!
-//! Configuração fundamental da arquitetura x86_64.
-//!
-//! # Responsabilidades
-//! 1. **Segmentação (Legado obrigatório):** Define CS/DS para Kernel (Ring 0) e User (Ring 3).
-//! 2. **TSS (Task State Segment):** Armazena o `RSP0` (Stack Pointer do Kernel).
-//!    Quando uma interrupção ocorre em modo usuário, a CPU carrega automaticamente
-//!    o `RSP0` do TSS para ter uma pilha segura onde salvar o contexto.
-//!
-//! # Segurança
-//! - Estruturas `#[repr(C, packed)]` para garantir layout exato de hardware.
-//! - Carregamento atômico de GDT e Segmentos via Assembly.
+//! Global Descriptor Table
 
-use core::arch::asm;
 use core::mem::size_of;
 
-// --- Seletores de Segmento (Exportados) ---
-// Usados em `src/sched/task.rs` e `interrupts.rs`.
-// O RPL (Requested Privilege Level) é codificado nos 2 bits inferiores (0 ou 3).
+/// Seletor de segmento
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct SegmentSelector(pub u16);
 
-pub const KERNEL_CODE_SEL: u16 = 0x08;
-pub const KERNEL_DATA_SEL: u16 = 0x10;
-// SYSRET: SS = base+8, CS = base+16
-// Com base=0x10: SS=0x18|3=0x1B, CS=0x20|3=0x23
-pub const USER_DATA_SEL: u16 = 0x18 | 3; // RPL 3 - DEVE vir antes de USER_CODE para SYSRET!
-pub const USER_CODE_SEL: u16 = 0x20 | 3; // RPL 3
-pub const TSS_SEL: u16 = 0x28;
+impl SegmentSelector {
+    pub const fn new(index: u16, rpl: u8) -> Self {
+        Self((index << 3) | (rpl as u16))
+    }
+}
 
-// --- Estruturas de Hardware ---
+/// Constantes de seletores
+pub const KERNEL_CODE_SEL: SegmentSelector = SegmentSelector::new(1, 0);
+pub const KERNEL_DATA_SEL: SegmentSelector = SegmentSelector::new(2, 0);
+pub const USER_CODE_SEL: SegmentSelector = SegmentSelector::new(3, 3);
+pub const USER_DATA_SEL: SegmentSelector = SegmentSelector::new(4, 3);
+pub const TSS_SEL: SegmentSelector = SegmentSelector::new(5, 0);
 
-/// Entrada padrão da GDT (64-bit Code/Data).
+/// Entrada da GDT (64-bit)
+#[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-struct GdtEntry {
+pub struct GdtEntry {
     limit_low: u16,
     base_low: u16,
     base_mid: u8,
     access: u8,
-    granularity: u8,
+    flags_limit_high: u8,
     base_high: u8,
 }
 
-/// Entrada de Segmento de Sistema (TSS é 16 bytes em 64-bit).
-#[repr(C, packed)]
-struct SystemSegmentEntry {
-    low: GdtEntry,
-    base_upper: u32,
-    reserved: u32,
-}
-
-/// A Tabela GDT completa.
-#[repr(C, align(4096))]
-struct Gdt {
-    null: GdtEntry,
-    kernel_code: GdtEntry,
-    kernel_data: GdtEntry,
-    // ORDEM para SYSRET: user_data primeiro, user_code depois
-    user_data: GdtEntry,
-    user_code: GdtEntry,
-    tss: SystemSegmentEntry,
-}
-
-/// Task State Segment (TSS) para x86_64.
-#[repr(C, packed)]
-struct Tss {
-    reserved1: u32,
-    rsp0: u64, // Stack do Kernel (Usado em interrupts de Ring 3)
-    rsp1: u64,
-    rsp2: u64,
-    reserved2: u64,
-    ist1: u64, // Interrupt Stack Tables (IST) - Opcional
-    ist2: u64,
-    ist3: u64,
-    ist4: u64,
-    ist5: u64,
-    ist6: u64,
-    ist7: u64,
-    reserved3: u64,
-    reserved4: u16,
-    iomap_base: u16,
-}
-
-// --- Instâncias Globais Estáticas ---
-
-static mut TSS: Tss = Tss {
-    reserved1: 0,
-    rsp0: 0,
-    rsp1: 0,
-    rsp2: 0,
-    reserved2: 0,
-    ist1: 0,
-    ist2: 0,
-    ist3: 0,
-    ist4: 0,
-    ist5: 0,
-    ist6: 0,
-    ist7: 0,
-    reserved3: 0,
-    reserved4: 0,
-    iomap_base: 0xFFFF,
-};
-
-static mut GDT: Gdt = Gdt {
-    null: GdtEntry::null(),
-    // Ring 0 - Kernel
-    kernel_code: GdtEntry::new(0x9A, 0x20), // Present, Ring0, Code, Exec/Read, LongMode
-    kernel_data: GdtEntry::new(0x92, 0),    // Present, Ring0, Data, Read/Write
-    // Ring 3 - User (ORDEM IMPORTANTE para SYSRET!)
-    // SYSRET carrega SS de STAR[63:48]+8 e CS de STAR[63:48]+16
-    // Com base=0x10: SS=0x18, CS=0x20
-    user_data: GdtEntry::new(0xF2, 0), // 0x18: Present, Ring3, Data, Read/Write
-    user_code: GdtEntry::new(0xFA, 0x20), // 0x20: Present, Ring3, Code, Exec/Read, LongMode
-    // TSS (Preenchido dinamicamente no init)
-    tss: SystemSegmentEntry::null(),
-};
-
-// --- Implementação ---
-
 impl GdtEntry {
-    const fn null() -> Self {
+    pub const fn null() -> Self {
         Self {
             limit_low: 0,
             base_low: 0,
             base_mid: 0,
             access: 0,
-            granularity: 0,
+            flags_limit_high: 0,
             base_high: 0,
         }
     }
-
-    const fn new(access: u8, flags: u8) -> Self {
+    
+    pub const fn kernel_code() -> Self {
         Self {
-            limit_low: 0,
+            limit_low: 0xFFFF,
             base_low: 0,
             base_mid: 0,
-            access,
-            granularity: flags,
+            access: 0x9A,      // Present, Ring 0, Code, Readable
+            flags_limit_high: 0xAF, // Long mode, limit high
+            base_high: 0,
+        }
+    }
+    
+    pub const fn kernel_data() -> Self {
+        Self {
+            limit_low: 0xFFFF,
+            base_low: 0,
+            base_mid: 0,
+            access: 0x92,      // Present, Ring 0, Data, Writable
+            flags_limit_high: 0xCF,
+            base_high: 0,
+        }
+    }
+    
+    pub const fn user_code() -> Self {
+        Self {
+            limit_low: 0xFFFF,
+            base_low: 0,
+            base_mid: 0,
+            access: 0xFA,      // Present, Ring 3, Code, Readable
+            flags_limit_high: 0xAF,
+            base_high: 0,
+        }
+    }
+    
+    pub const fn user_data() -> Self {
+        Self {
+            limit_low: 0xFFFF,
+            base_low: 0,
+            base_mid: 0,
+            access: 0xF2,      // Present, Ring 3, Data, Writable
+            flags_limit_high: 0xCF,
             base_high: 0,
         }
     }
 }
 
-impl SystemSegmentEntry {
-    const fn null() -> Self {
-        Self {
-            low: GdtEntry::null(),
-            base_upper: 0,
-            reserved: 0,
-        }
-    }
-
-    /// Cria descritor TSS a partir do endereço da struct TSS.
-    fn new_tss(tss_ptr: *const Tss) -> Self {
-        let ptr = tss_ptr as u64;
-        let size = size_of::<Tss>() as u64 - 1;
-
-        Self {
-            low: GdtEntry {
-                limit_low: size as u16,
-                base_low: ptr as u16,
-                base_mid: (ptr >> 16) as u8,
-                access: 0x89, // Present, Ring0, Available 64-bit TSS
-                granularity: 0,
-                base_high: (ptr >> 24) as u8,
-            },
-            base_upper: (ptr >> 32) as u32,
-            reserved: 0,
-        }
-    }
-}
-
-/// Define a stack do Kernel para onde a CPU deve pular ao receber interrupção em Ring 3.
-/// Deve ser chamada pelo Scheduler a cada troca de contexto.
-///
-/// # Safety
-/// O endereço `stack_top` deve ser válido e mapeado.
-pub unsafe fn set_kernel_stack(stack_top: u64) {
-    TSS.rsp0 = stack_top;
-}
-
+/// Task State Segment
+#[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-struct GdtDescriptor {
-    limit: u16,
-    base: u64,
+pub struct Tss {
+    reserved0: u32,
+    pub rsp0: u64,      // Stack para Ring 0
+    pub rsp1: u64,
+    pub rsp2: u64,
+    reserved1: u64,
+    pub ist1: u64,      // Interrupt Stack Table
+    pub ist2: u64,
+    pub ist3: u64,
+    pub ist4: u64,
+    pub ist5: u64,
+    pub ist6: u64,
+    pub ist7: u64,
+    reserved2: u64,
+    reserved3: u16,
+    pub iomap_base: u16,
 }
 
-/// Inicializa a GDT e o TSS.
-///
+impl Tss {
+    pub const fn new() -> Self {
+        Self {
+            reserved0: 0,
+            rsp0: 0,
+            rsp1: 0,
+            rsp2: 0,
+            reserved1: 0,
+            ist1: 0,
+            ist2: 0,
+            ist3: 0,
+            ist4: 0,
+            ist5: 0,
+            ist6: 0,
+            ist7: 0,
+            reserved2: 0,
+            reserved3: 0,
+            iomap_base: size_of::<Tss>() as u16,
+        }
+    }
+}
+
+// GDT global estática
+static mut GDT: [GdtEntry; 7] = [
+    GdtEntry::null(),
+    GdtEntry::kernel_code(),
+    GdtEntry::kernel_data(),
+    GdtEntry::user_code(),
+    GdtEntry::user_data(),
+    GdtEntry::null(), // TSS low
+    GdtEntry::null(), // TSS high
+];
+
+static mut TSS: Tss = Tss::new();
+
+/// Inicializa a GDT
+/// 
 /// # Safety
-/// Deve ser chamado apenas uma vez durante o boot do processador (BSP).
-/// Em SMP, cada AP terá sua própria GDT/TSS.
+/// 
+/// Deve ser chamado apenas uma vez durante boot.
 pub unsafe fn init() {
-    crate::ktrace!("(GDT) Configurando GDT e TSS...");
-
-    // 1. Configurar entrada do TSS na GDT com o endereço real
-    GDT.tss = SystemSegmentEntry::new_tss(core::ptr::addr_of!(TSS));
-    crate::ktrace!("(GDT) TSS configurado na GDT");
-
-    // 2. Carregar GDTR
-    let gdt_ptr = GdtDescriptor {
-        limit: (size_of::<Gdt>() - 1) as u16,
-        base: core::ptr::addr_of!(GDT) as u64,
-    };
-    // Copiar campos packed para variáveis locais (evita E0793)
-    let gdt_base = gdt_ptr.base;
-    let _gdt_limit = gdt_ptr.limit;
-    crate::ktrace!("(GDT) GDTR base=", gdt_base);
-
-    asm!("lgdt [{}]", in(reg) &gdt_ptr, options(readonly, nostack, preserves_flags));
-    crate::ktrace!("(GDT) GDT carregada com sucesso");
-
-    // 3. Recarregar Segmentos
-    // CORREÇÃO E0658: Usamos registradores (in(reg)) para passar os seletores,
-    // evitando a dependência de `const operands` instável.
-    let kcode: u64 = KERNEL_CODE_SEL as u64;
-    let kdata: u16 = KERNEL_DATA_SEL;
-    let tss_sel: u16 = TSS_SEL;
-
-    asm!(
-        // Carregar segmentos de dados (DS, ES, FS, GS, SS) com KERNEL_DATA_SEL
-        "mov ds, {dsel:x}",
-        "mov es, {dsel:x}",
-        "mov fs, {dsel:x}",
-        "mov gs, {dsel:x}",
-        "mov ss, {dsel:x}",
-
-        // Carregar Code Segment (CS) usando far return hack
-        "push {ksel}",      // Novo CS
-        "lea {tmp}, [1f]",  // Endereço de retorno (Label 1)
-        "push {tmp}",       // Empilha RIP
-        "retfq",            // Far Return (pop RIP, pop CS)
-        "1:",
-
-        // Carregar Task Register (TR) com o seletor do TSS
-        "ltr {tss_sel:x}",
-
-        ksel = in(reg) kcode,
-        dsel = in(reg) kdata,
-        tss_sel = in(reg) tss_sel,
-        tmp = lateout(reg) _,
-    );
-
-    crate::kinfo!("(GDT) Inicializada com sucesso");
-
-    // NOTA: SSE desabilitado no target x86_64-redstone.json
-    // init_sse() removido para evitar problemas com instruções SSE
+    // TODO: Configurar TSS entries na GDT
+    // TODO: Carregar GDT com lgdt
+    // TODO: Recarregar seletores de segmento
 }

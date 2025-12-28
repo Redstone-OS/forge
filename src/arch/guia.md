@@ -41,6 +41,15 @@ arch/
     └── iommu/
         ├── mod.rs
         └── intel_vtd.rs → Intel VT-d
+
+    └── aarch64/
+   
+     Deve ter os arquivos mas como um todo para lembrar de implementacao futura
+
+    └── riscv64/
+
+    Deve ter os arquivos mas como um todo para lembrar de implementacao futura
+
 ```
 
 ---

@@ -1,1 +1,3 @@
-//! TODO: Semaphore
+//! Semaphore implementation
+
+pub mod semaphore;

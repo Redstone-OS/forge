@@ -1,1 +1,3 @@
-//! TODO: Atomic
+//! Atomic implementations
+
+pub mod atomic;

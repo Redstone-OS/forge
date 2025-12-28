@@ -1,138 +1,59 @@
-//! Interrupt Descriptor Table (IDT).
-//!
-//! Gerencia a tabela de interrupções.
+//! Interrupt Descriptor Table (IDT)
 
-use super::interrupts;
-use core::arch::asm;
 use core::mem::size_of;
 
-/// Contexto salvo na stack durante uma interrupção.
-#[repr(C)]
-#[derive(Debug)]
-pub struct ContextFrame {
-    // Registradores salvos manualmente (pushall)
-    pub rax: u64,
-    pub rbx: u64,
-    pub rcx: u64,
-    pub rdx: u64,
-    pub rsi: u64,
-    pub rdi: u64,
-    pub r8: u64,
-    pub r9: u64,
-    pub r10: u64,
-    pub r11: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
-    pub r15: u64,
-    pub rbp: u64,
-
-    // Empilhado pela CPU ou pelo stub
-    pub error_code: u64,
-
-    // Empilhado pela CPU (Hardware Frame)
-    pub rip: u64,
-    pub cs: u64,
-    pub rflags: u64,
-    pub rsp: u64,
-    pub ss: u64,
-}
-
+/// Entrada da IDT (Gate Descriptor)
+#[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-#[derive(Clone, Copy)]
-struct IdtEntry {
+pub struct IdtEntry {
     offset_low: u16,
     selector: u16,
-    ist: u8,
-    type_attr: u8,
+    ist: u8,        // Interrupt Stack Table offset
+    flags: u8,
     offset_mid: u16,
     offset_high: u32,
-    zero: u32,
+    reserved: u32,
 }
 
 impl IdtEntry {
-    fn new(handler: usize) -> Self {
-        Self {
-            offset_low: handler as u16,
-            selector: 0x08, // Kernel Code Segment
-            ist: 0,
-            type_attr: 0x8E, // Present | Ring0 | Interrupt Gate
-            offset_mid: (handler >> 16) as u16,
-            offset_high: (handler >> 32) as u32,
-            zero: 0,
-        }
-    }
-
-    fn missing() -> Self {
+    pub const fn missing() -> Self {
         Self {
             offset_low: 0,
             selector: 0,
             ist: 0,
-            type_attr: 0,
+            flags: 0,
             offset_mid: 0,
             offset_high: 0,
-            zero: 0,
+            reserved: 0,
+        }
+    }
+    
+    // TODO: Adicionar métodos para criar gates
+}
+
+/// A IDT contém 256 entradas
+#[repr(C, align(16))]
+pub struct Idt {
+    pub entries: [IdtEntry; 256],
+}
+
+impl Idt {
+    pub const fn new() -> Self {
+        Self {
+            entries: [IdtEntry::missing(); 256],
         }
     }
 }
 
-#[repr(C, align(4096))]
-struct Idt {
-    entries: [IdtEntry; 256],
-}
+// IDT Global
+static mut IDT: Idt = Idt::new();
 
-static mut IDT: Idt = Idt {
-    entries: [IdtEntry {
-        offset_low: 0,
-        selector: 0,
-        ist: 0,
-        type_attr: 0,
-        offset_mid: 0,
-        offset_high: 0,
-        zero: 0,
-    }; 256],
-};
-
-#[repr(C, packed)]
-struct IdtDescriptor {
-    limit: u16,
-    base: u64,
-}
-
-/// Inicializa a IDT e registra os handlers básicos.
+/// Inicializa a IDT
+///
+/// # Safety
+///
+/// Deve ser chamado uma única vez no boot.
 pub unsafe fn init() {
-    crate::kdebug!("(IDT) Inicializando tabela de vetores...");
-
-    // Limpar IDT (segurança)
-    IDT.entries = [IdtEntry::missing(); 256];
-
-    // Registrar Handlers Críticos
-    IDT.entries[3] = IdtEntry::new(interrupts::breakpoint_handler as usize);
-    IDT.entries[6] = IdtEntry::new(interrupts::invalid_opcode_handler as usize); // ADDED
-    IDT.entries[8] = IdtEntry::new(interrupts::double_fault_handler as usize);
-    IDT.entries[13] = IdtEntry::new(interrupts::general_protection_fault_handler as usize);
-    IDT.entries[14] = IdtEntry::new(interrupts::page_fault_handler as usize);
-    crate::ktrace!("(IDT) Exceções de CPU registradas");
-
-    // Timer (PIC remapeia IRQ0 para vetor 0x20 = 32)
-    IDT.entries[32] = IdtEntry::new(interrupts::timer_handler as usize);
-    crate::ktrace!("(IDT) IRQ 0 (Timer) registrado");
-
-    // Syscall: agora usamos a instrução 'syscall' via MSRs (não int 0x80)
-    // A configuração é feita em arch::x86_64::syscall::init()
-    crate::ktrace!("(IDT) Syscall via instrução syscall (MSRs)");
-
-    // Carregar IDT
-    let idt_ptr = IdtDescriptor {
-        limit: (size_of::<Idt>() - 1) as u16,
-        base: core::ptr::addr_of!(IDT) as u64,
-    };
-    // Copiar campos packed para variáveis locais (evita E0793)
-    let idt_base = idt_ptr.base;
-    let _idt_limit = idt_ptr.limit;
-    crate::ktrace!("(IDT) IDTR base=", idt_base);
-
-    asm!("lidt [{}]", in(reg) &idt_ptr, options(readonly, nostack, preserves_flags));
-
-    crate::kinfo!("(IDT) Inicializada com sucesso");
+    // TODO: Configurar handlers de exceção
+    // TODO: Carregar IDT com lidt
 }

@@ -1,1 +1,2 @@
-//! TODO: String impl
+//! String manipulation
+// TODO: Safe string utils

@@ -1,1 +1,2 @@
-//! TODO: Hash table
+//! Hashtable
+// TODO: Tabela hash sem alocação

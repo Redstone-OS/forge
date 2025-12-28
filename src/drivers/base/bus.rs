@@ -1,1 +1,2 @@
-//! TODO: Bus
+//! Barramentos
+// TODO: Trait Bus e registro

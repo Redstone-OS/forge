@@ -1,4 +1,4 @@
-//! # Work - Workqueues e deferred work
+//! Trabalho Diferido
 
 pub mod deferred;
 pub mod tasklet;

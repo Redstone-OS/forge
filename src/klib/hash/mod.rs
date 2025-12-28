@@ -1,1 +1,3 @@
-//! TODO: Hash
+//! Hash implementations
+
+pub mod hashtable;

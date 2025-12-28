@@ -1,1 +1,2 @@
-//! TODO: Red-black tree
+//! Red-Black Tree
+// TODO: Árvore balanceada sem alocação

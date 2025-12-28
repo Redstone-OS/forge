@@ -1,1 +1,2 @@
-//! TODO: RCU impl
+//! Read-Copy-Update synchronization
+// TODO: Implementar RCU
