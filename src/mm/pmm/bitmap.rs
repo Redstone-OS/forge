@@ -14,7 +14,7 @@
 
 use super::stats::PmmStats;
 // use super::PhysFrame;
-use crate::core::boot::handoff::{BootInfo, MemoryType};
+use crate::core::boot::handoff::{BootInfo, MemoryMapEntry, MemoryType};
 use crate::mm::addr::{self, PhysAddr};
 use crate::mm::pmm::FRAME_SIZE as PAGE_SIZE;
 use core::sync::atomic::{compiler_fence, Ordering};
@@ -178,27 +178,25 @@ impl BitmapFrameAllocator {
     }
 
     /// Scan seguro do mapa de memória
-    /// Scan seguro do mapa de memória
-    /// Scan seguro do mapa de memória
     fn scan_memory_map_safe(&self, boot_info: &BootInfo) -> (PhysAddr, usize) {
         let mut max_phys = 0u64;
         let mut count = 0usize;
 
-        let map = &boot_info.memory_map;
-        let regions = &map.regions;
-        let cnt = core::cmp::min(map.count, regions.len());
+        let regions = unsafe {
+            core::slice::from_raw_parts(
+                boot_info.memory_map_addr as *const MemoryMapEntry,
+                boot_info.memory_map_len as usize,
+            )
+        };
 
-        let mut i = 0;
-        while i < cnt {
-            let region = &regions[i];
-            if region.kind == MemoryType::Usable {
-                let end = region.start + region.size;
+        for region in regions {
+            if region.typ == MemoryType::Usable {
+                let end = region.base + region.len;
                 if end > max_phys {
                     max_phys = end;
                 }
                 count += 1;
             }
-            i += 1;
         }
 
         if max_phys == 0 {
@@ -211,39 +209,38 @@ impl BitmapFrameAllocator {
     }
 
     /// Estratégia "Center-Out" com Probing Fibonacci
-    /// Estratégia "Center-Out" com Probing Fibonacci
     fn find_bitmap_region_center_out(&self, boot_info: &BootInfo, size_bytes: usize) -> PhysAddr {
         let size_needed = size_bytes as u64;
         // Padding para evitar problemas
         let forbidden_start = 0;
         let forbidden_end = KERNEL_SAFETY_PADDING; // Simplesmente evitar início
 
-        let map = &boot_info.memory_map;
-        let regions = &map.regions;
-        let count = core::cmp::min(map.count, regions.len());
+        let regions = unsafe {
+            core::slice::from_raw_parts(
+                boot_info.memory_map_addr as *const MemoryMapEntry,
+                boot_info.memory_map_len as usize,
+            )
+        };
 
         // Encontrar a MAIOR região Usable
         let mut best_region_idx = None;
         let mut max_len = 0u64;
 
-        let mut i = 0;
-        while i < count {
-            let region = &regions[i];
-            if region.kind == MemoryType::Usable
-                && region.size > max_len
-                && region.start >= MIN_REGION_ADDR
+        for (i, region) in regions.iter().enumerate() {
+            if region.typ == MemoryType::Usable
+                && region.len > max_len
+                && region.base >= MIN_REGION_ADDR
             {
-                max_len = region.size;
+                max_len = region.len;
                 best_region_idx = Some(i);
             }
-            i += 1;
         }
 
         if let Some(idx) = best_region_idx {
             let region = &regions[idx];
-            let region_start = region.start;
-            let region_end = region.start + region.size;
-            let region_center = region_start + (region.size / 2);
+            let region_start = region.base;
+            let region_end = region.base + region.len;
+            let region_center = region_start + (region.len / 2);
             let center_candidate = (region_center.saturating_sub(size_needed / 2) + 0xFFF) & !0xFFF;
 
             let mut fib_a = 0u64;
@@ -300,8 +297,6 @@ impl BitmapFrameAllocator {
     }
 
     /// Inicializa regiões livres no bitmap
-    /// Inicializa regiões livres no bitmap
-    /// Inicializa regiões livres no bitmap
     fn init_free_regions(
         &mut self,
         boot_info: &BootInfo,
@@ -310,25 +305,24 @@ impl BitmapFrameAllocator {
     ) {
         let bitmap_end_phys = bitmap_start_phys.as_u64() + bitmap_size_bytes;
 
-        let map = &boot_info.memory_map;
-        let regions = &map.regions;
-        let count = core::cmp::min(map.count, regions.len());
+        let regions = unsafe {
+            core::slice::from_raw_parts(
+                boot_info.memory_map_addr as *const MemoryMapEntry,
+                boot_info.memory_map_len as usize,
+            )
+        };
 
-        let mut i = 0;
-        while i < count {
-            let region = &regions[i];
-
+        for region in regions {
             // Só liberamos regiões marcadas como Usable
-            if region.kind == MemoryType::Usable {
-                let mut start = region.start;
-                let mut end = region.start + region.size;
+            if region.typ == MemoryType::Usable {
+                let mut start = region.base;
+                let mut end = region.base + region.len;
 
                 // Alinhar ao tamanho da página
                 start = (start + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
                 end = end & !(PAGE_SIZE - 1);
 
                 if start >= end {
-                    i += 1;
                     continue;
                 }
 
@@ -346,7 +340,6 @@ impl BitmapFrameAllocator {
                     self.free_region(start, end);
                 }
             }
-            i += 1;
         }
     }
 

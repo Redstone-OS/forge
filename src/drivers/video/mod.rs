@@ -4,6 +4,7 @@ pub mod font;
 pub mod font_data;
 pub mod framebuffer;
 
+pub use framebuffer::init;
 pub use framebuffer::init as init_fb;
 
 /// Escreve bytes no console (framebuffer)

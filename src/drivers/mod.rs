@@ -14,8 +14,6 @@ pub mod video; // Legacy
 
 pub use base::{Device, DeviceType, Driver, DriverError};
 
-use crate::{drivers::video::framebuffer::FramebufferInfo, mm};
-
 /// Inicializa sistema de drivers
 pub fn init() {
     crate::kinfo!("(Drivers) Inicializando sistema de drivers...");
@@ -29,14 +27,8 @@ pub fn init() {
     // 3. Inicializar Timers
     timer::init_pit(1000); // 1000 Hz
 
-    // 4. Inicializar Vídeo (se possível)
-    video::init_fb(FramebufferInfo {
-        addr: mm::addr::VirtAddr::new(0),
-        width: 0,
-        height: 0,
-        stride: 0,
-        bpp: 0,
-    });
+    // 4. Inicializar Vídeo
+    // (Video é inicializado no kernel_main com BootInfo)
 
     // 5. Detectar PCI
     pci::scan();

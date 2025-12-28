@@ -15,12 +15,27 @@ use crate::core::power::cpuidle;
 /// O Bootloader configura a stack e salta para cá.
 #[no_mangle]
 pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
+    // DEBUG: Trap CPU here to verify entry point
+    unsafe {
+        core::arch::asm!("cli");
+    }
+    loop {
+        core::hint::spin_loop();
+    }
+
     // 1. Inicialização Precoce (Early Init) - Antes do Heap
     // Configurar Log Serial para que possamos ver o que está acontecendo.
     // (Serial driver geralmente não precisa de heap)
     crate::drivers::serial::init();
     crate::kinfo!("--- Iniciando Forge Kernel ---");
-    crate::kinfo!("Versão do Protocolo de Boot: ", boot_info.version);
+
+    // Validação da ABI do Bootloader
+    if boot_info.magic != crate::core::boot::handoff::BOOT_INFO_MAGIC {
+        crate::kerror!("PANIC: Invalid BootInfo Magic: {:#X}", boot_info.magic);
+        loop {}
+    }
+
+    crate::kinfo!("Versão do Protocolo de Boot: {}", boot_info.version);
 
     // 2. Inicialização da Arquitetura (CPU, GDT, IDT, Interrupções)
     crate::kinfo!("Inicializando Arquitetura...");
@@ -28,9 +43,15 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::arch::init_basics(); // TODO: Expor init unificado em arch
     }
 
+    // 2.5. Inicialização de Vídeo (Framebuffer)
+    // Inicializamos cedo para ter saída visual se o serial falhar ou para mostrar logo
+    crate::drivers::video::init(boot_info.framebuffer);
+
     // 3. Inicialização de Memória (PMM, VMM, Heap)
     crate::kinfo!("Inicializando Memória...");
     unsafe {
+        // Agora passamos o boot_info completo. O mm::init deve saber lidar com
+        // memory_map_addr e memory_map_len.
         crate::mm::init(boot_info);
     }
 

@@ -43,10 +43,6 @@ extern "C" {
 // =============================================================================
 
 /// Stack size (inclui guard page de 4KB)
-#[cfg(debug_assertions)]
-pub const KERNEL_STACK_SIZE: usize = 512 * 1024; // 512 KB debug
-
-#[cfg(not(debug_assertions))]
 pub const KERNEL_STACK_SIZE: usize = 64 * 1024; // 64 KB release
 
 /// Guard page size
@@ -67,55 +63,62 @@ pub fn guard_page_addr() -> u64 {
 }
 
 // =============================================================================
-// ENTRY POINT
+// ENTRY POINT (GLOBAL ASM)
 // =============================================================================
 
-/// Ponto de entrada do kernel.
-///
-/// # Safety
-///
-/// Esta função é chamada diretamente pelo bootloader.
-/// Configura stack, zera BSS, e salta para kernel_main.
-#[naked]
-#[no_mangle]
-#[link_section = ".text._start"]
-pub unsafe extern "C" fn _start(boot_info: u64) -> ! {
-    core::arch::asm!(
-        // 1. Preservar boot_info em R15 (callee-saved)
-        "mov r15, rdi",
+// Usamos global_asm! para garantir que não haja prêambulos do compilador (CET/IBT)
+// ou padding indesejado no início da seção .text._start.
+core::arch::global_asm!(
+    ".section .text._start",
+    ".global _start",
+    "_start:",
+    // -------------------------------------------------------------------------
+    // 1. Preservar boot_info em R15 (callee-saved)
+    // -------------------------------------------------------------------------
+    "mov r15, rdi",
 
-        // 2. Configurar stack pointer
-        "lea rax, [rip + {stack}]",
-        "lea rsp, [rax + {stack_size}]",
+    // -------------------------------------------------------------------------
+    // 2. Configurar stack pointer
+    // -------------------------------------------------------------------------
+    "lea rax, [rip + {stack}]",
+    "lea rsp, [rax + {stack_size}]",
 
-        // 3. Zerar frame pointer
-        "xor rbp, rbp",
+    // -------------------------------------------------------------------------
+    // 3. Zerar frame pointer
+    // -------------------------------------------------------------------------
+    "xor rbp, rbp",
 
-        // 4. Zerar BSS (CRÍTICO!)
-        "lea rdi, [rip + {bss_start}]",
-        "lea rcx, [rip + {bss_end}]",
-        "sub rcx, rdi",
-        "xor eax, eax",
-        "rep stosb",
+    // -------------------------------------------------------------------------
+    // 4. Zerar BSS (CRÍTICO!)
+    // -------------------------------------------------------------------------
+    "lea rdi, [rip + {bss_start}]",
+    "lea rcx, [rip + {bss_end}]",
+    "sub rcx, rdi",
+    "xor eax, eax",
+    "rep stosb",
 
-        // 5. Alinhar stack (System V ABI: 16 bytes)
-        "and rsp, -16",
+    // -------------------------------------------------------------------------
+    // 5. Alinhar stack (System V ABI: 16 bytes)
+    // -------------------------------------------------------------------------
+    "and rsp, -16",
 
-        // 6. Chamar kernel_main(boot_info)
-        "mov rdi, r15",
-        "call {kernel_main}",
+    // -------------------------------------------------------------------------
+    // 6. Chamar kernel_main(boot_info)
+    // -------------------------------------------------------------------------
+    "mov rdi, r15",
+    "call {kernel_main}",
 
-        // 7. Halt loop (nunca deve chegar aqui)
-        "2:",
-        "cli",
-        "hlt",
-        "jmp 2b",
+    // -------------------------------------------------------------------------
+    // 7. Halt loop (Fallback)
+    // -------------------------------------------------------------------------
+    "2:",
+    "cli",
+    "hlt",
+    "jmp 2b",
 
-        stack = sym KERNEL_STACK,
-        stack_size = const KERNEL_STACK_SIZE,
-        bss_start = sym __bss_start,
-        bss_end = sym __bss_end,
-        kernel_main = sym kernel_boot::kernel_main,
-        options(noreturn)
-    );
-}
+    stack = sym KERNEL_STACK,
+    stack_size = const KERNEL_STACK_SIZE,
+    bss_start = sym __bss_start,
+    bss_end = sym __bss_end,
+    kernel_main = sym kernel_boot::kernel_main,
+);
