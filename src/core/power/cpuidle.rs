@@ -8,12 +8,12 @@
 /// - C1: HLT (Halt).
 /// - C2+: Modos mais profundos (que param clocks e caches), requerendo suporte de hardware (MWAIT/ACPI).
 
-//! CPU Idle Management
+// Gestão de CPU Idle Management
 
 /// Informações sobre um estado de idle (C-State)
 pub struct IdleState {
     pub name: &'static str,
-    pub latency_ns: u64, // Tempo para sair do estado
+    pub latency_ns: u64,  // Tempo para sair do estado
     pub power_usage: u32, // Consumo relativo
 }
 
@@ -26,17 +26,17 @@ pub struct IdleState {
 pub fn enter_idle_loop() -> ! {
     loop {
         // TODO: Verificar se há callbacks de RCU ou SoftIRQs pendentes antes de dormir.
-        
+
         // Caminho simples: C1 (HLT)
         // Isso coloca a CPU em pause até a próxima interrupção.
-        
+
         unsafe {
             // Em x86: HLT para até a próxima interrupção.
             // As interrupções DEVEM estar habilitadas para acordar.
             // O trait CpuTrait::halt() geralmente faz isso.
             crate::arch::Cpu::halt();
         }
-        
+
         // Ao acordar, verificamos se precisamos reagendar.
         // O scheduler cuidará disso se for uma interrupção de timer.
     }

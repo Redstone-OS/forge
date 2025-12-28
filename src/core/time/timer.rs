@@ -6,9 +6,7 @@
 /// Detalhes de Implementação:
 /// - Baseado em "Jiffies" (ticks do sistema) ou nanosegundos (se HRTimer).
 /// - Abstração básica para uso por drivers e subsistemas.
-
-//! Interface de Timers
-
+// Interface de Timers
 use alloc::boxed::Box;
 
 /// Callback para quando o timer expirar
@@ -40,7 +38,7 @@ impl Timer {
     pub fn is_expired(&self, current_tick: u64) -> bool {
         current_tick >= self.expires
     }
-    
+
     /// Executa o callback do timer
     pub fn run(&mut self) {
         (self.callback)();

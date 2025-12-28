@@ -6,9 +6,7 @@
 /// Detalhes de Implementação:
 /// - Usa atômicos (AtomicU64) para permitir atualizações concorrentes sem locks (baixo overhead).
 /// - Contadores monotônicos crescentes.
-
-//! Estatísticas do Kernel
-
+// Estatísticas de Debugrnel
 use core::sync::atomic::{AtomicU64, Ordering};
 
 pub struct KernelStats {
@@ -47,13 +45,13 @@ impl KernelStats {
     pub fn inc_context_switches(&self) {
         self.context_switches.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Incrementa contador de page faults
     #[inline]
     pub fn inc_page_faults(&self) {
         self.page_faults.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Incrementa contador de tarefas criadas
     #[inline]
     pub fn inc_tasks_spawned(&self) {
@@ -63,11 +61,23 @@ impl KernelStats {
     /// Imprime estatísticas no log
     pub fn dump(&self) {
         crate::kinfo!("--- Estatísticas do Kernel ---");
-        crate::kinfo!("Interrupções:     ", self.interrupts.load(Ordering::Relaxed));
+        crate::kinfo!(
+            "Interrupções:     ",
+            self.interrupts.load(Ordering::Relaxed)
+        );
         crate::kinfo!("Syscalls:         ", self.syscalls.load(Ordering::Relaxed));
-        crate::kinfo!("Trocas Contexto:  ", self.context_switches.load(Ordering::Relaxed));
-        crate::kinfo!("Page Faults:      ", self.page_faults.load(Ordering::Relaxed));
-        crate::kinfo!("Tarefas Criadas:  ", self.tasks_spawned.load(Ordering::Relaxed));
+        crate::kinfo!(
+            "Trocas Contexto:  ",
+            self.context_switches.load(Ordering::Relaxed)
+        );
+        crate::kinfo!(
+            "Page Faults:      ",
+            self.page_faults.load(Ordering::Relaxed)
+        );
+        crate::kinfo!(
+            "Tarefas Criadas:  ",
+            self.tasks_spawned.load(Ordering::Relaxed)
+        );
         crate::kinfo!("--------------------");
     }
 }

@@ -8,8 +8,7 @@
 /// - Nós alocados na heap (alloc).
 /// - Implementação simplificada (BST por enquanto) com estrutura para cores.
 
-//! Red-Black Tree
-
+/// Red-Black Tree
 use alloc::boxed::Box;
 use core::cmp::Ordering;
 
@@ -46,10 +45,7 @@ pub struct RBTree<K, V> {
 
 impl<K: Ord, V> RBTree<K, V> {
     pub const fn new() -> Self {
-        Self {
-            root: None,
-            len: 0,
-        }
+        Self { root: None, len: 0 }
     }
 
     pub fn insert(&mut self, key: K, value: V) {
@@ -57,7 +53,7 @@ impl<K: Ord, V> RBTree<K, V> {
         // Por enquanto, inserção BST simples.
         self.len += 1;
         let new_node = Box::new(Node::new(key, value));
-        
+
         match &mut self.root {
             None => {
                 self.root = Some(new_node);
@@ -65,7 +61,7 @@ impl<K: Ord, V> RBTree<K, V> {
                 if let Some(ref mut node) = self.root {
                     node.color = Color::Black;
                 }
-            },
+            }
             Some(root) => {
                 Self::insert_recursive(root, new_node);
             }
@@ -74,18 +70,14 @@ impl<K: Ord, V> RBTree<K, V> {
 
     fn insert_recursive(node: &mut Node<K, V>, new_node: Box<Node<K, V>>) {
         match new_node.key.cmp(&node.key) {
-            Ordering::Less => {
-                match &mut node.left {
-                    None => node.left = Some(new_node),
-                    Some(left) => Self::insert_recursive(left, new_node),
-                }
+            Ordering::Less => match &mut node.left {
+                None => node.left = Some(new_node),
+                Some(left) => Self::insert_recursive(left, new_node),
             },
-            Ordering::Greater | Ordering::Equal => {
-                 match &mut node.right {
-                    None => node.right = Some(new_node),
-                    Some(right) => Self::insert_recursive(right, new_node),
-                }
-            }
+            Ordering::Greater | Ordering::Equal => match &mut node.right {
+                None => node.right = Some(new_node),
+                Some(right) => Self::insert_recursive(right, new_node),
+            },
         }
     }
 

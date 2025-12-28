@@ -6,9 +6,7 @@
 /// Detalhes de Implementação:
 /// - Wrapper conveniente sobre `WorkQueue`.
 /// - Permite agendar closures para rodar em contexto de thread (seguro para dormir/bloquear).
-
-//! Execução diferida simples
-
+// Execução Adiada (Deferred Execution)mples
 use crate::core::work::workqueue::{ClosureWork, SYSTEM_WQ};
 use alloc::boxed::Box;
 
@@ -51,14 +49,14 @@ impl DeferredTask {
     /// ou precisaríamos mudar WorkItem para não consumir self (mas Box<dyn trait> geralmente consome).
     pub fn schedule(&mut self) {
         if let Some(func) = self.func.take() {
-            // Re-envelopar em ClosureWork. 
+            // Re-envelopar em ClosureWork.
             // Nota: ClosureWork::new espera FnMut.
             // Aqui estamos movendo o Box para dentro do ClosureWork.
             // Para suportar múltiplas execuções, o design de WorkItem precisaria ser ajustado ou
             // usaríamos Arc<Mutex<_>> no estado compartilhado.
             //
             // Como esta é uma implementação simples "fire-once", movemos a função.
-            
+
             // Hack para converter Box<dyn FnMut> que temos para a estrutura esperada
             // ou simplesmente criamos uma closure que chama o box.
             let mut boxed_fn = func;

@@ -7,20 +7,20 @@
 /// - Estruturas `repr(C)` para garantir layout binário compatível.
 /// - Deve coincidir exatamente com o que o bootloader (Ignite) preenche.
 
-//! Handoff Data (Bootloader -> Kernel)
+// Handoff Data (Bootloader -> Kernel)
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct BootInfo {
     /// Versão da estrutura de boot info (para compatibilidade)
     pub version: u64,
-    
+
     /// O Mapa de Memória do sistema
     pub memory_map: MemoryMap,
-    
+
     /// Informações do Framebuffer Gráfico (GOP/VESA)
     pub framebuffer: Framebuffer,
-    
+
     /// Endereço físico da tabela rsdp (ACPI)
     /// Se 0, não encontrado.
     pub rsdp_addr: u64,

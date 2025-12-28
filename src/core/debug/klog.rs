@@ -7,8 +7,7 @@
 /// - Define níveis de severidade (Debug, Info, Warn, Error).
 /// - Macros expandem para chamadas de função estáticas para reduzir inchaço de código.
 /// - Depende de `crate::drivers::serial` para saída física.
-
-//! Sistema de logging do kernel
+// Sistema de logging do kernel
 
 // Nota: Assumimos que crate::drivers::serial existe e tem write_str/write_hex.
 // Se ainda não existir, isso causará erro de compilação até que o módulo drivers seja criado.
@@ -32,7 +31,7 @@ pub fn log(level: LogLevel, message: &str) {
         LogLevel::Warn => "[WARN]  ",
         LogLevel::Error => "[ERROR] ",
     };
-    
+
     // SAFETY: Acesso à serial deve ser sincronizado internamente ou aceitamos corrupção em panic
     serial::write_str(prefix);
     serial::write_str(message);
@@ -94,7 +93,7 @@ pub fn log_val(level: LogLevel, message: &str, value: impl LogValue) {
         LogLevel::Warn => "[WARN]  ",
         LogLevel::Error => "[ERROR] ",
     };
-    
+
     serial::write_str(prefix);
     serial::write_str(message);
     value.log();
@@ -106,51 +105,30 @@ pub fn log_val(level: LogLevel, message: &str, value: impl LogValue) {
 #[macro_export]
 macro_rules! kinfo {
     ($msg:expr) => {
-        $crate::core::debug::klog::log(
-            $crate::core::debug::klog::LogLevel::Info,
-            $msg
-        )
+        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Info, $msg)
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_val(
-            $crate::core::debug::klog::LogLevel::Info,
-            $msg,
-            $val
-        )
+        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Info, $msg, $val)
     };
 }
 
 #[macro_export]
 macro_rules! kwarn {
     ($msg:expr) => {
-        $crate::core::debug::klog::log(
-            $crate::core::debug::klog::LogLevel::Warn,
-            $msg
-        )
+        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Warn, $msg)
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_val(
-            $crate::core::debug::klog::LogLevel::Warn,
-            $msg,
-            $val
-        )
+        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Warn, $msg, $val)
     };
 }
 
 #[macro_export]
 macro_rules! kerror {
     ($msg:expr) => {
-        $crate::core::debug::klog::log(
-            $crate::core::debug::klog::LogLevel::Error,
-            $msg
-        )
+        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Error, $msg)
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_val(
-            $crate::core::debug::klog::LogLevel::Error,
-            $msg,
-            $val
-        )
+        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Error, $msg, $val)
     };
 }
 
@@ -158,17 +136,10 @@ macro_rules! kerror {
 macro_rules! kdebug {
     ($msg:expr) => {
         #[cfg(debug_assertions)]
-        $crate::core::debug::klog::log(
-            $crate::core::debug::klog::LogLevel::Debug,
-            $msg
-        )
+        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Debug, $msg)
     };
     ($msg:expr, $val:expr) => {
         #[cfg(debug_assertions)]
-        $crate::core::debug::klog::log_val(
-            $crate::core::debug::klog::LogLevel::Debug,
-            $msg,
-            $val
-        )
+        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Debug, $msg, $val)
     };
 }

@@ -2,4 +2,4 @@
 //!
 //! Canais de comunicação 1:1.
 
-pub mod channel
+pub mod channel;

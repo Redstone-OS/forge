@@ -2,4 +2,4 @@
 //!
 //! Pipes unidirecionais.
 
-pub mod pipe
+pub mod pipe;

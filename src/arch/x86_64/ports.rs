@@ -9,7 +9,7 @@
 /// - Todas as funções são marcadas como `#[inline]` para evitar overhead.
 /// - Implementa `io_wait` usando a porta 0x80 para garantir atrasos de barramento.
 
-//! IO Ports (legado x86)
+// IO Ports (legado x86)
 
 /// Lê um byte de uma porta IO
 #[inline]

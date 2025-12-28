@@ -40,6 +40,36 @@ impl Port {
             active: true,
         }
     }
+
+    pub fn send(&mut self, msg: Message) -> PortStatus {
+        let msg_id = msg.header.id;
+
+        if !self.active {
+            crate::kwarn!("(IPC) send: Porta fechada para msg_id=", msg_id);
+            return PortStatus::Closed;
+        }
+
+        if self.queue.len() >= self.capacity {
+            crate::ktrace!("(IPC) send: Porta cheia. msg_id=", msg_id);
+            return PortStatus::Full;
+        }
+
+        crate::ktrace!("(IPC) send: Mensagem enfileirada ID=", msg_id);
+        crate::ktrace!("(IPC) send: Mensagem bytes=", msg.header.data_len as u64);
+        self.queue.push_back(msg);
+        PortStatus::Ok
+    }
+
+    pub fn recv(&mut self) -> Result<Message, PortStatus> {
+        if let Some(msg) = self.queue.pop_front() {
+            crate::ktrace!("(IPC) recv: Mensagem retirada ID=", msg.header.id);
+            Ok(msg)
+        } else if !self.active {
+            Err(PortStatus::Closed)
+        } else {
+            Err(PortStatus::Empty)
+        }
+    }
 }
 
 impl PortHandle {
@@ -48,37 +78,12 @@ impl PortHandle {
     }
 
     pub fn send(&self, msg: Message) -> PortStatus {
-        let msg_id = msg.header.id;
-        let mut port = self.0.lock();
-
-        if !port.active {
-            crate::kwarn!("(IPC) send: Porta fechada para msg_id=", msg_id);
-            return PortStatus::Closed;
-        }
-
-        if port.queue.len() >= port.capacity {
-            crate::ktrace!("(IPC) send: Porta cheia. msg_id=", msg_id);
-            return PortStatus::Full;
-        }
-
-        crate::ktrace!("(IPC) send: Mensagem enfileirada ID=", msg_id);
-        crate::ktrace!("(IPC) send: Mensagem bytes=", msg.header.data_len as u64);
-        port.queue.push_back(msg);
-        PortStatus::Ok
+        self.0.lock().send(msg)
     }
 
     /// Recebe uma mensagem da porta (Non-blocking).
     pub fn recv(&self) -> Result<Message, PortStatus> {
-        let mut port = self.0.lock();
-
-        if let Some(msg) = port.queue.pop_front() {
-            crate::ktrace!("(IPC) recv: Mensagem retirada ID=", msg.header.id);
-            Ok(msg)
-        } else if !port.active {
-            Err(PortStatus::Closed)
-        } else {
-            Err(PortStatus::Empty)
-        }
+        self.0.lock().recv()
     }
 
     /// Fecha a porta, impedindo novos envios.

@@ -9,7 +9,7 @@
 /// - (Futuro) Matará o processo atual se estiver em contexto de processo.
 /// - (Futuro) Tenta liberar locks segurados para evitar deadlocks (best effort).
 
-//! Kernel Oops (Erros recuperáveis)
+// Gerenciamento de Oops e Panics recuperáveis)
 
 /// Sinaliza um erro grave mas possivelmente recuperável.
 ///
@@ -21,11 +21,11 @@ pub fn oops(msg: &str) {
     crate::kerror!("*****************************************************");
     crate::kerror!("Message:", 0); // TODO: suporte a str
     crate::kerror!(msg);
-    
+
     // TODO: Dump stack trace
     // TODO: Se (current_process != NULL) kill(current_process)
     // TODO: Decrementar refcounts se necessário
-    
+
     crate::kerror!("*****************************************************");
     crate::kerror!("* TENTANDO RECUPERAR... SE O SISTEMA TRAVAR, REINICIE *");
     crate::kerror!("*****************************************************");

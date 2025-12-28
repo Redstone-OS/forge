@@ -1,3 +1,4 @@
+use crate::arch::traits::cpu::CpuTrait;
 /// Arquivo: core/smp/percpu.rs
 ///
 /// Propósito: Gerenciamento de variáveis Por-CPU (Per-CPU variables).
@@ -9,11 +10,8 @@
 /// - O acesso é indexado pelo ID da CPU atual (`crate::arch::Cpu::current_core_id()`).
 /// - Em x86_64, a arquitetura pode otimizar isso usando o segmento GS, mas aqui usamos
 ///   uma abstração genérica segura baseada no trait Cpu.
-
-//! Variáveis Per-CPU
-
+// Variáveis Per-CPU
 use core::cell::UnsafeCell;
-use crate::arch::_traits::cpu::CpuTrait;
 
 /// Número máximo de CPUs suportadas.
 /// TODO: Tornar configurável via cfg
@@ -25,7 +23,7 @@ pub const MAX_CPUS: usize = 32;
 ///
 /// ```ignore
 /// static COUNTER: PerCpu<u64> = PerCpu::new(0);
-/// 
+///
 /// fn inc() {
 ///     let val = COUNTER.get_mut();
 ///     *val += 1;
@@ -49,14 +47,38 @@ impl<T: Copy> PerCpu<T> {
         // Inicialização manual para 32 CPUs pois UnsafeCell não é Copy
         Self {
             data: [
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
-                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value),
             ],
         }
     }
@@ -70,7 +92,7 @@ impl<T: Copy> PerCpu<T> {
     /// - Interrupções também devem ser consideradas se o dado for acessado em IRQ handlers.
     pub fn get(&self) -> &T {
         let cpu_id = crate::arch::x86_64::cpu::Cpu::current_core_id() as usize;
-        
+
         if cpu_id >= MAX_CPUS {
             // Fallback seguro ou panic (idealmente panic, mas em kernel evitamos em caminhos críticos)
             // Retornamos o do core 0 em caso de erro catastrófico de topologia
@@ -90,7 +112,7 @@ impl<T: Copy> PerCpu<T> {
     #[allow(clippy::mut_from_sync)]
     pub fn get_mut(&self) -> &mut T {
         let cpu_id = crate::arch::x86_64::cpu::Cpu::current_core_id() as usize;
-        
+
         if cpu_id >= MAX_CPUS {
             unsafe { &mut *self.data[0].get() }
         } else {

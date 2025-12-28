@@ -6,11 +6,10 @@
 /// Detalhes de Implementação básica de Hashtable com Linear Probingsões (Vec de Buckets).
 /// - Função de Hash simples interna ou Trait Hash (vamos usar Hash trait do core).
 
-//! Hash Table
-
+/// Hash Table
 use alloc::vec::Vec;
 use core::hash::{Hash, Hasher};
-// Nota: Em no_std, BuildHasherDefault não está sempre disponível facilmente sem std, 
+// Nota: Em no_std, BuildHasherDefault não está sempre disponível facilmente sem std,
 // então implementamos um Hasher simples FNV-1a.
 
 pub struct FnvHasher {
@@ -19,7 +18,9 @@ pub struct FnvHasher {
 
 impl FnvHasher {
     fn new() -> Self {
-        Self { state: 0xcbf29ce484222325 }
+        Self {
+            state: 0xcbf29ce484222325,
+        }
     }
 }
 
@@ -30,7 +31,7 @@ impl Hasher for FnvHasher {
             self.state = self.state.wrapping_mul(0x100000001b3);
         }
     }
-    
+
     fn finish(&self) -> u64 {
         self.state
     }
@@ -52,10 +53,7 @@ impl<K: Hash + Eq, V> HashTable<K, V> {
         for _ in 0..capacity {
             buckets.push(Vec::new());
         }
-        Self {
-            buckets,
-            len: 0,
-        }
+        Self { buckets, len: 0 }
     }
 
     fn get_bucket_index(&self, key: &K) -> usize {
@@ -67,7 +65,7 @@ impl<K: Hash + Eq, V> HashTable<K, V> {
     pub fn insert(&mut self, key: K, value: V) {
         let index = self.get_bucket_index(&key);
         let bucket = &mut self.buckets[index];
-        
+
         // Verifica se chave já existe para atualizar
         for entry in bucket.iter_mut() {
             if entry.key == key {
@@ -75,7 +73,7 @@ impl<K: Hash + Eq, V> HashTable<K, V> {
                 return;
             }
         }
-        
+
         bucket.push(Entry { key, value });
         self.len += 1;
     }
@@ -83,7 +81,7 @@ impl<K: Hash + Eq, V> HashTable<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         let index = self.get_bucket_index(key);
         let bucket = &self.buckets[index];
-        
+
         for entry in bucket {
             if entry.key == *key {
                 return Some(&entry.value);
@@ -95,7 +93,7 @@ impl<K: Hash + Eq, V> HashTable<K, V> {
     pub fn remove(&mut self, key: &K) -> Option<V> {
         let index = self.get_bucket_index(key);
         let bucket = &mut self.buckets[index];
-        
+
         if let Some(pos) = bucket.iter().position(|e| e.key == *key) {
             self.len -= 1;
             return Some(bucket.remove(pos).value);

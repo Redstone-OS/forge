@@ -6,9 +6,7 @@
 /// Detalhes de Implementação:
 /// - Usa padrão RAII (Resource Acquisition Is Initialization).
 /// - Loga "ENTER" ao criar e "EXIT" ao destruir (Drop).
-
-//! Tracing de execução
-
+// Sistema de Tracing do Kernelcução
 use crate::core::debug::klog::{log, LogLevel};
 
 pub struct ScopedTrace {

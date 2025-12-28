@@ -12,12 +12,12 @@
 ///   - Tipo 1: I/O APIC.
 ///   - Tipo 2: Interrupt Source Override (ISO) - Crucial para teclados e timers legacy.
 
-//! ACPI MADT (Multiple APIC Description Table)
+/// ACPI MADT (Multiple APIC Description Table)
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct MadtHeader {
-    pub signature: [u8; 4],     // "APIC"
+    pub signature: [u8; 4], // "APIC"
     pub length: u32,
     pub revision: u8,
     pub checksum: u8,
@@ -26,7 +26,7 @@ pub struct MadtHeader {
     pub oem_revision: u32,
     pub creator_id: u32,
     pub creator_revision: u32,
-    
+
     // Campos específicos MADT
     pub local_apic_address: u32, // Endereço físico base dos Local APICs
     pub flags: u32,              // Bit 0 = PCAT_COMPAT (tem PIC 8259?)
@@ -80,7 +80,7 @@ pub struct MadtNmi {
     pub header: MadtEntryHeader,
     pub acpi_processor_id: u8, // 0xFF = All processors
     pub flags: u16,
-    pub lint: u8,              // LINT# input (0 ou 1)
+    pub lint: u8, // LINT# input (0 ou 1)
 }
 
 // TODO: Implementar iterador seguro sobre as entradas da MADT

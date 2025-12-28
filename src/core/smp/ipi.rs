@@ -7,9 +7,7 @@
 /// Detalhes de Implementação:
 /// - Abstrai o envio de IPIs para a camada de arquitetura.
 /// - Define tipos de alvos (Target).
-
-//! Inter-Processor Interrupts
-
+// Inter-Processor Interrupts (IPI)
 use super::topology::CpuId;
 
 /// Destino da IPI
@@ -42,19 +40,19 @@ pub fn send_ipi(target: IpiTarget, vector: IpiVector) {
     // TODO: Chamar implementação da arquitetura.
     // Como não temos isso exposto no trait CpuTrait ainda, acessamos via hack
     // ou deixamos o TODO. O ideal seria crate::arch::send_ipi(...)
-    
+
     match target {
         IpiTarget::Single(id) => {
-             // crate::arch::apic::send_ipi(id, vector as u8);
-             let _ = id;
+            // crate::arch::apic::send_ipi(id, vector as u8);
+            let _ = id;
         }
         _ => {
             // Broadcast
         }
     }
-    
+
     // Placeholder para evitar unused variable warning
     let _ = vector;
-    
+
     // crate::kdebug!("IPI enviada (simulada)");
 }

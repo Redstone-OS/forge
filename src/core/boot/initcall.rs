@@ -1,6 +1,6 @@
 /// Arquivo: core/boot/initcall.rs
 ///
-/// Propósito: Sistema de chamadas de inicialização (Initcalls).
+/// Propósito:// Sistema de Initcalls de inicialização (Initcalls).
 /// Permite que módulos e subsistemas registrem funções para serem executadas
 /// automaticamente durante o boot, sem precisar poluir o `kmain` com chamadas manuais.
 ///

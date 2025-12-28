@@ -9,7 +9,7 @@
 ///   apenas simula uma parada crítica ou chama uma abstração se disponível.
 /// - Por enquanto, usamos um loop infinito com log para "parar" o kernel.
 
-//! Utilitários de Debug
+// Depurador do Kernel (KDebug)
 
 /// Dispara um breakpoint de software (parada de execução).
 ///
@@ -17,7 +17,7 @@
 /// ou simplesmente travar a execução para análise de log.
 pub fn breakpoint() {
     crate::kwarn!("--- KERNEL BREAKPOINT ---");
-    
+
     // Idealmente chamaríamos algo como crate::arch::Cpu::breakpoint();
     // Como não temos isso no trait ainda, vamos apenas desabilitar interrupções e travar.
     crate::arch::Cpu::disable_interrupts();
@@ -30,10 +30,10 @@ pub fn breakpoint() {
 pub fn assert_failed(expr: &str, file: &str, line: u32) -> ! {
     crate::kerror!("FALHA DE ASSERÇÃO:");
     crate::kerror!("Expr:", 0); // TODO: Passar str
-    // Como kerror! com string variável é limitado pelo macro atual, simplificamos:
-    crate::kerror!(expr); 
+                                // Como kerror! com string variável é limitado pelo macro atual, simplificamos:
+    crate::kerror!(expr);
     crate::kerror!("Arquivo:", 0); // Placeholder
     crate::kerror!(file);
-    
+
     panic!("Assertion failed at {}:{}", file, line);
 }

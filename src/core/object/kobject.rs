@@ -25,7 +25,7 @@ pub fn generate_koid() -> Koid {
 }
 
 /// Trait base que todos os objetos do kernel gerenciáveis devem implementar.
-pub trait KObject: Send + Sync {
+pub trait KObject: Send + Sync + core::fmt::Debug {
     /// Retorna o ID único do objeto.
     fn koid(&self) -> Koid;
 

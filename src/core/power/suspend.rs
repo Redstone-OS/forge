@@ -8,7 +8,7 @@
 /// - Coordena o congelamento de processos e drivers.
 /// - Interage com código de arquitetura (ACPI) para fazer a transição de hardware.
 
-//! Suspend-to-RAM (S3) e Hibernação (S4)
+// Suspensão e Hibernação (S4)
 
 /// Tenta colocar o sistema em modo de suspensão (S3).
 ///
@@ -26,21 +26,21 @@ pub fn enter_suspend_to_ram() -> Result<(), &'static str> {
     // TODO: parar tasks de userspace
 
     // 3. Desabilitar interrupções não-essenciais
-    
+
     // 4. Salvar contexto da CPU (feito pela arch layer no ponto de entrada do sleep)
-    
+
     // 5. Chamar backend de ACPI para mudar estado para S3
     // unsafe { crate::arch::acpi::enter_sleep_state(3); }
     crate::kwarn!("ACPI backend não implementado. Suspensão simulada.");
-    
+
     // --- O SISTEMA DORME AQUI ---
     // ... Tempo passa ...
     // --- O SISTEMA ACORDA AQUI ---
-    
+
     crate::kinfo!("Sistema acordando do S3...");
 
     // 6. Restaurar contexto (drivers, interrupts, scheduler)
     // TODO: iterar drivers e chamar .resume()
-    
+
     Ok(())
 }

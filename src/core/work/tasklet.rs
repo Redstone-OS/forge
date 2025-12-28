@@ -8,15 +8,13 @@
 /// 1. Tasklets são serializados (mesmo tipo não roda em 2 CPUs ao mesmo tempo).
 /// 2. Tasklets sempre rodam na CPU que os agendou (cache locality).
 /// 3. Tasklets têm prioridade maior que WorkQueues e Threads normais.
-
-//! Tasklets (execução atômica diferida)
-
+// Tasklets (Softirq)execução atômica diferida)
 use alloc::boxed::Box;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 // Estados do Tasklet
 const TASKLET_STATE_SCHED: u32 = 1 << 0; // Agendado para execução
-const TASKLET_STATE_RUN:   u32 = 1 << 1; // Executando no momento
+const TASKLET_STATE_RUN: u32 = 1 << 1; // Executando no momento
 
 /// Estrutura de Tasklet
 pub struct Tasklet {
@@ -41,7 +39,7 @@ impl Tasklet {
     /// Retorna `true` se agendou com sucesso, `false` se já estava agendado.
     pub fn schedule(&self) -> bool {
         let state = self.state.load(Ordering::Relaxed);
-        
+
         // Se já está agendado, não faz nada
         if (state & TASKLET_STATE_SCHED) != 0 {
             return false;
@@ -54,7 +52,7 @@ impl Tasklet {
 
         // TODO: Adicionar à lista de tasklets da CPU atual (PerCpu Vector)
         // TODO: Disparar SoftIRQ de Tasklet
-        
+
         true
     }
 
@@ -74,10 +72,10 @@ impl Tasklet {
         if (current & TASKLET_STATE_SCHED) == 0 {
             return;
         }
-        
+
         // Executa
         (self.func)();
-        
+
         // Limpa estado (assumindo que RUN não é persistente entre chamadas na nossa impl simplificada)
         self.state.store(0, Ordering::Release);
     }

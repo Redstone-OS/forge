@@ -8,16 +8,16 @@ pub struct FramebufferInfo {
     pub addr: VirtAddr,
     pub width: u32,
     pub height: u32,
-    pub stride: u32,  // bytes por linha
-    pub bpp: u32,     // bits por pixel
+    pub stride: u32, // bytes por linha
+    pub bpp: u32,    // bits por pixel
 }
 
 static FRAMEBUFFER: Spinlock<Option<FramebufferInfo>> = Spinlock::new(None);
 
 /// Inicializa com informações do bootloader
 pub fn init(info: FramebufferInfo) {
-    *FRAMEBUFFER.lock() = Some(info);
     crate::kinfo!("(FB) Inicializado:", info.width as u64);
+    *FRAMEBUFFER.lock() = Some(info);
 }
 
 /// Escreve pixel
@@ -27,13 +27,15 @@ pub fn put_pixel(x: u32, y: u32, color: u32) {
         if x >= info.width || y >= info.height {
             return;
         }
-        
+
         // Cuidado com overflow se u32
         let offset = (y as u64 * info.stride as u64 + x as u64 * (info.bpp as u64 / 8)) as usize;
         let ptr = info.addr.offset(offset as u64).as_mut_ptr::<u32>();
-        
+
         // SAFETY: offset foi validado (aproximadamente, assumindo mapeamento correto)
-        unsafe { *ptr = color; }
+        unsafe {
+            *ptr = color;
+        }
     }
 }
 

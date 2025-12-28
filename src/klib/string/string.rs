@@ -6,7 +6,7 @@
 /// Detalhes de Implementação:
 /// - Operações byte-a-byte.
 
-//! String Utils
+// String Utils
 
 /// Calcula tamanho de string terminada em nulo
 pub fn strlen(s: *const u8) -> usize {
@@ -67,18 +67,18 @@ impl<'a> Tokenizer<'a> {
 
 impl<'a> Iterator for Tokenizer<'a> {
     type Item = &'a str;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.rest.is_empty() {
             return None;
         }
-        
+
         match self.rest.find(self.delim) {
             Some(idx) => {
                 let token = &self.rest[..idx];
                 self.rest = &self.rest[idx + 1..];
                 Some(token)
-            },
+            }
             None => {
                 let token = self.rest;
                 self.rest = "";

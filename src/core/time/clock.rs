@@ -8,9 +8,7 @@
 /// - Armazena segundos desde Epoch (Unix Time).
 /// - Suporta ajuste de relógio (NTP no futuro).
 /// - Sincroniza com RTC no boot.
-
-//! Relógio de Tempo Real (Wall Clock)
-
+// Relógio do Sistema (Wall Clock)
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Segundos e Nanosegundos desde Epoch (1970-01-01 00:00:00 UTC)
@@ -48,7 +46,7 @@ impl SystemClock {
     pub fn now(&self) -> TimeSpec {
         let base = self.boot_time_seconds.load(Ordering::Relaxed);
         let uptime_jiffies = super::jiffies::get_jiffies();
-        
+
         // Conversão simples Jiffies -> Segundos
         // Assumindo HZ=100 (10ms por tick)
         let uptime_seconds = uptime_jiffies / super::jiffies::HZ;

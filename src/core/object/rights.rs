@@ -9,7 +9,7 @@
 /// - Direitos genéricos (Read, Write, etc.) e específicos podem ser misturados.
 /// - Implementação manual de bitflags para evitar dependência externa.
 
-//! Direitos de Acesso (Capabilities)
+// Direitos de Acesso (Capabilities)
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -26,11 +26,11 @@ impl Rights {
     pub const MAP: Rights = Rights(1 << 5);
     pub const GET_PROPERTY: Rights = Rights(1 << 6);
     pub const SET_PROPERTY: Rights = Rights(1 << 7);
-    
+
     // --- Direitos Específicos de Tarefas/Processos ---
     pub const ENUMERATE: Rights = Rights(1 << 8);
     pub const DESTROY: Rights = Rights(1 << 9);
-    
+
     // --- Todos os direitos (Root) ---
     pub const ALL: Rights = Rights(0xFFFFFFFF);
 

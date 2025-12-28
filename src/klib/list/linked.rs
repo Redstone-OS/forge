@@ -6,11 +6,10 @@
 /// - Similar a std::collections::LinkedList.
 /// - Usa Box<Node<T>>.
 
-//! Doubly Linked List
-
+/// Doubly Linked List
 use alloc::boxed::Box;
-use core::ptr::NonNull;
 use core::marker::PhantomData;
+use core::ptr::NonNull;
 
 struct Node<T> {
     next: Option<NonNull<Node<T>>>,
