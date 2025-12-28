@@ -2,17 +2,36 @@
 target = "x86_64-redstone.json"
 
 [unstable]
-# Recompilar a biblioteca core/alloc para o nosso target customizado
 build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 
 [target.'cfg(target_os = "none")']
 runner = "qemu-system-x86_64 -kernel"
+
 rustflags = [
     "-C",
-    "force-frame-pointers=yes",                                                      # Stack traces melhores
+    "target-feature=-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-mmx,+soft-float",
     "-C",
     "link-arg=-Tlinker.ld",
     "-C",
-    "target-feature=-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,+soft-float",
+    "force-frame-pointers=yes",
+    "-C",
+    "inline-threshold=275",
+    "-C",
+    "relocation-model=static",
+    "-C",
+    "code-model=kernel",
+    "-C",
+    "llvm-args=-x86-asm-syntax=intel",
+    "-C",
+    "llvm-args=-unroll-threshold=250",
+    "-C",
+    "llvm-args=-tailcallopt",
+    "-C",
+    "llvm-args=-mergefunc-use-aliases",
 ]
+
+[alias]
+k = "build --release"
+kr = "build --release --no-default-features --features no_logs"
+kd = "build --release --features log_debug"

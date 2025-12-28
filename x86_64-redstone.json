@@ -6,30 +6,44 @@
   "target-pointer-width": "64",
   "os": "none",
   "vendor": "redstone",
+
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
+
   "panic-strategy": "abort",
   "disable-redzone": true,
-  "features": "-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-mmx,+soft-float",
-  "llvm-args": "-x86-asm-syntax=intel",
+
+  "features": "-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-mmx,+soft-float,+cx8,+cx16",
+
+  "llvm-args": [
+    "-x86-asm-syntax=intel"
+  ],
+
   "executables": true,
   "relocation-model": "static",
   "code-model": "kernel",
+
   "dynamic-linking": false,
   "target-c-int-width": "64",
   "default-hidden-visibility": true,
+
   "position-independent-executables": false,
   "static-position-independent-executables": false,
+
   "max-atomic-width": 64,
+  "atomic-cas": true,
+
   "no-compiler-rt": true,
   "has-rpath": false,
+
+  "stack-probes": { "kind": "none" },
+
   "pre-link-args": {
     "ld.lld": [
-      "-Tlinker.ld",
+      "-T", "linker.ld",
       "--no-pie",
       "--build-id=none",
-      "-z",
-      "max-page-size=0x1000",
+      "-z", "max-page-size=0x1000",
       "--gc-sections",
       "--nmagic"
     ]
