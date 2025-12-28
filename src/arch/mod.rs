@@ -12,7 +12,21 @@
 //!
 //! ```text
 //! arch/
-//! ├── traits/     → Contratos abstratos (Cpu, Mmu, Irq)
+//! ├── _traits/     → Contratos abstratos (Cpu, Mmu, Irq)
+//! |── aarch64/     → Implementação para ARM64
+//! |   ├── cpu.rs      → CSRs, CR0-4, CPUID
+//! |   ├── gdt.rs      → Segmentos de memória
+//! |   ├── idt.rs      → Tabela de interrupções
+//! |   ├── apic/       → LAPIC, IOAPIC
+//! |   ├── acpi/       → Tabelas ACPI (MADT, FADT)
+//! |   └── iommu/      → ARM SMMU
+//! |── riscv64/     → Implementação para RISC-V 64-bit
+//! |   ├── cpu.rs      → CSRs, CR0-4, CPUID
+//! |   ├── gdt.rs      → Segmentos de memória
+//! |   ├── idt.rs      → Tabela de interrupções
+//! |   ├── apic/       → LAPIC, IOAPIC
+//! |   ├── acpi/       → Tabelas ACPI (MADT, FADT)
+//! |   └── iommu/      → ARM SMMU
 //! └── x86_64/     → Implementação para Intel/AMD 64-bit
 //!     ├── cpu.rs      → MSRs, CR0-4, CPUID
 //!     ├── gdt.rs      → Segmentos de memória
@@ -41,6 +55,18 @@ pub mod traits;
 // PLATFORM SELECTION
 // =============================================================================
 
+#[cfg(target_arch = "aarch64")]
+pub mod aarch64;
+
+#[cfg(target_arch = "aarch64")]
+pub use aarch64 as platform;
+
+#[cfg(target_arch = "riscv64")]
+pub mod riscv64;
+
+#[cfg(target_arch = "riscv64")]
+pub use riscv64 as platform;
+
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 
@@ -50,6 +76,22 @@ pub use x86_64 as platform;
 // =============================================================================
 // CONSTANTS
 // =============================================================================
+
+/// Tamanho de página padrão (4KB para aarch64)
+#[cfg(target_arch = "aarch64")]
+pub const PAGE_SIZE: usize = 4096;
+
+/// Bits de shift para converter bytes <-> páginas
+#[cfg(target_arch = "aarch64")]
+pub const PAGE_SHIFT: usize = 12;
+
+/// Tamanho de página padrão (4KB para riscv64)
+#[cfg(target_arch = "riscv64")]
+pub const PAGE_SIZE: usize = 4096;
+
+/// Bits de shift para converter bytes <-> páginas
+#[cfg(target_arch = "riscv64")]
+pub const PAGE_SHIFT: usize = 12;
 
 /// Tamanho de página padrão (4KB para x86_64)
 #[cfg(target_arch = "x86_64")]
