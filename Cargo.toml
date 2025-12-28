@@ -15,9 +15,6 @@ path = "src/main.rs"
 [features]
 default = []
 
-[profile.dev]
-inherits = "release"
-
 [profile.release]
 panic = "abort"
 opt-level = "z"
@@ -28,5 +25,3 @@ debug = 0
 debug-assertions = false
 overflow-checks = false
 incremental = false
-rpath = false
-linker-flavor = "ld.lld"
