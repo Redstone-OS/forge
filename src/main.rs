@@ -63,6 +63,10 @@ core::arch::global_asm!(
     ".section .text._start",
     ".global _start",
     "_start:",
+    // DEBUG: Print 'A' to port 0xE9
+    "mov dx, 0xe9",
+    "mov al, 65", // 'A'
+    "out dx, al",
     // -------------------------------------------------------------------------
     // 1. Preservar boot_info em R15 (callee-saved)
     // -------------------------------------------------------------------------

@@ -1,7 +1,6 @@
 //! Framebuffer linear
 
 use crate::core::boot::handoff::{FramebufferInfo as HandoffFbInfo, PixelFormat};
-use crate::mm::addr::PhysAddr;
 use crate::mm::VirtAddr;
 use crate::sync::Spinlock;
 

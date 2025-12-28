@@ -22,9 +22,7 @@ impl SerialPort {
 
     /// Escreve byte diretamente
     pub fn write_byte(&self, byte: u8) {
-        unsafe {
-            outb(QEMU_PORT, byte);
-        }
+        outb(QEMU_PORT, byte);
     }
 }
 
