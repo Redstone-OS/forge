@@ -1,6 +1,6 @@
 //! Condition Variable
 
-use super::mutex::MutexGuard;
+use crate::sync::mutex::MutexGuard;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Condition Variable
@@ -22,22 +22,22 @@ impl CondVar {
     /// Libera o lock atômica e dorme (simulado com spin) até ser notificado.
     pub fn wait<T>(&self, guard: &mut MutexGuard<'_, T>) {
         let current_signal = self.signal_counter.load(Ordering::Relaxed);
-        
+
         // 1. Liberar Mutex (Drop manual simulado ou suporte no Mutex)
         // Como MutexGuard não tem unlock_and_sleep, vamos apenas...
         // Essa implementação REQUER suporte do Scheduler para ser correta e eficiente.
         // Implementação dummy apenas para compilação e interfaces.
-        
+
         // TODO: guard.lock.unlock();
         // TODO: scheduler.wait(self);
         // TODO: guard.lock.lock();
-        
+
         // Placeholder busy-wait:
         loop {
-             if self.signal_counter.load(Ordering::Relaxed) != current_signal {
-                 break;
-             }
-             core::hint::spin_loop();
+            if self.signal_counter.load(Ordering::Relaxed) != current_signal {
+                break;
+            }
+            core::hint::spin_loop();
         }
     }
 

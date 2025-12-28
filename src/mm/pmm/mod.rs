@@ -56,6 +56,6 @@ pub const FRAME_SIZE: u64 = 4096;
 pub static FRAME_ALLOCATOR: Spinlock<BitmapFrameAllocator> =
     Spinlock::new(BitmapFrameAllocator::new());
 
-pub fn init() {
-    // TODO: Init PMM
+pub fn init(boot_info: &crate::core::BootInfo) {
+    FRAME_ALLOCATOR.lock().init(boot_info);
 }

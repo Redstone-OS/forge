@@ -282,8 +282,7 @@ impl Drop for VMO {
 
         for page in &self.pages {
             if let PageState::Present(addr) = page {
-                let frame = crate::mm::pmm::PhysFrame::from_start_address(*addr);
-                pmm.deallocate_frame(frame);
+                pmm.deallocate_frame(*addr);
             }
         }
 

@@ -1,15 +1,13 @@
-/// Arquivo: core/object/kobject.rs
-///
-/// Propósito: Definição base para Objetos do Kernel (Kernel Objects).
-/// Todo recurso gerenciável via Handle (Processo, Thread, VMO, Canal, etc.)
-/// deve implementar o trait `KObject`.
-///
-/// Detalhes de Implementação:
-/// - IDs únicos globais (KOID).
-/// - Polimorfismo via Trait Objects (dyn KObject).
-/// - Integração com RefCount (geralmente via Arc<KObject> ou similar customizado).
-
 //! Kernel Object Base
+//!
+//! Propósito: Definição base para Objetos do Kernel (Kernel Objects).
+//! Todo recurso gerenciável via Handle (Processo, Thread, VMO, Canal, etc.)
+//! deve implementar o trait `KObject`.
+//!
+//! Detalhes de Implementação:
+//! - IDs únicos globais (KOID).
+//! - Polimorfismo via Trait Objects (dyn KObject).
+//! - Integração com RefCount (geralmente via Arc<KObject> ou similar customizado).
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,7 +22,7 @@ pub fn generate_koid() -> Koid {
     KOID_GENERATOR.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Trait base que todos os objetos do kernel gerenciáveis devem implementar.
+/// Trait base para todos os objetos do kernel. gerenciáveis devem implementar.
 pub trait KObject: Send + Sync + core::fmt::Debug {
     /// Retorna o ID único do objeto.
     fn koid(&self) -> Koid;

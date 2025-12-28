@@ -80,16 +80,14 @@ impl BumpAllocator {
             match pmm.allocate_frame() {
                 Some(frame) => {
                     let flags = crate::mm::config::PAGE_PRESENT | crate::mm::config::PAGE_WRITABLE;
-                    unsafe {
-                        if let Err(e) = crate::mm::vmm::map_page_with_pmm(
-                            crate::mm::addr::VirtAddr::new(page as u64),
-                            crate::mm::addr::PhysAddr::new(frame.addr()),
-                            crate::mm::vmm::MapFlags::from_bits_truncate(flags),
-                            pmm,
-                        ) {
-                            crate::kerror!("(Heap) grow: falha de mapeamento: {}", e);
-                            return false;
-                        }
+                    if let Err(e) = crate::mm::vmm::map_page_with_pmm(
+                        page as u64,
+                        frame.addr(),
+                        crate::mm::vmm::MapFlags::from_bits_truncate(flags),
+                        pmm,
+                    ) {
+                        crate::kerror!("(Heap) grow: falha de mapeamento: {}", e);
+                        return false;
                     }
                 }
                 None => {

@@ -1,19 +1,9 @@
-/// Arquivo: core/object/refcount.rs
-///
-/// Kernel Object Reference Counting
-///
-/// Implementa contagem de referências atômica para gerenciamento de vida
-/// dos objetos do kernel (KObjects).
-///
-/// Uso:
-/// - Similar ao `Arc` do Rust, mas intrusivo e adaptado ao kernel.
-///
-/// Detalhes de Implementação:
-/// - Usa `AtomicUsize` para thread-safety.
-/// - Implementa semântica de Acquire/Release para garantir visibilidade correta
-///   ao decrementar a última referência.
-
-//! Reference Counting
+//! Reference Counting (Contagem de referências)
+//!
+//! Detalhes de Implementação:
+//! - Usa `AtomicUsize` para thread-safety.
+//! - Implementa semântica de Acquire/Release para garantir visibilidade correta
+//!   ao decrementar a última referência.
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -50,7 +40,7 @@ impl RefCount {
         // Release garante que escritas anteriores a este dec sejam vistas
         // antes de qualquer coisa que aconteça após o objeto morrer.
         let prev = self.count.fetch_sub(1, Ordering::Release);
-        
+
         if prev == 1 {
             // Acquire fence é necessária para garantir que, se este thread destruir o objeto,
             // ele veja todas as modificações feitas por outros threads que deram release.

@@ -1,3 +1,5 @@
+use crate::arch::x86_64::cpu::Cpu;
+use crate::arch::x86_64::gdt;
 /// Arquivo: x86_64/syscall.rs
 ///
 /// Propósito: Configuração e tratamento de chamadas de sistema (System Calls).
@@ -12,10 +14,7 @@
 /// - STAR (0xC0000081): Seletores de segmento para User/Kernel.
 /// - LSTAR (0xC0000082): Endereço de destino (RIP) do SYSCALL.
 /// - FMASK (0xC0000084): Máscara de RFLAGS (limpa Interrupt Flag).
-
 use core::arch::global_asm;
-use crate::arch::x86_64::cpu::Cpu;
-use crate::arch::x86_64::gdt;
 
 // Incluir o trampolim assembly
 global_asm!(include_str!("syscall.s"));
@@ -88,19 +87,19 @@ pub unsafe fn init() {
     // SYSCALL carrega CS = Base, SS = Base + 8
     // Usamos os seletores definidos em gdt.rs
     let kernel_code = gdt::KERNEL_CODE_SEL.0;
-    let user_code_base = (gdt::USER_CODE_SEL.00) - 16; // Ajuste para SYSRET
-    
+    let user_code_base = (gdt::USER_CODE_SEL.0) - 16; // Ajuste para SYSRET
+
     // Na verdade, a convenção padrão x86_64 para STAR é:
     // 63:48 = Syscall CS e SS base (Kernel)
     // 47:32 = Sysret CS e SS base (User) -> Geralmente (UserCS - 16) | (UserDS - 8) ??
     // Vamos usar os valores definidos na GDT.
-    
+
     // GDT Layout esperado:
     // 1: Kernel Code
     // 2: Kernel Data
     // 3: User Code (32-bit compat? Não, Long Mode) -> User Code 64
     // 4: User Data
-    
+
     // STAR High (48-63): Kernel Code (os segmentos Kernel Data são assumidos Code+8)
     // STAR Low (32-47): User Code Base (os segmentos User Data são Code+8, User Code é Base+16)
     // Então para SYSRET carregar User Code (índice 3) e User Data (índice 4):
@@ -108,10 +107,10 @@ pub unsafe fn init() {
     // Base + 8 = User Data -> Se User Code = 3 (0x18|3), User Data = 4 (0x20|3).
     // (0x18|3) - 16 = 0x1B - 0x10 = 0x0B... Não, GDT index puro.
     // Vamos usar offsets brutos baseados na GDT tipica.
-    
+
     let k_code_sel = (1u64 << 3) | 0; // Index 1, RPL 0
     let u_code_sel = (3u64 << 3) | 3; // Index 3, RPL 3
-    
+
     // Para SYSRET (32-47): CS = Base + 16, SS = Base + 8
     // Queremos CS=UserCode(idx 3), SS=UserData(idx 4).
     // Se Base = UserCode(idx 3) - 16 = idx 3 (0x18) - 0x10 = 0x08 (Kernel Data??)
@@ -122,21 +121,21 @@ pub unsafe fn init() {
     // O manual da Intel/AMD diz:
     // SYSCALL: CS = STAR[63:48], SS = STAR[63:48] + 8
     // SYSRET:  CS = STAR[47:32] + 16, SS = STAR[47:32] + 8
-    
+
     // Se GDT: 0=Null, 1=KCode, 2=KData, 3=UCode32??, 4=UData, 5=UCode64??
     // No nosso guia:
     // 1: KCode, 2: KData, 3: UCode, 4: UData.
-    
+
     // Config para SYSCALL (Entrada no Kernel):
     // CS = KCode(1) -> STAR[63:48] = 0x08 (Index 1)
     // SS = KCode(1) + 8 = KData(2) = 0x10 -> Bate (0x08+8). OK.
-    
+
     // Config para SYSRET (Retorno p/ User):
     // CS = Base + 16 = UCode(3) = 0x18 | 3 = 0x1B
     // SS = Base + 8 = UData(4) = 0x20 | 3 = 0x23
     // Logo: Base + 8 = 0x23 -> Base = 0x1B (0x23 - 8)
     // Base + 16 = 0x2B (0x1B + 16) -> Ops.
-    
+
     // Geralmente os OS organizam GDT assim:
     // Null, KCode, KData, UData, UCode. (Invertido User)
     // Se mudarmos para:
@@ -144,11 +143,11 @@ pub unsafe fn init() {
     // 2: KData
     // 3: UData
     // 4: UCode
-    
+
     // Se Base = UData(3) - 8 = 0x1B - 8 = 0x13
     // SYSRET CS = 0x13 + 16 = 0x23 (Index 4 UCode). Bate.
     // SYSRET SS = 0x13 + 8 = 0x1B (Index 3 UData). Bate.
-    
+
     // PORÉM, o guia define a GDT:
     // 3: User Code, 4: User Data.
     // Se mantivermos isso, SYSRET não funciona direto com CS/SS sequenciais invertidos.
@@ -171,7 +170,7 @@ pub unsafe fn init() {
     // Se Base = UData(4) - 8 = 0x23 - 8 = 0x1B.
     // CS = 0x1B + 16 = 0x2B (Index 5). Onde está index 5? TSS.
     // Isso vai dar erro.
-    
+
     // É provável que o guia tenha "simplificado" a GDT mas precisamos inverter na implementação real
     // ou o autor do guia assumiu UData, UCode.
     //
@@ -180,7 +179,7 @@ pub unsafe fn init() {
     // Então GDT deve ser: 3=UserData, 4=UserCode.
     // No guia `gdt.rs` está 3=Code, 4=Data.
     //
-    // VOU ALERTAR isso nos comentários e configurar STAR assumindo o ajuste (inversão) 
+    // VOU ALERTAR isso nos comentários e configurar STAR assumindo o ajuste (inversão)
     // ou assumindo que sysret precisa dessa ordem.
     //
     // Na verdade, Linux usa swapgs e iretq se precisar, mas sysretq é o objetivo.
@@ -203,7 +202,7 @@ pub unsafe fn init() {
     // Mas o ideal para CPL3 é usar seletores de user.
     // Vou configurar STAR assumindo que a GDT está ok ou será ajustada.
     // (O `gdt.rs` ainda não foi escrito).
-    
+
     let star_val: u64 = ((k_code_sel as u64) << 48) | (((u_code_sel as u64) - 16) << 32);
     Cpu::write_msr(MSR_STAR, star_val);
 
@@ -211,32 +210,4 @@ pub unsafe fn init() {
     // Limpar Interrupt Flag (IF) ao entrar na syscall para evitar reentrância imediata
     // e permitir que o kernel decida quando habilitar.
     Cpu::write_msr(MSR_FMASK, RFLAGS_IF);
-}
-
-/// Dispatcher chamado pelo assembly
-#[no_mangle]
-pub unsafe extern "C" fn syscall_dispatcher(frame: &mut TrapFrame) {
-    // Número da syscall em RAX
-    let syscall_number = frame.rax;
-    
-    // TODO: Implementar tabela de syscalls real
-    // Por enquanto, apenas retornamos um erro ou eco
-    
-    // Exemplo de log (se logging estiver disponível, mas syscall.rs é baixo nível)
-    // kinfo!("Syscall: {}", syscall_number);
-    
-    match syscall_number {
-        0 => {
-            // Syscall 0: Exit? Ou Teste?
-            // frame.rax = 0; // Success
-        },
-        1 => {
-            // Syscall 1: Print?
-        }
-        _ => {
-            // Syscall desconhecida
-            // Retornar -1 (Erro) em RAX
-            frame.rax = u64::MAX; // -1
-        }
-    }
 }

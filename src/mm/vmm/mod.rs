@@ -1,14 +1,10 @@
-//! # VMM - Virtual Memory Manager
+//! Virtual Memory Manager (VMM)
 //!
-//! Gerencia page tables x86_64 e mapeamentos.
+//! Gerencia tabelas de páginas e endereçamento virtual.
 
-// Módulo principal de paging
-#[allow(clippy::module_inception)]
-pub mod vmm;
-pub use vmm::*;
-
-// TLB Management e Shootdown
-pub mod tlb;
-
-// API de alto nível para mapeamento
 pub mod mapper;
+pub mod tlb;
+pub mod vmm;
+
+pub use mapper::{map_page, map_page_with_pmm, translate_addr, unmap_page};
+pub use vmm::{init, MapFlags, PageTable};

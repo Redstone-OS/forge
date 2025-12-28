@@ -38,6 +38,11 @@ pub fn write_byte(byte: u8) {
     SERIAL.lock().write_byte(byte);
 }
 
+/// Emite byte (alias para write_byte)
+pub fn emit(byte: u8) {
+    write_byte(byte);
+}
+
 /// Escreve string
 pub fn write_str(s: &str) {
     let serial = SERIAL.lock();

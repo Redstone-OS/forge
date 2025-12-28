@@ -15,6 +15,44 @@ use crate::arch::traits::CpuTrait;
 /// Implementação x86_64 do trait CPU
 pub struct Cpu;
 
+impl CpuTrait for Cpu {
+    #[inline(always)]
+    fn disable_interrupts() {
+        unsafe {
+            core::arch::asm!("cli", options(nomem, nostack));
+        }
+    }
+
+    #[inline(always)]
+    fn enable_interrupts() {
+        unsafe {
+            core::arch::asm!("sti", options(nomem, nostack));
+        }
+    }
+
+    #[inline(always)]
+    fn halt() {
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
+    }
+
+    #[inline(always)]
+    fn current_core_id() -> u32 {
+        // TODO: Ler APIC ID real
+        0
+    }
+
+    #[inline(always)]
+    fn interrupts_enabled() -> bool {
+        let rflags: u64;
+        unsafe {
+            core::arch::asm!("pushfq; pop {}", out(reg) rflags, options(nomem, preserves_flags));
+        }
+        (rflags & (1 << 9)) != 0
+    }
+}
+
 impl Cpu {
     #[inline(always)]
     pub fn disable_interrupts() {

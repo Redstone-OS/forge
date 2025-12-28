@@ -1,6 +1,6 @@
 //! Arquivo aberto
 
-use super::inode::{Inode, FsError};
+use super::inode::{FsError, Inode};
 use crate::sync::Mutex;
 
 /// Flags de abertura
@@ -15,6 +15,13 @@ impl OpenFlags {
     pub const TRUNCATE: u32 = 16;
 }
 
+/// Operações de arquivo
+pub trait FileOps {
+    fn read(&self, buf: &mut [u8]) -> Result<usize, FsError>;
+    fn write(&self, buf: &[u8]) -> Result<usize, FsError>;
+    fn seek(&self, position: u64);
+}
+
 /// Arquivo aberto
 pub struct File {
     /// Inode associado
@@ -23,6 +30,20 @@ pub struct File {
     offset: Mutex<u64>,
     /// Flags de abertura
     flags: OpenFlags,
+}
+
+impl FileOps for File {
+    fn read(&self, buf: &mut [u8]) -> Result<usize, FsError> {
+        self.read_impl(buf)
+    }
+
+    fn write(&self, buf: &[u8]) -> Result<usize, FsError> {
+        self.write_impl(buf)
+    }
+
+    fn seek(&self, position: u64) {
+        self.seek_impl(position)
+    }
 }
 
 impl File {
@@ -34,27 +55,27 @@ impl File {
             flags,
         }
     }
-    
+
     /// Lê dados
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize, FsError> {
+    pub fn read_impl(&self, buf: &mut [u8]) -> Result<usize, FsError> {
         let inode = unsafe { &*self.inode };
         let mut offset = self.offset.lock();
         let bytes = inode.ops.read(*offset, buf)?;
         *offset += bytes as u64;
         Ok(bytes)
     }
-    
+
     /// Escreve dados
-    pub fn write(&self, buf: &[u8]) -> Result<usize, FsError> {
+    pub fn write_impl(&self, buf: &[u8]) -> Result<usize, FsError> {
         let inode = unsafe { &*self.inode };
         let mut offset = self.offset.lock();
         let bytes = inode.ops.write(*offset, buf)?;
         *offset += bytes as u64;
         Ok(bytes)
     }
-    
+
     /// Seek
-    pub fn seek(&self, position: u64) {
+    pub fn seek_impl(&self, position: u64) {
         *self.offset.lock() = position;
     }
 }

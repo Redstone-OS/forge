@@ -18,6 +18,8 @@ pub enum PortStatus {
     Closed,
 }
 
+pub type IpcError = PortStatus;
+
 /// Estrutura interna da Porta.
 pub struct Port {
     /// Fila de mensagens pendentes.

@@ -6,5 +6,8 @@
 ///
 /// Módulos contidos:
 /// - `intel_vtd`: Implementação específica para Intel VT-d.
-
 pub mod intel_vtd;
+
+pub fn is_available() -> bool {
+    false
+}

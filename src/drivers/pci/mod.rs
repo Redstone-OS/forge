@@ -1,4 +1,5 @@
 //! PCI Bus
 
-pub mod pci;
 pub mod config;
+pub mod pci;
+pub use pci::scan;

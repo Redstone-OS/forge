@@ -1,12 +1,12 @@
-/// Arquivo: core/time/jiffies.rs
-///
-/// Propósito: Contador monotônico de ticks do sistema.
-/// "Jiffies" é o termo histórico (do Linux) para ticks de relógio.
-/// Útil para timeouts grosseiros e medição de uptime.
-///
-/// Detalhes de Implementação:
-/// - Usa AtomicU64 para ser thread-safe e lock-free.
-/// - Incrementado pelo timer interrupt handler.
+//! Arquivo: core/time/jiffies.rs
+//!
+//! Propósito: Jiffies (Contador de ticks do sistema).
+//! "Jiffies" é o termo histórico (do Linux) para ticks de relógio.
+//! Útil para timeouts grosseiros e medição de uptime.
+//!
+//! Detalhes de Implementação:
+//! - Usa AtomicU64 para ser thread-safe e lock-free.
+//! - Incrementado pelo timer interrupt handler.
 
 //! Contador de Jiffies (Ticks)
 

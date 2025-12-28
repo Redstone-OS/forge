@@ -13,7 +13,7 @@
 //!
 
 use super::stats::PmmStats;
-use super::PhysFrame;
+// use super::PhysFrame;
 use crate::core::boot::handoff::{BootInfo, MemoryType};
 use crate::mm::addr::{self, PhysAddr};
 use crate::mm::pmm::FRAME_SIZE as PAGE_SIZE;
@@ -122,8 +122,8 @@ impl BitmapFrameAllocator {
         // No estágio atual, assumimos identidade mapeada ou convertemos phys->virt linearmente
         // SAFETY: phys_to_virt é unsafe pois cria ponteiros arbitrários, mas aqui estamos mapeando região válida
         unsafe {
-            let virt_addr = addr::phys_to_virt(bitmap_phys.as_u64());
-            self.bitmap_ptr = virt_addr.as_mut_ptr();
+            let virt_addr = addr::phys_to_virt::<u64>(bitmap_phys.as_u64());
+            self.bitmap_ptr = virt_addr;
         }
 
         if self.bitmap_ptr.is_null() || (self.bitmap_ptr as usize) % 8 != 0 {
@@ -284,7 +284,7 @@ impl BitmapFrameAllocator {
     /// Verifica se memória contém dados
     #[allow(dead_code)]
     unsafe fn is_memory_dirty(&self, start: u64, size: u64) -> bool {
-        let ptr = addr::phys_to_virt::<u64>(start).as_mut_ptr();
+        let ptr = addr::phys_to_virt::<u64>(start);
         let offsets = [0usize, (size / 2 / 8) as usize, ((size - 8) / 8) as usize];
 
         // Barreira antes de ler memória
@@ -416,10 +416,10 @@ impl BitmapFrameAllocator {
                 }
 
                 // Encontrar primeiro bit 0
-                let bit = word.trailing_ones(); // bits 0..N-1 são 1s, bit N é 0? Não.
-                                                // trailing_ones conta 1s consecutivos. Se word for 0, retorna 0. Se 0xFFFF...FE (bit 0=0), retorna 0.
-                                                // Se word tiver algum 0, trailing_ones de (!word) dá o índice do primeiro bit 1 em !word, ou seja, primeiro bit 0 em word?
-                                                // trailing_zeros(!word)
+                let _bit = word.trailing_ones(); // bits 0..N-1 são 1s, bit N é 0? Não.
+                                                 // trailing_ones conta 1s consecutivos. Se word for 0, retorna 0. Se 0xFFFF...FE (bit 0=0), retorna 0.
+                                                 // Se word tiver algum 0, trailing_ones de (!word) dá o índice do primeiro bit 1 em !word, ou seja, primeiro bit 0 em word?
+                                                 // trailing_zeros(!word)
 
                 let free_bit = (!word).trailing_zeros();
                 if free_bit < 64 {

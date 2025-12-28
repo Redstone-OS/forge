@@ -1,14 +1,12 @@
-/// Arquivo: core/time/hrtimer.rs
-///
-/// Propósito: Temporizadores de Alta Resolução (High Resolution Timers).
-/// Diferente dos timers baseados em Jiffies, estes usam nanosegundos e dependem
-/// de fontes de relógio precisas (como TSC ou HPET) abstraídas pelo hardware.
-///
-/// Detalhes de Implementação:
-/// - Baseado em tempo absoluto em nanosegundos.
-/// - Ideal para agendamento preciso de mídia ou controle em tempo real.
-
-//! High-Resolution Timers
+//! High Resolution Timer (HRTimer)
+//!
+//! Propósito: Temporizadores de Alta Resolução.
+//! Diferente dos timers baseados em Jiffies, estes usam nanosegundos e dependem
+//! de fontes de relógio precisas (como TSC ou HPET) abstraídas pelo hardware.
+//!
+//! Detalhes de Implementação:
+//! - Baseado em tempo absoluto em nanosegundos.
+//! - Ideal para agendamento preciso de mídia ou controle em tempo real.
 
 use alloc::boxed::Box;
 

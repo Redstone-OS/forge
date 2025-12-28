@@ -46,7 +46,7 @@ impl ChannelEndpoint {
         let status = unsafe { (&mut *(self.send as *mut Port)).send(msg) };
         match status {
             crate::ipc::port::PortStatus::Ok => Ok(()),
-            _ => Err(IpcError::ChannelClosed), // Simplificação
+            _ => Err(IpcError::Closed), // Simplificação
         }
     }
 
@@ -54,6 +54,6 @@ impl ChannelEndpoint {
     pub fn recv(&self) -> Result<Message, IpcError> {
         // SAFETY: Port é válida enquanto Channel existe
         let res = unsafe { (&mut *(self.recv as *mut Port)).recv() };
-        res.map_err(|_| IpcError::ChannelClosed)
+        res.map_err(|_| IpcError::Closed)
     }
 }

@@ -9,6 +9,7 @@
 //! - Resolver símbolos da Module ABI
 
 use super::{LoadedModule, ModuleError};
+use crate::fs::vfs::file::{File, FileOps, OpenFlags};
 use alloc::vec::Vec;
 
 /// Carregador de módulos ELF
@@ -32,9 +33,12 @@ impl ModuleLoader {
 
         let node = vfs.lookup(path).map_err(|_| ModuleError::NotFound)?;
 
-        let handle = node.open().map_err(|_| ModuleError::InternalError)?;
+        // let handle = node.open().map_err(|_| ModuleError::InternalError)?;
+        // WARNING: Unsafe File creation from reference. Node must live long enough.
+        // Assuming single-threaded bootloader usage where node won't vanish.
+        let handle = File::new(&node, OpenFlags(OpenFlags::READ));
 
-        let size = node.size() as usize;
+        let size = node.size as usize;
         if size == 0 {
             return Err(ModuleError::InvalidFormat);
         }
@@ -45,7 +49,7 @@ impl ModuleLoader {
         }
 
         handle
-            .read(&mut buffer, 0)
+            .read(&mut buffer)
             .map_err(|_| ModuleError::InternalError)?;
 
         Ok(buffer)

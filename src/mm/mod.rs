@@ -105,7 +105,7 @@ pub unsafe fn init(boot_info: &'static crate::core::BootInfo) {
     pmm::init(boot_info);
 
     crate::kinfo!("(MM) Inicializando Heap...");
-    heap::init();
+    heap::init(&mut *pmm::FRAME_ALLOCATOR.lock());
 
     crate::kinfo!("(MM) Memória inicializada");
 }

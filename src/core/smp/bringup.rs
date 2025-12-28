@@ -1,15 +1,6 @@
-/// Arquivo: core/smp/bringup.rs
-///
-/// Propósito: Inicialização de Processadores de Aplicação (APs).
-/// Responsável por acordar outros núcleos da CPU usando a sequência INIT-SIPI-SIPI (no x86)
-/// ou PSCI (no ARM).
-///
-/// Detalhes de Implementação:
-/// - Envia sequência de IPIs para o APIC ID alvo.
-/// - Requer um "trampolim" (código assembly de 16-bit/32-bit em memória baixa) que os APs
-///   executam logo após acordar para entrar em modo protegido/longo e pular para o kernel Rust.
-
 //! Bringup de APs (Application Processors)
+//!
+//! Responsável por acordar outros núcleos da CPU.
 
 use super::topology::CpuId;
 use crate::core::smp::ipi::{send_ipi, IpiTarget, IpiVector};
@@ -32,9 +23,9 @@ pub unsafe fn wake_ap(apic_id: u32, trampoline_addr: u64) -> Result<(), &'static
     if trampoline_addr & 0xFFF != 0 {
         return Err("Endereço do trampolim deve ser alinhado a 4KB");
     }
-    
+
     if trampoline_addr > 0xFF000 {
-         return Err("Endereço do trampolim deve estar na memória baixa (< 1MB) para modo real");
+        return Err("Endereço do trampolim deve estar na memória baixa (< 1MB) para modo real");
     }
 
     let sipi_vector = (trampoline_addr >> 12) as u8;
@@ -42,20 +33,20 @@ pub unsafe fn wake_ap(apic_id: u32, trampoline_addr: u64) -> Result<(), &'static
     // TODO: Usar funções de envio de IPI raw da arquitetura, pois send_ipi genérico usa vetor da IDT,
     // e aqui precisamos enviar sinais INIT/STARTUP especiais que não são vetores normais.
     // Como não expusemos isso ainda, deixaremos como TODO descritivo.
-    
+
     // Sequência padrão x86 INIT-SIPI-SIPI:
-    
+
     // 1. Enviar INIT IPI
     // crate::arch::apic::send_init_ipi(apic_id);
     crate::kdebug!("Enviando INIT...");
-    
+
     // 2. Esperar 10ms
     // crate::arch::delay(10_000);
-    
+
     // 3. Enviar SIPI (Startup IPI) com o vetor do trampolim
     // crate::arch::apic::send_sipi(apic_id, sipi_vector);
     crate::kdebug!("Enviando SIPI 1 (Vector ", sipi_vector as u64);
-    
+
     // 4. Esperar 200us
     // crate::arch::delay(200);
 

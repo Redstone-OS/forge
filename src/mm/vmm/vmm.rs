@@ -1,8 +1,7 @@
-use bitflags::bitflags;
+use crate::bitflags;
 // TODO NAO USAR DEPENDENCIA EXTERNA
 bitflags! {
     /// Flags de mapeamento de página (Paging Flags)
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MapFlags: u64 {
         const PRESENT = 1 << 0;
         const WRITABLE = 1 << 1;

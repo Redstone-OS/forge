@@ -48,7 +48,7 @@
 /// Sistema de capabilities
 pub mod capability;
 
-pub use capability::{CapHandle, CapRights, CapType, Capability, CSpace};
+pub use capability::{CSpace, CapHandle, CapRights, CapType, Capability};
 
 // =============================================================================
 // CREDENTIALS
@@ -66,7 +66,7 @@ pub use credentials::Credentials;
 /// Namespaces e isolamento
 pub mod sandbox;
 
-pub use sandbox::Namespace;
+pub use sandbox::Sandbox;
 
 // =============================================================================
 // AUDIT

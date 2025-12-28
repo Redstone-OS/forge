@@ -1,18 +1,16 @@
-/// Arquivo: core/work/workqueue.rs
-///
-/// Propósito: Implementação de Filas de Trabalho (Work Queues).
-/// Permite agendar a execução de funções para um momento posterior, fora do contexto de interrupção.
-///
-/// Detalhes de Implementação:
-/// - Usa `VecDeque` protegido por `Spinlock` para armazenar trabalhos.
-/// - Suporta execução de itens enfileirados.
-/// - Projetado para ser consumido por threads dedicadas (worker threads) no scheduler.
+//! Workqueues (Tarefas diferidas)
+//!
+//! Propósito: Implementação de Filas de Trabalho (Work Queues).
+//! Permite agendar a execução de funções para um momento posterior, fora do contexto de interrupção.
+//!
+//! Detalhes de Implementação:
+//! - Usa `VecDeque` protegido por `Spinlock` para armazenar trabalhos.
+//! - Suporta execução de itens enfileirados.
+//! - Projetado para ser consumido por threads dedicadas (worker threads) no scheduler.
 
-//! Filas de trabalho diferido
-
+use crate::sync::spinlock::Spinlock;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
-use crate::sync::spinlock::Spinlock;
 
 /// Trait para itens de trabalho
 pub trait WorkItem: Send + Sync {
@@ -30,9 +28,7 @@ impl ClosureWork {
     where
         F: FnMut() + Send + Sync + 'static,
     {
-        Self {
-            func: Box::new(f),
-        }
+        Self { func: Box::new(f) }
     }
 }
 
@@ -49,7 +45,7 @@ pub struct WorkQueue {
 
 impl WorkQueue {
     /// Cria uma nova WorkQueue
-    /// 
+    ///
     /// Nota: Requer que `VecDeque::new` e `Spinlock::new` sejam const para uso em estáticas.
     pub const fn new() -> Self {
         Self {
@@ -61,12 +57,12 @@ impl WorkQueue {
     pub fn enqueue<W: WorkItem + 'static>(&self, work: W) {
         let mut q = self.queue.lock();
         q.push_back(Box::new(work));
-        
+
         // TODO: Acordar worker thread associada a esta fila se estiver dormindo
         // Isso requer integração com o scheduler (que não podemos importar diretamente aqui)
         // Possível solução: Callback hook ou polling.
     }
-    
+
     /// Processa todos os itens pendentes na fila (Flush)
     pub fn process_all(&self) {
         loop {

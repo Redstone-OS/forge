@@ -255,14 +255,12 @@ pub fn init(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
         }
 
         // Importante: map_page_with_pmm está no módulo VMM
-        if let Err(_e) = unsafe {
-            crate::mm::vmm::map_page_with_pmm(
-                crate::mm::addr::VirtAddr::new(page_addr as u64),
-                crate::mm::addr::PhysAddr::new(frame.addr()),
-                flags,
-                pmm,
-            )
-        } {
+        if let Err(_e) = crate::mm::vmm::map_page_with_pmm(
+            page_addr as u64,
+            frame.addr(),
+            crate::mm::vmm::MapFlags::from_bits_truncate(flags),
+            pmm,
+        ) {
             crate::kerror!("(Heap) init: mapeamento falhou em=", page_addr);
             return false;
         }
