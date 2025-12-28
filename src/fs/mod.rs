@@ -1,93 +1,85 @@
-//! # Virtual File System (VFS) Layer
+//! # File System (FS)
 //!
-//! O subsistema `fs` implementa a camada de abstração de arquivos do Redstone OS.
-//! Ele fornece uma interface unificada (`VfsNode`, `VfsHandle`) para acessar diferentes
-//! tipos de sistemas de arquivos (em memória, drivers, disco).
+//! Abstração unificada de armazenamento.
 //!
-//! ## 🎯 Propósito e Responsabilidade
-//! - **Abstração (VFS):** Permite que o kernel trate arquivos, diretórios e dispositivos da mesma forma.
-//! - **Initramfs:** Carrega o sistema de arquivos raiz inicial (TAR) da memória RAM.
-//! - **DevFS:** Expõe dispositivos de kernel (como Serial / Console) como arquivos em `/dev`.
+//! ## Arquitetura VFS
 //!
-//! ## 🏗️ Arquitetura dos Módulos
+//! ```text
+//! ┌─────────────────────────────────────────────────────┐
+//! │                   SYSCALL LAYER                     │
+//! │         open() read() write() close() stat()        │
+//! └─────────────────────────────────────────────────────┘
+//!                          ↓
+//! ┌─────────────────────────────────────────────────────┐
+//! │                       VFS                           │
+//! │   Path Resolution → Dentry Cache → Inode → File     │
+//! └─────────────────────────────────────────────────────┘
+//!                          ↓
+//! ┌─────────────────────────────────────────────────────┐
+//! │              FILESYSTEM BACKENDS                    │
+//! │   InitramFS │ DevFS │ ProcFS │ SysFS │ TmpFS        │
+//! └─────────────────────────────────────────────────────┘
+//! ```
 //!
-//! | Módulo      | Responsabilidade | Estado Atual |
-//! |-------------|------------------|--------------|
-//! | `vfs`       | Define os Traits (`VfsNode`, `VfsHandle`) e o `Vfs` global. | **Síncrono:** Interface bloqueante básica. |
-//! | `initramfs` | Parser de TAR (USTAR) Read-Only. | **Frágil:** Parser manual, sem checksum, assume UTF-8 válido. |
-//! | `devfs`     | Filesystem sintético para `/dev`. | **Mínimo:** Suporta apenas `null` e `console`. |
+//! ## Filesystems
 //!
-//! ## 🔍 Análise Crítica (Kernel Engineer's View)
-//!
-//! ### ✅ Pontos Fortes
-//! - **Simplicidade:** Interface limpa e fácil de implementar para novos FS.
-//! - **Transparência:** O `Vfs::lookup` resolve caminhos de forma iterativa, fácil de debugar.
-//!
-//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
-//! - **Lookup Linear O(N):** `vfs.rs` itera sobre listas de filhos para resolver caminhos. Em diretórios grandes, isso será lento.
-//! - **Initramfs inseguro:** O parser TAR assume que os nomes de arquivos são UTF-8 válido (`unsafe { String::from_utf8_unchecked }`).
-//!   - *Risco:* Um initramfs corrompido pode causar Undefined Behavior no kernel.
-//! - **Falta de Cache:** Não existe *Page Cache* ou *Dentry Cache*. Cada leitura no `initramfs` copia bytes da RAM bruta.
-//!
-//! ## 🛠️ TODOs e Roadmap
-//! - [ ] **TODO: (Security)** Validar UTF-8 no parser do Initramfs ou usar `BString` (bytes puros).
-//!   - *Impacto:* Evitar que nomes de arquivos malformados quebrem strings do Rust.
-//! - [ ] **TODO: (Performance)** Implementar `DentryCache` no VFS global.
-//!   - *Motivo:* Evitar parsing repetitivo de caminhos (ex: `/bin/init` não deve varrer `/`, depois `/bin` toda vez).
-//! - [ ] **TODO: (Feature)** Suporte a **Mount Points**.
-//!   - *Status:* Atualmente o VFS só tem um `root`. Precisamos montar `devfs` dentro de `initramfs/dev`.
-//! - [ ] **TODO: (Concurrency)** Granularidade de Lock no VFS.
-//!   - *Problema:* `ROOT_VFS` é um `Mutex` global. Todas as operações de arquivo do sistema bloqueiam umas às outras.
+//! | FS        | Tipo       | Persistente | Propósito              |
+//! |-----------|------------|-------------|------------------------|
+//! | initramfs | Read-only  | Não         | Boot inicial           |
+//! | devfs     | Virtual    | Não         | /dev/null, /dev/sda    |
+//! | procfs    | Virtual    | Não         | /proc (estado kernel)  |
+//! | sysfs     | Virtual    | Não         | /sys (dispositivos)    |
+//! | tmpfs     | RAM-backed | Não         | Storage temporário     |
 
-pub mod devfs;
-pub mod initramfs;
-pub mod test;
+// =============================================================================
+// VIRTUAL FILE SYSTEM
+// =============================================================================
+
+/// Core VFS (path resolution, file ops)
 pub mod vfs;
 
-use alloc::sync::Arc;
+pub use vfs::{File, FileOps, Inode, SuperBlock, VFS};
 
-/// Inicializa o subsistema de arquivos.
-pub fn init(boot_info: &'static crate::core::handoff::BootInfo) {
-    crate::kinfo!("(VFS) Inicializando subsistema de arquivos...");
+// =============================================================================
+// FILESYSTEM IMPLEMENTATIONS
+// =============================================================================
 
-    // 1. Procurar Initramfs no BootInfo
-    if boot_info.initramfs_addr != 0 && boot_info.initramfs_size > 0 {
-        crate::kdebug!(
-            "(VFS) Encontrado disco inicial 'initfs' em=",
-            boot_info.initramfs_addr
-        );
-        crate::kdebug!("(VFS) Tamanho do initfs=", boot_info.initramfs_size as u64);
+/// DevFS (/dev)
+pub mod devfs;
 
-        crate::ktrace!("(VFS) [1] Criando slice...");
+/// InitramFS (boot)
+pub mod initramfs;
 
-        // DEBUG: Verificar se o endereço está acessível
-        let initramfs_ptr = boot_info.initramfs_addr as *const u8;
-        crate::ktrace!("(VFS) [1a] ptr=", initramfs_ptr as u64);
+/// ProcFS (/proc)
+pub mod procfs;
 
-        // Tentar ler primeiro byte para verificar se está mapeado
-        let first_byte = unsafe { core::ptr::read_volatile(initramfs_ptr) };
-        crate::ktrace!("(VFS) [1b] primeiro_byte=", first_byte as u64);
+/// SysFS (/sys)
+pub mod sysfs;
 
-        crate::ktrace!("(VFS) [1c] preparando from_raw_parts...");
+/// TmpFS (volatile storage)
+pub mod tmpfs;
 
-        // Criar slice unsafe para a memória do initramfs
-        let size = boot_info.initramfs_size as usize;
-        crate::ktrace!("(VFS) [1d] size=", size as u64);
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
 
-        let data = unsafe { core::slice::from_raw_parts(initramfs_ptr, size) };
-        crate::ktrace!("(VFS) [2] Slice criado, len=", data.len() as u64);
+/// Inicializa o VFS e monta filesystems virtuais
+pub fn init() {
+    crate::kinfo!("(FS) Inicializando VFS...");
+    vfs::init();
 
-        // Montar Initramfs como raiz
-        crate::kinfo!("(VFS) Montando Initramfs...");
-        crate::ktrace!("(VFS) [3] Chamando Initramfs::new...");
-        let initfs = Arc::new(initramfs::Initramfs::new(data));
-        crate::ktrace!("(VFS) [4] Arc criado, montando...");
-        vfs::ROOT_VFS.lock().mount_root(initfs);
+    crate::kinfo!("(FS) Montando filesystems virtuais...");
+    // devfs::mount("/dev");
+    // procfs::mount("/proc");
+    // sysfs::mount("/sys");
+    // tmpfs::mount("/tmp");
 
-        crate::kinfo!("(VFS) Sistema de arquivos raiz montado com sucesso");
-    } else {
-        crate::kwarn!(
-            "(VFS) ATENÇÃO: Initramfs não encontrado! O sistema não poderá carregar o /init"
-        );
-    }
+    crate::kinfo!("(FS) Filesystem inicializado");
 }
+
+// =============================================================================
+// TESTS
+// =============================================================================
+
+#[cfg(feature = "self_test")]
+pub mod test;

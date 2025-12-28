@@ -1,50 +1,70 @@
 //! # Kernel Module System
 //!
-//! Sistema de carregamento seguro de módulos de kernel (drivers privilegiados).
+//! Carregamento seguro de módulos dinâmicos (drivers).
 //!
 //! ## Filosofia: "Convidado com Crachá"
 //!
-//! Módulos rodam em Ring 0 mas são **supervisionados**. Eles não podem:
-//! - Acessar page tables globais
-//! - Fazer DMA sem IOMMU
-//! - Modificar syscall table do kernel
-//! - Carregar outros módulos
-//! - Acessar memória de outros processos
-//!
-//! ## Componentes
-//!
-//! | Módulo | Responsabilidade |
-//! |--------|------------------|
-//! | `supervisor` | Gerencia ciclo de vida dos módulos |
-//! | `loader` | Carrega ELF de módulos |
-//! | `verifier` | Verifica assinaturas |
-//! | `capability` | Capabilities específicas de módulos |
-//! | `sandbox` | Isolamento e proteção |
-//! | `watchdog` | Monitora saúde dos módulos |
-//! | `abi` | Interface estável para módulos |
-//!
-//! ## Uso
-//!
-//! ```ignore
-//! // Carregar módulo (apenas kernel pode fazer isso)
-//! let module_id = module::load("/drivers/nvidia.ko")?;
-//!
-//! // Módulo solicita capability
-//! let cap = module::request_capability(ModuleCapType::GpuControl)?;
-//!
-//! // Se módulo falhar, kernel faz fallback
-//! module::on_fault(module_id, |_| FallbackAction::UseBuiltIn);
+//! ```text
+//! ┌─────────────────────────────────────────────────────┐
+//! │                 KERNEL CORE (Ring 0)                │
+//! │        MM │ Scheduler │ IPC │ Security              │
+//! │                 🔒 ZONA SAGRADA 🔒                  │
+//! │           Módulos NÃO acessam diretamente           │
+//! └─────────────────────────────────────────────────────┘
+//!                         ↑
+//!                  Capability Tokens
+//!                         ↑
+//! ┌─────────────────────────────────────────────────────┐
+//! │              MODULE SUPERVISOR                      │
+//! │   Loader │ Verifier │ Sandbox │ Watchdog            │
+//! │          Único ponto de entrada                     │
+//! └─────────────────────────────────────────────────────┘
+//!                         ↑
+//!                    Module ABI
+//!                         ↑
+//! ┌───────────┐ ┌───────────┐ ┌───────────┐
+//! │ nvidia.ko │ │ e1000.ko  │ │ nvme.ko   │
+//! └───────────┘ └───────────┘ └───────────┘
 //! ```
+//!
+//! ## Fluxo de Carga
+//!
+//! 1. Verificar assinatura (Ed25519)
+//! 2. Análise estática (símbolos permitidos)
+//! 3. Alocação de memória (RX/RW separados)
+//! 4. Concessão de capabilities
+//! 5. Inicialização supervisionada (timeout)
+//! 6. Monitoramento por watchdog
 
+// =============================================================================
+// MODULES
+// =============================================================================
+
+/// Interface binária estável para módulos
 pub mod abi;
+
+/// Capabilities específicas de módulos
 pub mod capability;
+
+/// Carregador ELF
 pub mod loader;
+
+/// Sandbox e isolamento
 pub mod sandbox;
+
+/// Supervisor de ciclo de vida
 pub mod supervisor;
+
+/// Verificação de assinatura
 pub mod verifier;
+
+/// Watchdog de saúde
 pub mod watchdog;
 
-// Re-exports
+// =============================================================================
+// RE-EXPORTS
+// =============================================================================
+
 pub use abi::{ModuleAbi, ModuleInfo};
 pub use capability::{ModuleCapType, ModuleCapability};
 pub use loader::ModuleLoader;
@@ -53,24 +73,62 @@ pub use supervisor::{LoadedModule, ModuleId, ModuleSupervisor, SUPERVISOR};
 pub use verifier::SignatureVerifier;
 pub use watchdog::{HealthStatus, ModuleWatchdog};
 
-/// Inicializa o sistema de módulos.
-///
-/// Deve ser chamado após MM e antes do PID1.
-pub fn init() {
-    crate::kinfo!("(Module) Inicializando sistema de módulos...");
+// =============================================================================
+// ERROR TYPES
+// =============================================================================
 
-    // Inicializar supervisor
-    SUPERVISOR.lock().init();
-
-    crate::kdebug!("(Module) Supervisor inicializado");
-    if has_iommu() {
-        crate::kdebug!("(Module) IOMMU: Disponivel");
-    } else {
-        crate::kdebug!("(Module) IOMMU: Indisponivel");
-    }
+/// Erros do sistema de módulos
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleError {
+    /// Módulo não encontrado
+    NotFound,
+    /// Assinatura inválida
+    InvalidSignature,
+    /// Formato inválido
+    InvalidFormat,
+    /// IOMMU necessário mas indisponível
+    IommuRequired,
+    /// Capability negada
+    CapabilityDenied,
+    /// Já carregado
+    AlreadyLoaded,
+    /// Limite atingido
+    LimitReached,
+    /// Timeout na inicialização
+    InitTimeout,
+    /// Erro interno
+    InternalError,
+    /// Módulo banido
+    Banned,
 }
 
-/// Verifica se IOMMU está disponível no sistema.
+// =============================================================================
+// PUBLIC API
+// =============================================================================
+
+/// Inicializa o sistema de módulos
+pub fn init() {
+    crate::kinfo!("(Module) Inicializando supervisor...");
+    SUPERVISOR.lock().init();
+    crate::kinfo!("(Module) Sistema de módulos inicializado");
+}
+
+/// Carrega um módulo
+pub fn load(path: &str) -> Result<ModuleId, ModuleError> {
+    SUPERVISOR.lock().load_module(path)
+}
+
+/// Descarrega um módulo
+pub fn unload(id: ModuleId) -> Result<(), ModuleError> {
+    SUPERVISOR.lock().unload_module(id)
+}
+
+/// Lista módulos carregados
+pub fn list() -> alloc::vec::Vec<ModuleId> {
+    SUPERVISOR.lock().list_modules()
+}
+
+/// Verifica se IOMMU está disponível
 pub fn has_iommu() -> bool {
     #[cfg(target_arch = "x86_64")]
     {
@@ -82,52 +140,9 @@ pub fn has_iommu() -> bool {
     }
 }
 
-/// Carrega um módulo do sistema de arquivos.
-///
-/// # Arguments
-/// * `path` - Caminho do módulo (ex: "/drivers/nvidia.ko")
-///
-/// # Returns
-/// * `Ok(ModuleId)` - ID do módulo carregado
-/// * `Err(ModuleError)` - Se falhou
-pub fn load(path: &str) -> Result<ModuleId, ModuleError> {
-    SUPERVISOR.lock().load_module(path)
-}
-
-/// Descarrega um módulo.
-pub fn unload(id: ModuleId) -> Result<(), ModuleError> {
-    SUPERVISOR.lock().unload_module(id)
-}
-
-/// Lista módulos carregados.
-pub fn list_modules() -> alloc::vec::Vec<ModuleId> {
-    SUPERVISOR.lock().list_modules()
-}
-
-/// Erros do sistema de módulos.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModuleError {
-    /// Módulo não encontrado
-    NotFound,
-    /// Assinatura inválida
-    InvalidSignature,
-    /// Módulo mal-formado
-    InvalidFormat,
-    /// IOMMU necessário mas não disponível
-    IommuRequired,
-    /// Capability negada
-    CapabilityDenied,
-    /// Módulo já carregado
-    AlreadyLoaded,
-    /// Limite de módulos atingido
-    LimitReached,
-    /// Timeout na inicialização
-    InitTimeout,
-    /// Falha interna
-    InternalError,
-    /// Módulo banido (muitas falhas)
-    Banned,
-}
+// =============================================================================
+// TESTS
+// =============================================================================
 
 #[cfg(feature = "self_test")]
 pub mod test;

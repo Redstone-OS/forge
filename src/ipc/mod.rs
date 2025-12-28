@@ -1,53 +1,81 @@
-//! # Inter-Process Communication (IPC) Subsystem
+//! # Inter-Process Communication (IPC)
 //!
-//! O subsistema `ipc` implementa o mecanismo de troca de mensagens entre processos,
-//! fundamental para a arquitetura micro-modular do Redstone OS.
+//! Sistema nervoso do kernel — como processos conversam.
 //!
-//! ## 🎯 Propósito e Responsabilidade
-//! - **Message Passing:** Comunicação desacoplada via mensagens tipadas (Structs/Bytes).
-//! - **Portas (Endpoints):** Filas de mensagens (`VecDeque`) protegidas, atuando como "caixas de correio".
-//! - **Capabilities:** Transporte seguro de permissões (Handles) entre processos.
+//! ## Mecanismos
 //!
-//! ## 🏗️ Arquitetura dos Módulos
+//! | Tipo      | Padrão    | Cópia    | Bloqueio |
+//! |-----------|-----------|----------|----------|
+//! | Port      | 1:N       | Sim      | Opcional |
+//! | Channel   | 1:1       | Sim      | Opcional |
+//! | Pipe      | 1:1       | Stream   | Sim      |
+//! | SharedMem | N:N       | Zero     | Não      |
+//! | Futex     | Primitive | N/A      | Sim      |
 //!
-//! | Módulo    | Responsabilidade | Estado Atual |
-//! |-----------|------------------|--------------|
-//! | `message` | Define o envelope da mensagem (`MessageHeader`, dados, caps). | **Alloc-heavy:** Usa `Vec<u8>` para payload, gerando pressão no Heap. |
-//! | `port`    | Implementa a fila de mensagens e lógica de envio/recebimento. | **Síncrono/Polling:** `recv` retorna `Empty` em vez de bloquear a thread. |
+//! ## Filosofia
 //!
-//! ## 🔍 Análise Crítica (Kernel Engineer's View)
-//!
-//! ### ✅ Pontos Fortes
-//! - **Simplicidade (KISS):** A implementação inicial é fácil de auditar e livre de *deadlocks* complexos (apenas um Mutex por porta).
-//! - **Segurança de Tipos:** O uso de `PortHandle` e `Message` encapsula bem a lógica bruta de ponteiros.
-//!
-//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
-//! - **Falta de Bloqueio (Scheduler Integration):** O método `recv` não coloca a thread em *Sleep* se a fila estiver vazia.
-//!   - *Consequência:* Consumidores precisam fazer *busy wait* ou polling manual, desperdiçando CPU.
-//! - **Alocação Dinâmica Excessiva:** Cada `Message::new` aloca um `Vec`. Num sistema de alta frequência, isso fragmentará o Heap.
-//! - **Cópia de Dados:** O payload é copiado da Userland para o Kernel (Sender) e do Kernel para a Userland (Receiver). `memcpy` duplo.
-//!
-//! ## 🛠️ TODOs e Roadmap
-//! - [ ] **TODO: (Performance)** Implementar **Zero-Copy** para mensagens grandes (Shared Memory).
-//!   - *Motivo:* Evitar overhead de `memcpy` para transferências de arquivos ou buffers de vídeo.
-//! - [ ] **TODO: (Scheduler)** Integrar `Port::recv()` com `Thread::park()`.
-//!   - *Objetivo:* Se `Empty`, a thread deve dormir e ser acordada apenas quando houver `send()`.
-//! - [ ] **TODO: (Optimization)** Substituir `Vec<u8>` por um **Slab Allocator** ou Pool de Mensagens fixas.
-//!   - *Impacto:* Reduzir latência de alocação e fragmentação de memória.
-//! - [ ] **TODO: (Security)** Implementar verificação rigorosa de limites de portas por processo.
-//!   - *Risco:* Um processo malicioso pode criar infinitas portas e exaurir a memória do kernel (DoS).
+//! - **Capability-First**: Enviar/receber requer handle válido
+//! - **Zero-Copy**: SharedMem para dados grandes
+//! - **Async-Ready**: Integração com scheduler para blocking
 
+// =============================================================================
+// MESSAGE PASSING
+// =============================================================================
+
+/// Mensagens e envelopes
 pub mod message;
+
+/// Portas de comunicação (1:N)
 pub mod port;
-pub mod test;
+
+/// Canais bidirecionais (1:1)
+pub mod channel;
 
 pub use message::Message;
-pub use port::{Port, PortHandle, PortStatus};
+pub use port::{Port, PortHandle};
+pub use channel::Channel;
 
-/// Inicializa o subsistema de IPC.
+// =============================================================================
+// STREAMING
+// =============================================================================
+
+/// Pipes unidirecionais
+pub mod pipe;
+
+pub use pipe::Pipe;
+
+// =============================================================================
+// SHARED MEMORY
+// =============================================================================
+
+/// Memória compartilhada (zero-copy)
+pub mod shm;
+
+pub use shm::SharedMemory;
+
+// =============================================================================
+// SYNCHRONIZATION
+// =============================================================================
+
+/// Futex (Fast Userspace Mutex)
+pub mod futex;
+
+pub use futex::Futex;
+
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+/// Inicializa o subsistema de IPC
 pub fn init() {
-    crate::kinfo!("(IPC) Inicializando subsistema de mensagens...");
-    crate::kdebug!("(IPC) init: Protocolo assíncrono baseado em capacidades ativo");
-    // Futuro: Criar portas globais do sistema (ex: NameService)
-    crate::kinfo!("(IPC) Inicializado");
+    crate::kinfo!("(IPC) Inicializando subsistema de IPC...");
+    // Futuro: criar portas globais do sistema (NameService, etc)
+    crate::kinfo!("(IPC) IPC inicializado");
 }
+
+// =============================================================================
+// TESTS
+// =============================================================================
+
+#[cfg(feature = "self_test")]
+pub mod test;

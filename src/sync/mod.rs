@@ -1,48 +1,60 @@
 //! # Synchronization Primitives
 //!
-//! Este módulo fornece as abstrações necessárias para garantir a integridade de dados em um ambiente
-//! de kernel concorrente (Multicore e Interrupt-driven).
+//! Primitivas de sincronização para ambiente SMP.
 //!
-//! ## 🎯 Propósito e Responsabilidade
-//! - **Mutual Exclusion:** Garante que apenas uma CPU (ou fluxo de execução) acesse um dado por vez.
-//! - **Interior Mutability:** Permite modificar dados compartilhados (`static`) de forma segura (`Send` + `Sync`).
+//! ## Hierarquia de Uso
 //!
-//! ## 🏗️ Arquitetura: Spinlocks
-//! Atualmente, o Redstone OS utiliza **Spinlocks** (`spin::Mutex`).
-//! - **Comportamento:** Se o lock está ocupado, a thread entra em loop infinito (busy wait) até liberar.
-//! - **Custo:** Alto uso de CPU durante a espera, mas zero overhead de escalonamento (não dorme).
+//! ```text
+//! Spinlock   → Seções críticas curtas (não pode dormir)
+//! Mutex      → Seções que podem bloquear (pode dormir)
+//! RwLock     → Muitos leitores, poucos escritores
+//! Semaphore  → Controle de recursos contáveis
+//! CondVar    → Espera por condição
+//! RCU        → Read-Copy-Update (leitura sem lock)
+//! ```
 //!
-//! ## 🔍 Análise Crítica (Kernel Engineer's View)
+//! ## Regras
 //!
-//! ### ✅ Pontos Fortes
-//! - **Lazy Initialization:** O uso de `spin::Lazy` resolve o problema do "Static Initialization Order Fiasco", permitindo
-//!   inicializar globais complexos (como heaps e drivers) na primeira utilização.
-//!
-//! ### ⚠️ Pontos de Atenção (Dívida Técnica)
-//! - **Deadlock por Interrupção:** O `spin::Mutex` padrão **NÃO** desabilita interrupções.
-//!   - *Cenário:* Thread A pega Lock X. Interrupção ocorre. Handler da Interrupção tenta pegar Lock X.
-//!   - *Resultado:* Deadlock eterno na mesma CPU.
-//! - **Priority Inversion:** Spinlocks simples não previnem inversão de prioridade (embora em SMP round-robin isso seja menos crítico hoje).
-//!
-//! ## 🛠️ TODOs e Roadmap
-//! - [ ] **TODO: (Critical/Safety)** Implementar **IrqSafeMutex**.
-//!   - *Meta:* Um wrapper que executa `cli` (disable interrupts) antes de pegar o lock e `sti` (restore) ao soltar.
-//!   - *Necessário para:* Drivers, Scheduler e qualquer estrutura compartilhada com Interrupt Handlers.
-//! - [ ] **TODO: (Debug)** Adicionar **Deadlock Detection**.
-//!   - *Como:* O lock deve registrar qual CPU/Thread é dona dele. Se a mesma CPU tentar pegar 2x, panic imediato com backtrace.
-//! - [ ] **TODO: (SMP)** Implementar **Ticket Locks** ou MCS Locks.
-//!   - *Motivo:* Spinlocks simples não garantem justiça (fairness) em sistemas com muitos cores, podendo causar starvation de uma CPU.
-//!
-//! --------------------------------------------------------------------------------
-//!
-//! Re-exporta o Mutex da crate `spin` por enquanto.
-//! Isso facilita mudar a implementação no futuro sem alterar o código consumidor.
+//! - **Spinlock**: Usar apenas quando NÃO pode dormir (IRQ handlers)
+//! - **Mutex**: Preferir para seções normais do kernel
+//! - **Ordem de Lock**: Sempre adquirir na mesma ordem para evitar deadlock
 
-// Re-exporta o Mutex da crate `spin` por enquanto.
-// Isso facilita mudar a implementação no futuro sem alterar o código consumidor.
-pub use spin::{Mutex, MutexGuard};
+// =============================================================================
+// PRIMITIVAS BÁSICAS
+// =============================================================================
 
-/// Wrapper para garantir inicialização preguiçosa segura.
-pub use spin::Lazy;
+/// Operações atômicas
+pub mod atomic;
 
-pub mod test;
+/// Spinlock (busy-wait, não dorme)
+pub mod spinlock;
+
+/// Mutex (pode bloquear thread)
+pub mod mutex;
+
+// =============================================================================
+// PRIMITIVAS AVANÇADAS
+// =============================================================================
+
+/// Reader-Writer Lock
+pub mod rwlock;
+
+/// Semáforo (contagem de recursos)
+pub mod semaphore;
+
+/// Condition Variable
+pub mod condvar;
+
+/// Read-Copy-Update
+pub mod rcu;
+
+// =============================================================================
+// RE-EXPORTS
+// =============================================================================
+
+pub use atomic::AtomicCell;
+pub use condvar::CondVar;
+pub use mutex::{Mutex, MutexGuard};
+pub use rwlock::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+pub use semaphore::Semaphore;
+pub use spinlock::{Spinlock, SpinlockGuard};
