@@ -2,11 +2,10 @@
 //!
 //! Capabilities granulares para handles.
 
-use bitflags::bitflags;
+use crate::bitflags;
 
 bitflags! {
     /// Direitos de um handle
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct HandleRights: u64 {
         // === Básicos ===
         const READ       = 1 << 0;

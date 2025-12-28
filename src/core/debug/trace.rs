@@ -36,3 +36,13 @@ impl Drop for ScopedTrace {
 pub fn trace_scope(name: &'static str) -> ScopedTrace {
     ScopedTrace::new(name)
 }
+
+#[macro_export]
+macro_rules! ktrace {
+    ($name:expr) => {
+        let _trace_guard = $crate::core::debug::trace::trace_scope($name);
+    };
+    ($name:expr, $($arg:tt)*) => {
+        let _trace_guard = $crate::core::debug::trace::trace_scope($name);
+    };
+}

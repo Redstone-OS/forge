@@ -191,8 +191,8 @@ impl VMO {
                 // Zerar se necessário
                 if matches!(self.pages[i], PageState::ZeroFill) {
                     unsafe {
-                        let virt = crate::mm::addr::phys_to_virt(PhysAddr::new(frame.addr()));
-                        crate::mm::ops::memops::memzero(virt.as_mut_ptr(), PAGE_SIZE);
+                        let virt = crate::mm::addr::phys_to_virt::<u8>(frame.addr());
+                        crate::mm::ops::memops::memzero(virt, PAGE_SIZE);
                     }
                 }
 
@@ -224,8 +224,8 @@ impl VMO {
 
                 // Zerar
                 unsafe {
-                    let virt = crate::mm::addr::phys_to_virt(addr);
-                    crate::mm::ops::memops::memzero(virt.as_mut_ptr(), PAGE_SIZE);
+                    let virt = crate::mm::addr::phys_to_virt::<u8>(addr.as_u64());
+                    crate::mm::ops::memops::memzero(virt, PAGE_SIZE);
                 }
 
                 self.pages[page_index] = PageState::Present(addr);
@@ -239,9 +239,9 @@ impl VMO {
                 let new_addr = PhysAddr::new(frame.addr());
 
                 unsafe {
-                    let src = crate::mm::addr::phys_to_virt(original);
-                    let dst = crate::mm::addr::phys_to_virt(new_addr);
-                    crate::mm::ops::memops::memcpy(dst.as_mut_ptr(), src.as_ptr(), PAGE_SIZE);
+                    let src = crate::mm::addr::phys_to_virt::<u8>(original.as_u64());
+                    let dst = crate::mm::addr::phys_to_virt::<u8>(new_addr.as_u64());
+                    crate::mm::ops::memops::memcpy(dst, src as *const u8, PAGE_SIZE);
                 }
 
                 self.pages[page_index] = PageState::Present(new_addr);

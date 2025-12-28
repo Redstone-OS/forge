@@ -46,10 +46,18 @@ impl<T: Copy> PerCpu<T> {
     /// Cria uma nova variável PerCpu.
     /// Requer que T seja Copy para inicializar o array (const).
     pub const fn new(initial_value: T) -> Self {
-        // Truque para inicializar array const com valor repetido
-        // (Em Rust recente pode ser mais fácil, mas garantimos compatibilidade)
+        // Inicialização manual para 32 CPUs pois UnsafeCell não é Copy
         Self {
-            data: [UnsafeCell::new(initial_value); MAX_CPUS],
+            data: [
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+                UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value), UnsafeCell::new(initial_value),
+            ],
         }
     }
 

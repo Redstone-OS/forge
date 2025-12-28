@@ -14,6 +14,20 @@ pub enum VerifyResult {
 }
 
 impl SignatureVerifier {
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Verifica se o módulo é válido (stub)
+    pub fn verify(&self, _data: &[u8]) -> bool {
+        // TODO: Implementar verificação real de assinatura
+        #[cfg(debug_assertions)]
+        return true;
+
+        #[cfg(not(debug_assertions))]
+        return false; // Produção requer assinatura
+    }
+
     /// Verifica assinatura Ed25519
     pub fn verify_ed25519(
         data: &[u8],
@@ -29,7 +43,7 @@ impl SignatureVerifier {
         // Por enquanto, aceitar tudo em dev
         #[cfg(debug_assertions)]
         return VerifyResult::Valid;
-        
+
         #[cfg(not(debug_assertions))]
         return VerifyResult::InvalidSignature;
     }

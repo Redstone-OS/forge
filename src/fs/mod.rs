@@ -38,7 +38,18 @@
 /// Core VFS (path resolution, file ops)
 pub mod vfs;
 
-pub use vfs::{File, FileOps, Inode, SuperBlock, VFS};
+pub use vfs::file::{File, FileOps};
+pub use vfs::inode::{Inode, InodeOps};
+
+// Re-export VFS (struct/trait if strictly needed, or just the module logic)
+// Since VFS is a module here, this line might be redundant or wrong if VFS is not a struct.
+// Checking previous fs/mod.rs error: 'no VFS in fs::vfs'.
+// vfs/mod.rs defines functions like init, open. It doesn't define a VFS struct.
+// But some code imports VFS. Maybe it means the module? 'pub use vfs as VFS'?
+// Or maybe there IS a VFS struct missing?
+// Given existing code tries to import it, I'll export what is available.
+// If VFS struct is missing, I should create a dummy one or point to the module.
+// For now, let's export Inode/File which are definitely missing.
 
 // =============================================================================
 // FILESYSTEM IMPLEMENTATIONS

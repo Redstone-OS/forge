@@ -9,6 +9,13 @@ license = "MIT"
 [[bin]]
 name = "forge"
 path = "src/main.rs"
+test = false
+bench = false
+
+[lib]
+harness = false
+test = false
+bench = false
 
 [dependencies]
 

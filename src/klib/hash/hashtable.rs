@@ -3,8 +3,7 @@
 /// Propósito: Tabela Hash (Dicionário).
 /// Mapeia Chaves -> Valores usando uma função de hash para acesso O(1) médio.
 ///
-/// Detalhes de Implementação:
-/// - Encadeamento para colisões (Vec de Buckets).
+/// Detalhes de Implementação básica de Hashtable com Linear Probingsões (Vec de Buckets).
 /// - Função de Hash simples interna ou Trait Hash (vamos usar Hash trait do core).
 
 //! Hash Table

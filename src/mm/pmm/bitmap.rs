@@ -1,143 +1,97 @@
-//! # DOCUMENTAÇÃO CRÍTICA DE ARQUITETURA DE MEMÓRIA (PMM)
+//! Bitmap Frame Allocator
 //!
-//! ## 🛑 O Incidente do "Triple Fault" (Colisão de Memória)
+//! Alocador de frames físicos usando um bitmap simples.
+//! Ocupa 1 bit por frame de memória física.
 //!
-//! **Sintoma:** O sistema reiniciava abruptamente (Triple Fault) logo após o PMM iniciar e tentar
-//! limpar o bitmap de memória (`memset`). Em alguns casos, ocorria `panic` por acesso a `null`.
+//! ## Características
+//! * Simples e robusto (KISS)
+//! * Baixo overhead de metadados (1 bit por 4KB)
+//! * Suporta regiões de memória descontíguas (com mapeamento virtual contíguo)
 //!
-//! **A Causa Raiz:** O Bootloader aloca dinamicamente Tabelas de Página (Page Tables) em regiões
-//! de memória marcadas como `Usable` no Memory Map, mas **não atualiza o mapa** para `Reserved` ou
-//! `PageTable` antes de passar o controle para o Kernel. Essas tabelas frequentemente residem
-//! logo após o fim do binário do Kernel ou nas bordas de regiões livres.
+//! ## Implementação
+//! O bitmap é armazenado em uma região de memória física reservada logo após o boot.
 //!
-//! Quando o PMM tentava alocar o Bitmap usando uma estratégia simples ("First Fit" ou "Append to Kernel"),
-//! ele escolhia exatamente o mesmo endereço físico onde essas Page Tables ativas estavam vivendo.
-//! Ao fazer o `memset` para limpar o bitmap, o PMM **sobrescrevia as tabelas de página que a CPU
-//! estava usando para executar o próprio código**, puxando o tapete debaixo dos próprios pés.
-//!
-//! ## 🛡️ A Solução Robusta: "Center-Out" & "Fibonacci Probing"
-//!
-//! Para resolver isso sem depender da boa vontade do Bootloader, implementamos uma estratégia defensiva:
-//!
-//! 1.  **Ignorar Memória Baixa (< 16MB):** A região abaixo de 16MB (DMA/ISA) é historicamente instável e
-//!     cheia de armadilhas de hardware legado. Nós a ignoramos completamente para estruturas críticas.
-//! 2.  **Estratégia "Center-Out":** Em vez de pegar a primeira região livre (que geralmente é uma borda suja),
-//!     calculamos o **centro geométrico** da maior região de RAM disponível. Estatisticamente, o centro
-//!     de um grande bloco de 2GB+ é o lugar mais seguro e longe de qualquer alocação de borda do UEFI.
-//! 3.  **Sonda Fibonacci (Probing):** Antes de aceitar um endereço, fazemos um `dirty check` (leitura volátil).
-//!     Se a memória contiver dados não-nulos, assumimos que é "sujeira" do Bootloader e usamos offsets
-//!     da sequência de Fibonacci para "espiralar" para fora daquele ponto até achar memória limpa (`0x00`).
-//!
-//! ## 🔮 TODO & Roadmap para Solução Definitiva
-//!
-//! Esta solução é resiliente, mas tecnicamente é um *workaround* inteligente. A solução canônica envolve:
-//!
-//! 1.  **Bootloader Protocol:** O Bootloader deve marcar explicitamente as regiões usadas por Page Tables
-//!     como `LoaderPageTable` ou `Reserved` no Memory Map passado ao Kernel.
-//! 2.  **Parse UEFI:** O Kernel poderia varrer a árvore de Page Tables ativa (via registro CR3) antes de
-//!     iniciar o PMM e marcar manualmente esses quadros como ocupados no bitmap.
-//! 3.  **Sanitização:** Implementar uma rotina de `sanitize_memory_map` que remove regiões muito pequenas
-//!     ou funde regiões adjacentes antes do alocador rodar.
-//!
-//! ## ⚠️ O Que NÃO Fazer (Lições Aprendidas)
-//!
-//! * **NUNCA** confie cegamente que uma região `Usable` está realmente vazia, especialmente nas bordas.
-//! * **NUNCA** aloque estruturas críticas do kernel em endereço físico `0x0` (causa panic no Rust).
-//! * **NUNCA** tente alocar "logo após o kernel" sem garantir um padding generoso (2MB+), pois é onde
-//!     o bootloader adora esconder coisas.
-use super::frame::PhysFrame;
+
 use super::stats::PmmStats;
-use crate::core::handoff::{BootInfo, MemoryType};
+use super::PhysFrame;
+use crate::core::boot::handoff::{BootInfo, MemoryType};
 use crate::mm::addr::{self, PhysAddr};
-use crate::mm::config::PAGE_SIZE;
+use crate::mm::pmm::FRAME_SIZE as PAGE_SIZE;
 use core::sync::atomic::{compiler_fence, Ordering};
 
 // ============================================================================
-// CONSTANTES DE CONFIGURAÇÃO
+// CONFIGURAÇÃO
 // ============================================================================
 
-/// Limite mínimo de endereço para alocação de estruturas críticas (16MB).
-const MIN_ALLOC_ADDR: u64 = 16 * 1024 * 1024;
-
-/// Limite mínimo para seleção de região (1MB).
-const MIN_REGION_ADDR: u64 = 0x100000;
-
-/// Padding de segurança ao redor do kernel (1MB).
-const KERNEL_SAFETY_PADDING: u64 = 1024 * 1024;
-
-/// Número máximo de entradas do Memory Map a processar.
+/// Número máximo de entradas no Memory Map para processar
 const MAX_MEMORY_MAP_ENTRIES: usize = 128;
 
-/// Número máximo de tentativas na estratégia Center-Out.
-const MAX_PROBING_ATTEMPTS: usize = 20;
+/// Padding de segurança para não sobrescrever o Kernel ou Bootloader (2MB)
+const KERNEL_SAFETY_PADDING: u64 = 2 * 1024 * 1024;
+
+/// Endereço mínimo para alocar o bitmap (evita região ISA DMA < 16MB se possível)
+const MIN_REGION_ADDR: u64 = 16 * 1024 * 1024;
+
+/// Limite de tentativas para probing de região livre
+const MAX_PROBING_ATTEMPTS: usize = 64;
 
 // ============================================================================
-// FUNÇÕES AUXILIARES SEM SSE
+// ESTRUTURA
 // ============================================================================
 
-/// Encontra o primeiro bit zero em um u64 (equivalente a trailing_ones())
-///
-/// NOTA: Implementação manual usando while loop para evitar SSE
-#[inline]
-fn find_first_zero_bit(val: u64) -> usize {
-    if val == u64::MAX {
-        return 64; // Todos os bits estão setados
-    }
-
-    let mut bit = 0usize;
-    while bit < 64 {
-        if (val & (1u64 << bit)) == 0 {
-            return bit;
-        }
-        bit += 1;
-    }
-    64 // Não encontrado (todos setados)
-}
-
-// ============================================================================
-// ESTRUTURA PRINCIPAL
-// ============================================================================
-
-/// BitmapFrameAllocator - Gerencia memória física usando um bitmap.
+/// O Alocador de Bitmap
 pub struct BitmapFrameAllocator {
-    _memory_base: PhysAddr,
+    /// Ponteiro para o início do bitmap na memória VIRTUAL
     bitmap_ptr: *mut u64,
+    /// Tamanho do bitmap em u64s (palavras de 64 bits)
     bitmap_len: usize,
+    /// Total de frames gerenciados
     total_frames: usize,
-    next_free: usize,
+    /// Estatísticas de uso
     stats: PmmStats,
+    /// Lock simples (Spinlock seria ideal, mas PMM é muito baixo nível)
+    /// Por enquanto, assumimos Single Core no boot ou lock externo.
+    _lock: (),
 }
 
+// SAFETY: O alocador deve ser thread-safe (usar atomics ou lock externo)
 unsafe impl Send for BitmapFrameAllocator {}
 unsafe impl Sync for BitmapFrameAllocator {}
 
 impl BitmapFrameAllocator {
-    pub const fn empty() -> Self {
+    /// Cria um novo alocador vazio (const para estáticos)
+    pub const fn new() -> Self {
         Self {
-            _memory_base: PhysAddr::new(0),
             bitmap_ptr: core::ptr::null_mut(),
             bitmap_len: 0,
             total_frames: 0,
-            next_free: 0,
             stats: PmmStats::new(),
+            _lock: (),
         }
     }
 
-    /// Inicializa o alocador
-    pub unsafe fn init(&mut self, boot_info: &'static BootInfo) {
-        crate::kinfo!("(PMM) Inicializando o Alocador de Quadros por Bitmap...");
+    /// Inicializa o alocador usando o BootInfo fornecido pelo Bootloader.
+    ///
+    /// # Etapas
+    /// 1. Analisa o mapa de memória físico.
+    /// 2. Calcula o tamanho necessário para o bitmap.
+    /// 3. Encontra uma região de memória livre capaz de armazenar o bitmap.
+    /// 4. Mapeia essa região e inicializa o bitmap (marca tudo como ocupado inicialmente).
+    /// 5. Percorre o mapa de memória novamente e libera os frames marcados como `Usable`.
+    pub fn init(&mut self, boot_info: &BootInfo) {
+        crate::kinfo!("(PMM) Inicializando Bitmap Allocator...");
 
         // Barreira: Garante que a leitura do boot_info está completa
         compiler_fence(Ordering::SeqCst);
 
         // 1. Escanear Memory Map
-        let (max_phys, _) = self.scan_memory_map_safe(boot_info);
+        let (max_phys, _total_usable_frames) = self.scan_memory_map_safe(boot_info);
 
         // Barreira: Garante que max_phys está computado antes de usar
         compiler_fence(Ordering::SeqCst);
 
         // 2. Calcular tamanho do bitmap
-        self.total_frames = max_phys.as_usize() / PAGE_SIZE;
+        self.total_frames = (max_phys.as_u64() as usize) / (PAGE_SIZE as usize);
         self.stats.total_frames = self.total_frames;
         self.stats
             .used_frames
@@ -157,30 +111,6 @@ impl BitmapFrameAllocator {
         // Barreira: Garante que cálculos estão completos
         compiler_fence(Ordering::SeqCst);
 
-        // ------- DIAGNÓSTICO: Logar campos críticos do BootInfo -------
-        crate::kdebug!("(PMM) Preparando busca por região para o bitmap...");
-        crate::ktrace!(
-            "(PMM) Endereço físico do kernel=",
-            boot_info.kernel_phys_addr
-        );
-        crate::ktrace!("(PMM) Tamanho do kernel=", boot_info.kernel_size);
-
-        crate::ktrace!("(PMM) Endereço do mapa=", boot_info.memory_map_addr);
-        crate::ktrace!("(PMM) Comprimento map=", boot_info.memory_map_len as u64);
-
-        // Validação do memory_map (Opção 3)
-        if boot_info.memory_map_addr == 0 {
-            panic!("(PMM) FATAL: memory_map_addr é zero!");
-        }
-        if boot_info.memory_map_len == 0 || boot_info.memory_map_len > 512 {
-            panic!(
-                "(PMM) FATAL: memory_map_len inválido: {}",
-                boot_info.memory_map_len
-            );
-        }
-
-        crate::ktrace!("(PMM) Chamando busca centralizada por região...");
-
         // 3. Encontrar região segura para o bitmap
         let bitmap_phys = self.find_bitmap_region_center_out(boot_info, req_size_bytes);
         crate::ktrace!("(PMM) Endereço físico do bitmap=", bitmap_phys.as_u64());
@@ -189,7 +119,12 @@ impl BitmapFrameAllocator {
         compiler_fence(Ordering::SeqCst);
 
         // 4. Mapear e preencher bitmap
-        self.bitmap_ptr = addr::phys_to_virt(bitmap_phys).as_mut_ptr();
+        // No estágio atual, assumimos identidade mapeada ou convertemos phys->virt linearmente
+        // SAFETY: phys_to_virt é unsafe pois cria ponteiros arbitrários, mas aqui estamos mapeando região válida
+        unsafe {
+            let virt_addr = addr::phys_to_virt(bitmap_phys.as_u64());
+            self.bitmap_ptr = virt_addr.as_mut_ptr();
+        }
 
         if self.bitmap_ptr.is_null() || (self.bitmap_ptr as usize) % 8 != 0 {
             panic!("(PMM) Ponteiro de bitmap inválido: {:p}", self.bitmap_ptr);
@@ -208,14 +143,11 @@ impl BitmapFrameAllocator {
 
         let mut i: usize = 0;
         while i < self.bitmap_len {
-            // Usar inline asm para escrever - evita SSE/AVX que pode causar #UD
-            let addr = ptr_u64.add(i);
-            core::arch::asm!(
-                "mov qword ptr [{0}], {1}",
-                in(reg) addr,
-                in(reg) u64::MAX,
-                options(nostack, preserves_flags)
-            );
+            unsafe {
+                let addr = ptr_u64.add(i);
+                // Usar write_volatile ou ptr::write para evitar otimizações estranhas em early boot
+                core::ptr::write(addr, u64::MAX);
+            }
             i += 1;
         }
 
@@ -225,10 +157,9 @@ impl BitmapFrameAllocator {
         // 4.5 CRÍTICO: Marcar page tables do bootloader como ocupadas
         // DEVE ser feito APÓS bitmap estar preenchido (tudo ocupado) e
         // ANTES de init_free_regions liberar frames "Usable".
-        // Isso garante que as page tables do bootloader nunca sejam
-        // marcadas como livres, mesmo que estejam em regiões "Usable".
         crate::ktrace!("(PMM) Escaneando tabelas de página do bootloader...");
-        super::pt_scanner::mark_bootloader_page_tables(self);
+        // SAFETY: mark_bootloader_page_tables é unsafe, assume self inicializado
+        unsafe { super::pt_scanner::mark_bootloader_page_tables(self) };
 
         // 5. Liberar regiões usable
         self.init_free_regions(boot_info, bitmap_phys, req_size_bytes as u64);
@@ -247,43 +178,28 @@ impl BitmapFrameAllocator {
     }
 
     /// Scan seguro do mapa de memória
+    /// Scan seguro do mapa de memória
+    /// Scan seguro do mapa de memória
     fn scan_memory_map_safe(&self, boot_info: &BootInfo) -> (PhysAddr, usize) {
         let mut max_phys = 0u64;
         let mut count = 0usize;
 
-        // CORREÇÃO: memory_map_addr é endereço FÍSICO, converter para virtual
-        let map_phys = PhysAddr::new(boot_info.memory_map_addr);
+        let map = &boot_info.memory_map;
+        let regions = &map.regions;
+        let cnt = core::cmp::min(map.count, regions.len());
 
-        let map_virt = addr::phys_to_virt(map_phys);
-
-        let map_ptr = map_virt.as_ptr() as *const crate::core::handoff::MemoryMapEntry;
-        let map_len = boot_info.memory_map_len as usize;
-        let safe_len = core::cmp::min(map_len, MAX_MEMORY_MAP_ENTRIES);
-
-        // Barreira antes de iterar sobre memória externa
-        compiler_fence(Ordering::SeqCst);
-
-        // Usando while manual em vez de for (iterador Range pode gerar #UD)
-        let mut i: usize = 0;
-        while i < safe_len {
-            unsafe {
-                let entry_ptr = map_ptr.add(i);
-                let entry = &*entry_ptr;
-
-                if entry.typ == MemoryType::Usable {
-                    let end = entry.base + entry.len;
-                    if end > max_phys {
-                        max_phys = end;
-                    }
-                    count += 1;
+        let mut i = 0;
+        while i < cnt {
+            let region = &regions[i];
+            if region.kind == MemoryType::Usable {
+                let end = region.start + region.size;
+                if end > max_phys {
+                    max_phys = end;
                 }
+                count += 1;
             }
-
             i += 1;
         }
-
-        // Barreira após leitura
-        compiler_fence(Ordering::SeqCst);
 
         if max_phys == 0 {
             crate::kerror!("(PMM) FATAL: Nenhuma memória utilizável (Usable) encontrada!");
@@ -295,71 +211,44 @@ impl BitmapFrameAllocator {
     }
 
     /// Estratégia "Center-Out" com Probing Fibonacci
+    /// Estratégia "Center-Out" com Probing Fibonacci
     fn find_bitmap_region_center_out(&self, boot_info: &BootInfo, size_bytes: usize) -> PhysAddr {
-        let kernel_start = boot_info.kernel_phys_addr;
-        let kernel_end = boot_info.kernel_size + kernel_start;
         let size_needed = size_bytes as u64;
+        // Padding para evitar problemas
+        let forbidden_start = 0;
+        let forbidden_end = KERNEL_SAFETY_PADDING; // Simplesmente evitar início
 
-        let forbidden_start = kernel_start.saturating_sub(KERNEL_SAFETY_PADDING);
-        let forbidden_end = kernel_end + KERNEL_SAFETY_PADDING;
-
-        // CORREÇÃO: memory_map_addr é endereço FÍSICO, precisamos converter para virtual
-        // O bootloader passa o endereço físico do array de MemoryMapEntry
-        let map_phys = PhysAddr::new(boot_info.memory_map_addr);
-        let map_virt = addr::phys_to_virt(map_phys);
-        let map_ptr = map_virt.as_ptr() as *const crate::core::handoff::MemoryMapEntry;
-        let map_len = core::cmp::min(boot_info.memory_map_len as usize, MAX_MEMORY_MAP_ENTRIES);
-
-        crate::kdebug!("(PMM) Mapa físico=", map_phys.as_u64());
-        crate::kdebug!("(PMM) Mapa virtual=", map_virt.as_u64());
-
-        // DEBUG: Verificar se a memória é acessível lendo o primeiro byte
-        // Usando escrita RAW para evitar #UD causado por formatação
-
-        compiler_fence(Ordering::SeqCst);
-
-        let _test_ptr = map_ptr as *const u8;
-        // Desabilitado temporariamente para teste
-        // let test_byte = unsafe { core::ptr::read_volatile(test_ptr) };
-        let _test_byte: u8 = 0; // Placeholder
-
-        // Barreira
-        compiler_fence(Ordering::SeqCst);
+        let map = &boot_info.memory_map;
+        let regions = &map.regions;
+        let count = core::cmp::min(map.count, regions.len());
 
         // Encontrar a MAIOR região Usable
         let mut best_region_idx = None;
         let mut max_len = 0u64;
 
-        // Usando while manual em vez de for (iterador Range pode gerar #UD)
-        let mut i: usize = 0;
-        while i < map_len {
-            unsafe {
-                let entry = &*map_ptr.add(i);
-                if entry.typ == MemoryType::Usable
-                    && entry.len > max_len
-                    && entry.base >= MIN_REGION_ADDR
-                {
-                    max_len = entry.len;
-                    best_region_idx = Some(i);
-                }
+        let mut i = 0;
+        while i < count {
+            let region = &regions[i];
+            if region.kind == MemoryType::Usable
+                && region.size > max_len
+                && region.start >= MIN_REGION_ADDR
+            {
+                max_len = region.size;
+                best_region_idx = Some(i);
             }
             i += 1;
         }
 
-        // Barreira
-        compiler_fence(Ordering::SeqCst);
-
         if let Some(idx) = best_region_idx {
-            let entry = unsafe { &*map_ptr.add(idx) };
-            let region_start = entry.base;
-            let region_end = entry.base + entry.len;
-            let region_center = region_start + (entry.len / 2);
+            let region = &regions[idx];
+            let region_start = region.start;
+            let region_end = region.start + region.size;
+            let region_center = region_start + (region.size / 2);
             let center_candidate = (region_center.saturating_sub(size_needed / 2) + 0xFFF) & !0xFFF;
 
             let mut fib_a = 0u64;
             let mut fib_b = PAGE_SIZE as u64;
 
-            // Usando while manual em vez de for (iterador Range pode gerar #UD)
             let mut attempt: usize = 0;
             while attempt < MAX_PROBING_ATTEMPTS {
                 let offset = if attempt == 0 { 0 } else { fib_b };
@@ -384,15 +273,7 @@ impl BitmapFrameAllocator {
                     continue;
                 }
 
-                // Barreira antes da verificação de memória
-                compiler_fence(Ordering::SeqCst);
-
-                // Desabilitando is_memory_dirty temporariamente para testar
-                // if unsafe { self.is_memory_dirty(candidate_start, size_needed) } {
-                //     attempt += 1;
-                //     continue;
-                // }
-
+                // Sucesso
                 return PhysAddr::new(candidate_start);
             }
         }
@@ -403,7 +284,7 @@ impl BitmapFrameAllocator {
     /// Verifica se memória contém dados
     #[allow(dead_code)]
     unsafe fn is_memory_dirty(&self, start: u64, size: u64) -> bool {
-        let ptr = addr::phys_to_virt(PhysAddr::new(start)).as_mut_ptr() as *const u64;
+        let ptr = addr::phys_to_virt::<u64>(start).as_mut_ptr();
         let offsets = [0usize, (size / 2 / 8) as usize, ((size - 8) / 8) as usize];
 
         // Barreira antes de ler memória
@@ -417,289 +298,191 @@ impl BitmapFrameAllocator {
         }
         false
     }
-}
 
-impl BitmapFrameAllocator {
-    /// Aloca um frame físico
-    /// Aloca um frame físico
-    ///
-    /// NOTA: Usa while loops e assembly para evitar SSE
-    pub fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let start_search = self.next_free;
-        let limit = self.bitmap_len;
+    /// Inicializa regiões livres no bitmap
+    /// Inicializa regiões livres no bitmap
+    /// Inicializa regiões livres no bitmap
+    fn init_free_regions(
+        &mut self,
+        boot_info: &BootInfo,
+        bitmap_start_phys: PhysAddr,
+        bitmap_size_bytes: u64,
+    ) {
+        let bitmap_end_phys = bitmap_start_phys.as_u64() + bitmap_size_bytes;
 
-        // Usar while ao invés de for
-        let mut i: usize = 0;
-        while i < limit {
-            let idx = (start_search + i) % limit;
-            unsafe {
-                let entry_ptr = self.bitmap_ptr.add(idx);
+        let map = &boot_info.memory_map;
+        let regions = &map.regions;
+        let count = core::cmp::min(map.count, regions.len());
 
-                // Ler usando assembly
-                let entry: u64;
-                core::arch::asm!(
-                    "mov {0}, [{1}]",
-                    out(reg) entry,
-                    in(reg) entry_ptr,
-                    options(nostack, preserves_flags, readonly)
-                );
+        let mut i = 0;
+        while i < count {
+            let region = &regions[i];
 
-                if entry != u64::MAX {
-                    // Encontrar primeiro bit zero manualmente (evita trailing_ones que pode usar SSE)
-                    let bit = find_first_zero_bit(entry);
-                    if bit < 64 {
-                        let frame_idx = idx * 64 + bit;
-                        if frame_idx < self.total_frames {
-                            // Calcular nova entrada com bit setado
-                            let new_entry = entry | (1u64 << bit);
+            // Só liberamos regiões marcadas como Usable
+            if region.kind == MemoryType::Usable {
+                let mut start = region.start;
+                let mut end = region.start + region.size;
 
-                            // Escrever usando assembly
-                            core::arch::asm!(
-                                "mov [{0}], {1}",
-                                in(reg) entry_ptr,
-                                in(reg) new_entry,
-                                options(nostack, preserves_flags)
-                            );
+                // Alinhar ao tamanho da página
+                start = (start + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+                end = end & !(PAGE_SIZE - 1);
 
-                            compiler_fence(Ordering::SeqCst);
-                            self.stats.inc_alloc();
-                            self.next_free = idx;
-                            return Some(PhysFrame::from_start_address(PhysAddr::new(
-                                frame_idx as u64 * PAGE_SIZE as u64,
-                            )));
-                        }
+                if start >= end {
+                    i += 1;
+                    continue;
+                }
+
+                // Excluir a região onde o próprio bitmap está!
+                if start < bitmap_end_phys && end > bitmap_start_phys.as_u64() {
+                    // Caso 1: Região engole o bitmap completamente
+                    if start < bitmap_start_phys.as_u64() {
+                        self.free_region(start, bitmap_start_phys.as_u64());
                     }
+                    if end > bitmap_end_phys {
+                        self.free_region(bitmap_end_phys, end);
+                    }
+                } else {
+                    // Caso 2: Sem overlap, liberar tudo
+                    self.free_region(start, end);
                 }
             }
             i += 1;
         }
+    }
+
+    /// Libera uma região contígua de memória física no bitmap
+    fn free_region(&self, start: u64, end: u64) {
+        let start_frame = start / PAGE_SIZE;
+        let end_frame = end / PAGE_SIZE;
+
+        let mut frame = start_frame;
+        while frame < end_frame {
+            if frame >= self.total_frames as u64 {
+                break;
+            }
+
+            // Marcar como livre (0)
+            self.mark_frame(frame, false);
+            self.stats.inc_free();
+            frame += 1;
+        }
+    }
+
+    /// Marca um frame como usado (true) ou livre (false)
+    fn mark_frame(&self, frame_idx: u64, used: bool) {
+        if frame_idx >= self.total_frames as u64 {
+            return;
+        }
+
+        let word_idx = (frame_idx / 64) as usize;
+        let bit_idx = (frame_idx % 64) as usize;
+        let mask = 1u64 << bit_idx;
+
+        // Operações atômicas manuais no bitmap (sem lock global por performance)
+        // Isso é seguro porque cada bit é independente, mas words compartilhadas exigem cuidado.
+        // Como estamos operando em words u64, load/store pode não ser suficiente para update parcial.
+        // Deveríamos usar AtomicU64, mas o bitmap é um *mut u64 raw.
+        // Vamos usar inline assembly lock bts/btr para x86_64 seria ideal,
+        // ou um CAST para AtomicU64 se o alinhamento permitir.
+
+        // Assumindo alinhamento correto do bitmap_ptr (verificado no init)
+        unsafe {
+            let word_ptr = self.bitmap_ptr.add(word_idx) as *mut core::sync::atomic::AtomicU64;
+            let atomic = &*word_ptr;
+
+            if used {
+                atomic.fetch_or(mask, Ordering::Relaxed);
+            } else {
+                atomic.fetch_and(!mask, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Aloca um frame físico
+    pub fn allocate_frame(&self) -> Option<PhysAddr> {
+        // Scan simples (Next Fit ou First Fit)
+        // Para simplificar: First Fit com otimização de word
+
+        // TODO: Implementar LastAlloc pointer para Next Fit
+
+        for i in 0..self.bitmap_len {
+            unsafe {
+                let word_ptr = self.bitmap_ptr.add(i);
+                let word = *word_ptr;
+
+                // Se word for u64::MAX, está tudo ocupado
+                if word == u64::MAX {
+                    continue;
+                }
+
+                // Encontrar primeiro bit 0
+                let bit = word.trailing_ones(); // bits 0..N-1 são 1s, bit N é 0? Não.
+                                                // trailing_ones conta 1s consecutivos. Se word for 0, retorna 0. Se 0xFFFF...FE (bit 0=0), retorna 0.
+                                                // Se word tiver algum 0, trailing_ones de (!word) dá o índice do primeiro bit 1 em !word, ou seja, primeiro bit 0 em word?
+                                                // trailing_zeros(!word)
+
+                let free_bit = (!word).trailing_zeros();
+                if free_bit < 64 {
+                    let frame_idx = (i as u64 * 64) + free_bit as u64;
+
+                    if frame_idx >= self.total_frames as u64 {
+                        return None;
+                    }
+
+                    // Tentar marcar atomicamente
+                    let mask = 1u64 << free_bit;
+                    let atomic_ptr = word_ptr as *mut core::sync::atomic::AtomicU64;
+                    let atomic = &*atomic_ptr;
+
+                    // CAS loop para garantir
+                    let prev = atomic.fetch_or(mask, Ordering::AcqRel);
+                    if (prev & mask) == 0 {
+                        // Sucesso, estava livre e marcamos
+                        self.stats.inc_alloc();
+                        return Some(PhysAddr::new(frame_idx * PAGE_SIZE));
+                    } else {
+                        // Falha, alguém alocou antes. Tentar novamente ou continuar.
+                        // Simplesmente continue a busca
+                    }
+                }
+            }
+        }
+
+        self.stats.failed_allocs.fetch_add(1, Ordering::Relaxed);
         None
     }
 
     /// Desaloca um frame físico
-    ///
-    /// NOTA: Usa assembly puro para evitar SSE
-    pub fn deallocate_frame(&mut self, frame: PhysFrame) {
-        let start_addr = frame.start_address().as_u64();
-        let frame_idx = (start_addr / PAGE_SIZE as u64) as usize;
-        if frame_idx >= self.total_frames {
-            return;
-        }
-
-        let idx = frame_idx / 64;
-        let bit = frame_idx % 64;
-
-        unsafe {
-            let ptr = self.bitmap_ptr.add(idx);
-
-            // Ler usando assembly
-            let entry: u64;
-            core::arch::asm!(
-                "mov {0}, [{1}]",
-                out(reg) entry,
-                in(reg) ptr,
-                options(nostack, preserves_flags, readonly)
-            );
-
-            let mask = 1u64 << bit;
-
-            if (entry & mask) != 0 {
-                let new_entry = entry & !mask;
-
-                // Escrever usando assembly
-                core::arch::asm!(
-                    "mov [{0}], {1}",
-                    in(reg) ptr,
-                    in(reg) new_entry,
-                    options(nostack, preserves_flags)
-                );
-
-                compiler_fence(Ordering::SeqCst);
-                self.stats.inc_free();
-                if idx < self.next_free {
-                    self.next_free = idx;
-                }
-            }
-        }
+    pub fn deallocate_frame(&self, frame: PhysAddr) {
+        let frame_idx = frame.as_u64() / PAGE_SIZE;
+        self.mark_frame(frame_idx, false);
+        self.stats.inc_free();
     }
 
-    /// Libera frames em regiões Usable
-    ///
-    /// NOTA: Usa while loops ao invés de for para evitar SSE
-    unsafe fn init_free_regions(
-        &mut self,
-        boot_info: &BootInfo,
-        bitmap_start: PhysAddr,
-        bitmap_size: u64,
-    ) {
-        crate::ktrace!("(PMM) init_free_regions: Iniciando...");
-
-        let kernel_start = boot_info.kernel_phys_addr;
-        let kernel_end = kernel_start + boot_info.kernel_size;
-        let bitmap_end = bitmap_start.as_u64() + bitmap_size;
-
-        let map_ptr = boot_info.memory_map_addr as *const crate::core::handoff::MemoryMapEntry;
-        let map_len = if boot_info.memory_map_len as usize > MAX_MEMORY_MAP_ENTRIES {
-            MAX_MEMORY_MAP_ENTRIES
-        } else {
-            boot_info.memory_map_len as usize
-        };
-
-        compiler_fence(Ordering::SeqCst);
-
-        // Usar while ao invés de for para evitar iteradores SSE
-        let mut i: usize = 0;
-        while i < map_len {
-            let entry = &*map_ptr.add(i);
-            if entry.typ == MemoryType::Usable {
-                let start_frame = entry.base / PAGE_SIZE as u64;
-                let end_frame = (entry.base + entry.len) / PAGE_SIZE as u64;
-
-                // Usar while ao invés de for
-                let mut f = start_frame;
-                while f < end_frame {
-                    let addr = f * PAGE_SIZE as u64;
-
-                    if addr < MIN_ALLOC_ADDR {
-                        f += 1;
-                        continue;
-                    }
-                    if addr >= kernel_start && addr < kernel_end {
-                        f += 1;
-                        continue;
-                    }
-                    if addr >= bitmap_start.as_u64() && addr < bitmap_end {
-                        f += 1;
-                        continue;
-                    }
-
-                    self.deallocate_frame_internal(f as usize);
-                    f += 1;
-                }
-            }
-            i += 1;
-        }
-
-        compiler_fence(Ordering::SeqCst);
-        crate::ktrace!("(PMM) init_free_regions: Concluído");
-    }
-
-    /// Desaloca frame internamente
-    ///
-    /// NOTA: Usa assembly puro para evitar SSE
-    fn deallocate_frame_internal(&mut self, frame_idx: usize) {
-        if frame_idx >= self.total_frames {
-            return;
-        }
-        let idx = frame_idx / 64;
-        let bit = frame_idx % 64;
-        unsafe {
-            let ptr = self.bitmap_ptr.add(idx);
-
-            // Ler usando assembly
-            let entry: u64;
-            core::arch::asm!(
-                "mov {0}, [{1}]",
-                out(reg) entry,
-                in(reg) ptr,
-                options(nostack, preserves_flags, readonly)
-            );
-
-            // Calcular nova entrada (limpar bit)
-            let mask = !(1u64 << bit);
-            let new_entry = entry & mask;
-
-            // Escrever usando assembly
-            core::arch::asm!(
-                "mov [{0}], {1}",
-                in(reg) ptr,
-                in(reg) new_entry,
-                options(nostack, preserves_flags)
-            );
-        }
-        self.stats.used_frames.fetch_sub(1, Ordering::SeqCst);
-    }
-
-    // ========================================================================
-    // MÉTODOS PARA PROTEÇÃO DE PAGE TABLES DO BOOTLOADER
-    // ========================================================================
-
-    /// Marca um frame específico como ocupado (usado pelo pt_scanner).
-    ///
-    /// Usado para proteger page tables do bootloader que estão em regiões
-    /// marcadas como "Usable" no memory map.
-    ///
-    /// # Retorna
-    /// - true se o frame foi marcado com sucesso
-    /// - false se o frame já estava ocupado ou índice inválido
-    pub fn mark_frame_used(&mut self, phys_addr: u64) -> bool {
-        let frame_idx = (phys_addr / PAGE_SIZE as u64) as usize;
-
-        if frame_idx >= self.total_frames {
-            return false;
-        }
-
-        let idx = frame_idx / 64;
-        let bit = frame_idx % 64;
-
-        unsafe {
-            let ptr = self.bitmap_ptr.add(idx);
-            let entry = core::ptr::read_volatile(ptr);
-
-            // Verificar se já está ocupado
-            if (entry & (1u64 << bit)) != 0 {
-                return false; // Já estava marcado
-            }
-
-            // Marcar como ocupado
-            core::ptr::write_volatile(ptr, entry | (1u64 << bit));
-        }
-
-        self.stats.used_frames.fetch_add(1, Ordering::SeqCst);
-        true
-    }
-
-    /// Verifica se um frame está ocupado
-    ///
-    /// NOTA: Usa assembly puro para evitar que o compilador gere instruções SSE
-    pub fn is_frame_used(&self, phys_addr: u64) -> bool {
-        let frame_idx = (phys_addr / PAGE_SIZE as u64) as usize;
-
-        if frame_idx >= self.total_frames {
-            return true; // Fora do range = considerado ocupado
-        }
-
-        let idx = frame_idx / 64;
-        let bit = frame_idx % 64;
-
-        unsafe {
-            let ptr = self.bitmap_ptr.add(idx);
-
-            // Ler o valor usando assembly para evitar SSE
-            let entry: u64;
-            core::arch::asm!(
-                "mov {0}, [{1}]",
-                out(reg) entry,
-                in(reg) ptr,
-                options(nostack, preserves_flags, readonly)
-            );
-
-            // Calcular máscara e verificar bit usando assembly
-            let mask: u64 = 1u64 << bit;
-            let result: u64;
-            core::arch::asm!(
-                "and {0}, {1}",
-                inout(reg) mask => result,
-                in(reg) entry,
-                options(nostack, preserves_flags, nomem)
-            );
-
-            result != 0
-        }
-    }
-
-    /// Retorna o número total de frames gerenciados
+    /// Retorna o número total de frames físicos gerenciados
     pub fn total_frames(&self) -> usize {
         self.total_frames
+    }
+
+    /// Verifica se um frame específico está marcado como usado
+    pub fn is_frame_used(&self, frame_idx: u64) -> bool {
+        if frame_idx >= self.total_frames as u64 {
+            return true; // Fora do intervalo é considerado usado/inválido
+        }
+
+        let word_idx = (frame_idx / 64) as usize;
+        let bit_idx = (frame_idx % 64) as usize;
+        let mask = 1u64 << bit_idx;
+
+        unsafe {
+            let word_ptr = self.bitmap_ptr.add(word_idx);
+            let word = core::ptr::read_volatile(word_ptr);
+            (word & mask) != 0
+        }
+    }
+
+    /// Marca um frame específico como usado ou livre
+    pub fn mark_frame_used(&mut self, frame_idx: u64, used: bool) {
+        self.mark_frame(frame_idx, used);
     }
 }

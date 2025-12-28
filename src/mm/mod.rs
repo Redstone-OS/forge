@@ -32,8 +32,8 @@
 // =============================================================================
 
 /// Wrappers type-safe para endereços
+/// Wrappers type-safe para endereços
 pub mod addr;
-
 pub use addr::{PhysAddr, VirtAddr};
 
 // =============================================================================
@@ -42,7 +42,6 @@ pub use addr::{PhysAddr, VirtAddr};
 
 /// Gerenciador de memória física
 pub mod pmm;
-
 pub use pmm::{FrameAllocator, PhysFrame, FRAME_ALLOCATOR};
 
 // =============================================================================
@@ -51,7 +50,6 @@ pub use pmm::{FrameAllocator, PhysFrame, FRAME_ALLOCATOR};
 
 /// Gerenciador de memória virtual
 pub mod vmm;
-
 pub use vmm::{map_page, translate_addr, unmap_page, MapFlags, PageTable};
 
 // =============================================================================

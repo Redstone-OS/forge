@@ -7,6 +7,6 @@ pub mod refcount;
 pub mod rights;
 
 pub use handle::Handle;
-pub use kobject::KernelObject;
+pub use kobject::KObject;
 pub use refcount::RefCount;
 pub use rights::Rights;

@@ -1,7 +1,7 @@
 /// Arquivo: x86_64/ports.rs
 ///
 /// Propósito: Abstração para instruções de entrada/saída (I/O Ports) legadas do x86.
-/// Permite leitura e escrita em portas de I/O (inb, outb, etc.), essenciais para configurar
+/// Port I/O primitives leitura e escrita em portas de I/O (inb, outb, etc.), essenciais para configurar
 /// hardware legado como PIC, PIT, PS/2 e Serial, além de alguns registradores de PCI/DMA.
 ///
 /// Detalhes de Implementação:

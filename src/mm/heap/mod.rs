@@ -203,7 +203,7 @@ unsafe impl GlobalAlloc for LockedHeap {
 /// - Mapeia todas as páginas virtuais correspondentes
 /// - Inicializa o `ALLOCATOR` global
 /// - Retorna `true` se sucesso, `false` se OOM ou falha de mapeamento
-pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
+pub fn init(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
     // Usando constantes importadas de config
     let base_addr = crate::mm::config::HEAP_VIRT_BASE;
     let heap_size = crate::mm::config::HEAP_INITIAL_SIZE;
@@ -255,9 +255,14 @@ pub fn init_heap(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
         }
 
         // Importante: map_page_with_pmm está no módulo VMM
-        if let Err(_e) =
-            unsafe { crate::mm::vmm::map_page_with_pmm(page_addr as u64, frame.addr(), flags, pmm) }
-        {
+        if let Err(_e) = unsafe {
+            crate::mm::vmm::map_page_with_pmm(
+                crate::mm::addr::VirtAddr::new(page_addr as u64),
+                crate::mm::addr::PhysAddr::new(frame.addr()),
+                flags,
+                pmm,
+            )
+        } {
             crate::kerror!("(Heap) init: mapeamento falhou em=", page_addr);
             return false;
         }

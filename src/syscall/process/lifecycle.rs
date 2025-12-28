@@ -1,8 +1,9 @@
 //! # Process Lifecycle
 //!
 //! exit, spawn, wait, yield
+//!
+//! Refatorado para usar API estática do scheduler.
 
-use crate::sched::scheduler::SCHEDULER;
 use crate::syscall::abi::SyscallArgs;
 use crate::syscall::error::{SysError, SysResult};
 
@@ -93,16 +94,6 @@ pub fn sys_wait(pid: usize, timeout_ms: u64) -> SysResult<usize> {
 ///
 /// Sempre retorna 0.
 pub fn sys_yield() -> SysResult<usize> {
-    let switch = {
-        let mut sched = SCHEDULER.lock();
-        sched.schedule()
-    };
-
-    if let Some((old_sp, new_sp)) = switch {
-        unsafe {
-            crate::sched::context_switch(old_sp as *mut u64, new_sp);
-        }
-    }
-
+    crate::sched::scheduler::yield_now();
     Ok(0)
 }

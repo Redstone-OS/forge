@@ -39,8 +39,55 @@ pub fn log(level: LogLevel, message: &str) {
     serial::write_str("\n");
 }
 
-/// Emite log com valor hexadecimal
-pub fn log_hex(level: LogLevel, message: &str, value: u64) {
+/// Trait para valores que podem ser logados
+pub trait LogValue {
+    fn log(&self);
+}
+
+impl LogValue for u64 {
+    fn log(&self) {
+        serial::write_str(" 0x");
+        serial::write_hex(*self);
+    }
+}
+
+impl LogValue for i32 {
+    fn log(&self) {
+        serial::write_str(" 0x");
+        serial::write_hex(*self as u64);
+    }
+}
+
+impl LogValue for u32 {
+    fn log(&self) {
+        serial::write_str(" 0x");
+        serial::write_hex(*self as u64);
+    }
+}
+
+impl LogValue for isize {
+    fn log(&self) {
+        serial::write_str(" 0x");
+        serial::write_hex(*self as u64);
+    }
+}
+
+impl LogValue for usize {
+    fn log(&self) {
+        serial::write_str(" 0x");
+        serial::write_hex(*self as u64);
+    }
+}
+
+impl LogValue for &str {
+    fn log(&self) {
+        serial::write_str(" ");
+        serial::write_str(self);
+    }
+}
+
+/// Emite log com valor genérico
+pub fn log_val(level: LogLevel, message: &str, value: impl LogValue) {
     let prefix = match level {
         LogLevel::Debug => "[DEBUG] ",
         LogLevel::Info => "[INFO]  ",
@@ -50,8 +97,7 @@ pub fn log_hex(level: LogLevel, message: &str, value: u64) {
     
     serial::write_str(prefix);
     serial::write_str(message);
-    serial::write_str(" 0x");
-    serial::write_hex(value);
+    value.log();
     serial::write_str("\n");
 }
 
@@ -66,10 +112,10 @@ macro_rules! kinfo {
         )
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_hex(
+        $crate::core::debug::klog::log_val(
             $crate::core::debug::klog::LogLevel::Info,
             $msg,
-            $val as u64
+            $val
         )
     };
 }
@@ -83,10 +129,10 @@ macro_rules! kwarn {
         )
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_hex(
+        $crate::core::debug::klog::log_val(
             $crate::core::debug::klog::LogLevel::Warn,
             $msg,
-            $val as u64
+            $val
         )
     };
 }
@@ -100,10 +146,10 @@ macro_rules! kerror {
         )
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_hex(
+        $crate::core::debug::klog::log_val(
             $crate::core::debug::klog::LogLevel::Error,
             $msg,
-            $val as u64
+            $val
         )
     };
 }
@@ -119,10 +165,10 @@ macro_rules! kdebug {
     };
     ($msg:expr, $val:expr) => {
         #[cfg(debug_assertions)]
-        $crate::core::debug::klog::log_hex(
+        $crate::core::debug::klog::log_val(
             $crate::core::debug::klog::LogLevel::Debug,
             $msg,
-            $val as u64
+            $val
         )
     };
 }

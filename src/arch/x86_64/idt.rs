@@ -9,11 +9,12 @@
 /// - Mantém uma tabela estática de 256 entradas.
 /// - Fornece métodos para registrar handlers.
 /// - Implementa `load` para configurar o registrador IDTR.
-
-//! Interrupt Descriptor Table
-
-use core::mem::size_of;
+// Interrupt Descriptor Table
 use crate::arch::x86_64::gdt::KERNEL_CODE_SEL;
+use core::mem::size_of;
+
+// Alias ContextFrame to TrapFrame for syscall handling compatibility
+pub use crate::arch::x86_64::syscall::TrapFrame as ContextFrame;
 
 /// Tipo de função para Handler de Interrupção
 /// Um handler "cru" recebe o ponteiro da stack se usarmos trampolins assembly,
@@ -49,7 +50,7 @@ impl IdtEntry {
     }
 
     /// Cria uma entrada presente apontando para um handler
-    /// 
+    ///
     /// `ist`: Index da Interrupt Stack Table (1-7) no TSS. 0 para não usar.
     pub fn new(handler: HandlerFunc, ist: u8) -> Self {
         let addr = handler;
@@ -57,7 +58,7 @@ impl IdtEntry {
             offset_low: (addr & 0xFFFF) as u16,
             selector: KERNEL_CODE_SEL.0,
             ist_reserved_legacy: ist & 0x7, // Apenas 3 bits para IST
-            type_attr: 0x8E, // Present, DPL 0, Interrupt Gate
+            type_attr: 0x8E,                // Present, DPL 0, Interrupt Gate
             offset_mid: ((addr >> 16) & 0xFFFF) as u16,
             offset_high: (addr >> 32) as u32,
             reserved: 0,
@@ -82,16 +83,16 @@ impl Idt {
     pub fn set_handler(&mut self, vector: u8, handler: HandlerFunc) {
         self.entries[vector as usize] = IdtEntry::new(handler, 0);
     }
-    
+
     /// Define um handler usando uma Stack IST específica
     pub fn set_handler_ist(&mut self, vector: u8, handler: HandlerFunc, ist_index: u8) {
         self.entries[vector as usize] = IdtEntry::new(handler, ist_index);
     }
 
     /// Carrega a IDT na CPU (lidt)
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// `lidt` é unsafe. A tabela deve ter tempo de vida 'static ou ser válida enquanto usada.
     pub unsafe fn load(&'static self) {
         let descriptor = IdtDescriptor {

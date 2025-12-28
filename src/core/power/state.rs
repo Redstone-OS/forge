@@ -9,8 +9,7 @@
 /// - G2/S5: Soft Off
 /// - G3: Mechanical Off
 
-//! Estados de Energia (System Power States)
-
+/// Estados de Energia (System Power States)
 use core::sync::atomic::{AtomicU8, Ordering};
 
 /// Estados Globais de Energia (ACPI)
@@ -19,19 +18,19 @@ use core::sync::atomic::{AtomicU8, Ordering};
 pub enum PowerState {
     /// G0 (S0): Working - Sistema totalmente operacional.
     Working = 0,
-    
+
     /// G1 (S1): Sleeping - CPU parada, mas caches mantidos (baixa latência).
     Standby = 1,
-    
+
     /// G1 (S3): Suspend-to-RAM - Contexto salvo na RAM, a maioria dos devices desligados.
     SuspendToRam = 3,
-    
+
     /// G1 (S4): Hibernation - Contexto salvo em disco, sistema desligado.
     Hibernate = 4, // "Suspend-to-Disk"
-    
+
     /// G2 (S5): Soft Off - Sistema desligado via software, mas fonte energizada.
     SoftOff = 5,
-    
+
     /// G3: Mechanical Off - Sem energia nenhuma (apenas RTC bateria).
     MechanicalOff = 6,
 }

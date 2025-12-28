@@ -10,7 +10,7 @@ pub mod rwlock;
 pub mod semaphore;
 pub mod spinlock;
 
-pub use atomic::{AtomicCell, AtomicFlag};
+pub use atomic::{AtomicCell, AtomicCounter, AtomicFlag};
 pub use mutex::Mutex;
 pub use rwlock::RwLock;
 pub use semaphore::Semaphore;

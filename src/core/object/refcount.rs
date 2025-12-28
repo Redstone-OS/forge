@@ -1,7 +1,12 @@
 /// Arquivo: core/object/refcount.rs
 ///
-/// Propósito: Contagem de referências atômica para Objetos de Kernel.
-/// Base para o gerenciamento de ciclo de vida de objetos compartilhados (KObjects).
+/// Kernel Object Reference Counting
+///
+/// Implementa contagem de referências atômica para gerenciamento de vida
+/// dos objetos do kernel (KObjects).
+///
+/// Uso:
+/// - Similar ao `Arc` do Rust, mas intrusivo e adaptado ao kernel.
 ///
 /// Detalhes de Implementação:
 /// - Usa `AtomicUsize` para thread-safety.

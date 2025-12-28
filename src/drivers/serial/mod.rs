@@ -19,10 +19,12 @@ impl SerialPort {
     pub fn init(&self) {
         // Nada a fazer para porta 0xE9
     }
-    
+
     /// Escreve byte diretamente
     pub fn write_byte(&self, byte: u8) {
-        unsafe { outb(QEMU_PORT, byte); }
+        unsafe {
+            outb(QEMU_PORT, byte);
+        }
     }
 }
 

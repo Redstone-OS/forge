@@ -21,7 +21,7 @@
 pub mod boot;
 
 // Re-export para acesso direto
-pub use boot::entry::kernel_main;
+pub use boot::entry::kernel_entry as kernel_main;
 pub use boot::handoff::BootInfo;
 
 // =============================================================================

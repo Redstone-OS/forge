@@ -6,6 +6,8 @@ pub mod align;
 pub mod bitmap;
 pub mod mem_funcs;
 pub mod test_framework;
+#[macro_use]
+pub mod bitflags;
 
 pub mod hash;
 pub mod list;

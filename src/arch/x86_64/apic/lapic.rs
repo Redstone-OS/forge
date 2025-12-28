@@ -13,8 +13,7 @@
 /// - Usa MMIO (padrão 0xFEE00000) para acesso aos registradores de controle.
 /// - Configura Spurious Interrupt Vector (SVR) para habilitar recepção de interrupções.
 
-//! Driver do Local APIC
-
+/// Controlador Local APIC
 use crate::arch::x86_64::cpu::Cpu;
 
 // --- Registradores e Constantes ---
@@ -34,7 +33,7 @@ const REG_TDCR: usize = 0x3E0; // Timer Divide Config
 
 // Bits e Flags
 const APIC_ENABLE_BIT: u64 = 1 << 11; // MSR Enable
-const SVR_SOFT_ENABLE: u32 = 1 << 8;  // Software Enable no registro SVR
+const SVR_SOFT_ENABLE: u32 = 1 << 8; // Software Enable no registro SVR
 
 /// Inicializa o Local APIC do core atual.
 ///
@@ -49,19 +48,19 @@ pub unsafe fn init() {
     if (msr_info & APIC_ENABLE_BIT) == 0 {
         Cpu::write_msr(IA32_APIC_BASE_MSR, msr_info | APIC_ENABLE_BIT);
     }
-    
+
     // 2. Definir Spurious Interrupt Vector e Habilitar Software (Bit 8)
     // Vetor 0xFF (255) geralmente usado para Spurious
     write(REG_SVR, SVR_SOFT_ENABLE | 0xFF);
-    
+
     // 3. Mascarar LVT Timer inicialmente (até configurarmos o timer)
     // Bit 16 = Masked
     write(REG_LVT_TIMER, 1 << 16);
-    
+
     // 4. Limpar Error Status Register (precisa escrever 2x em hardware antigo, 1x em novos)
     write(REG_ESR, 0);
     write(REG_ESR, 0);
-    
+
     // 5. Sinalizar EOI para limpar estado pendente anterior (sanity check)
     write(REG_EOI, 0);
 }
@@ -79,9 +78,7 @@ pub unsafe fn eoi() {
 /// O ID está nos bits 24-31 do registrador ID.
 #[inline]
 pub fn id() -> u32 {
-    unsafe {
-        read(REG_ID) >> 24
-    }
+    unsafe { read(REG_ID) >> 24 }
 }
 
 // --- Helpers de Acesso MMIO (Privados) ---

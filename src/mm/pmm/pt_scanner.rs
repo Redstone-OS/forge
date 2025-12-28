@@ -128,13 +128,12 @@ unsafe fn mark_frame(pmm: &mut BitmapFrameAllocator, phys: u64, _level: &str) ->
         return false;
     }
 
-    let marked = pmm.mark_frame_used(phys);
-    marked
+    pmm.mark_frame_used(phys, true);
+    true
 }
 
-/// Escaneia a PML4 e suas tabelas filhas
 unsafe fn scan_pml4(pmm: &mut BitmapFrameAllocator, pml4_phys: u64) {
-    let pml4: *const u64 = phys_to_virt(PhysAddr::new(pml4_phys)).as_ptr();
+    let pml4: *const u64 = phys_to_virt::<u64>(pml4_phys);
 
     // Usando while manual em vez de for (iterador Range pode gerar #UD)
     let mut i: usize = 0;
@@ -165,9 +164,8 @@ unsafe fn scan_pml4(pmm: &mut BitmapFrameAllocator, pml4_phys: u64) {
     }
 }
 
-/// Escaneia uma PDPT e suas tabelas filhas
 unsafe fn scan_pdpt(pmm: &mut BitmapFrameAllocator, pdpt_phys: u64) {
-    let pdpt: *const u64 = phys_to_virt(PhysAddr::new(pdpt_phys)).as_ptr();
+    let pdpt: *const u64 = phys_to_virt::<u64>(pdpt_phys);
 
     let mut i: usize = 0;
     while i < 512 {
@@ -199,9 +197,8 @@ unsafe fn scan_pdpt(pmm: &mut BitmapFrameAllocator, pdpt_phys: u64) {
     }
 }
 
-/// Escaneia um PD e suas tabelas filhas
 unsafe fn scan_pd(pmm: &mut BitmapFrameAllocator, pd_phys: u64) {
-    let pd: *const u64 = phys_to_virt(PhysAddr::new(pd_phys)).as_ptr();
+    let pd: *const u64 = phys_to_virt::<u64>(pd_phys);
 
     let mut i: usize = 0;
     while i < 512 {

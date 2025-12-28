@@ -9,14 +9,14 @@
 /// - Endereço base padrão: 0xFEC00000.
 /// - Suporta mapeamento de IRQs para vetores da IDT com destinos específicos (CPU ID).
 
-//! Driver do I/O APIC
+/// Controlador I/O APIC
 
 // Endereço Base Padrão
 const IOAPIC_BASE_ADDR: u64 = 0xFEC00000;
 
 // Offsets de Registradores (Memória)
 const REG_IOREGSEL: usize = 0x00; // Selector Register
-const REG_IOWIN: usize = 0x10;    // Window Register
+const REG_IOWIN: usize = 0x10; // Window Register
 
 // Índices de Registradores Internos (Acessados via Select/Window)
 const IDX_ID: u32 = 0x00;
@@ -39,7 +39,7 @@ pub unsafe fn init() {
         // Bit 16: Mask (1 = Masked)
         // Escrevemos Mask bit set e resto zero.
         write(IDX_REDTBL_BASE + 2 * i, 0x00010000); // Low 32 bits (Masked)
-        write(IDX_REDTBL_BASE + 2 * i + 1, 0);      // High 32 bits (Dest)
+        write(IDX_REDTBL_BASE + 2 * i + 1, 0); // High 32 bits (Dest)
     }
 }
 
@@ -89,7 +89,7 @@ unsafe fn read(reg_index: u32) -> u32 {
     // 1. Escrever índice no IOREGSEL
     let ioregsel = base.add(REG_IOREGSEL / 4);
     core::ptr::write_volatile(ioregsel, reg_index);
-    
+
     // 2. Ler valor do IOWIN
     let iowin = base.add(REG_IOWIN / 4);
     core::ptr::read_volatile(iowin)
@@ -101,7 +101,7 @@ unsafe fn write(reg_index: u32, value: u32) {
     // 1. Escrever índice no IOREGSEL
     let ioregsel = base.add(REG_IOREGSEL / 4);
     core::ptr::write_volatile(ioregsel, reg_index);
-    
+
     // 2. Escrever valor no IOWIN
     let iowin = base.add(REG_IOWIN / 4);
     core::ptr::write_volatile(iowin, value);

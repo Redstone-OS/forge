@@ -9,9 +9,7 @@
 /// - Inicializa a GDT estática e o TSS.
 /// - Implementa o carregamento da GDT (`lgdt`) e recarregamento dos registradores de segmento.
 /// - Configura a stack de interrupção no TSS (IST).
-
-//! Global Descriptor Table
-
+// Global Descriptor Table
 use core::mem::size_of;
 
 /// Seletor de segmento
@@ -61,46 +59,46 @@ impl GdtEntry {
             base_high: 0,
         }
     }
-    
+
     pub const fn kernel_code() -> Self {
         Self {
             limit_low: 0xFFFF,
             base_low: 0,
             base_mid: 0,
-            access: 0x9A,      // Present, Ring 0, Code, Readable
+            access: 0x9A,           // Present, Ring 0, Code, Readable
             flags_limit_high: 0xAF, // Long mode, limit high
             base_high: 0,
         }
     }
-    
+
     pub const fn kernel_data() -> Self {
         Self {
             limit_low: 0xFFFF,
             base_low: 0,
             base_mid: 0,
-            access: 0x92,      // Present, Ring 0, Data, Writable
+            access: 0x92, // Present, Ring 0, Data, Writable
             flags_limit_high: 0xCF,
             base_high: 0,
         }
     }
-    
+
     pub const fn user_code() -> Self {
         Self {
             limit_low: 0xFFFF,
             base_low: 0,
             base_mid: 0,
-            access: 0xFA,      // Present, Ring 3, Code, Readable
+            access: 0xFA, // Present, Ring 3, Code, Readable
             flags_limit_high: 0xAF,
             base_high: 0,
         }
     }
-    
+
     pub const fn user_data() -> Self {
         Self {
             limit_low: 0xFFFF,
             base_low: 0,
             base_mid: 0,
-            access: 0xF2,      // Present, Ring 3, Data, Writable
+            access: 0xF2, // Present, Ring 3, Data, Writable
             flags_limit_high: 0xCF,
             base_high: 0,
         }
@@ -137,11 +135,11 @@ impl GdtEntry {
 #[repr(C, packed)]
 pub struct Tss {
     reserved0: u32,
-    pub rsp0: u64,      // Stack para Ring 0 (usado em irq)
+    pub rsp0: u64, // Stack para Ring 0 (usado em irq)
     pub rsp1: u64,
     pub rsp2: u64,
     reserved1: u64,
-    pub ist1: u64,      // Interrupt Stack Table
+    pub ist1: u64, // Interrupt Stack Table
     pub ist2: u64,
     pub ist3: u64,
     pub ist4: u64,
@@ -198,9 +196,9 @@ struct GdtDescriptor {
 }
 
 /// Inicializa a GDT
-/// 
+///
 /// # Safety
-/// 
+///
 /// Deve ser chamado apenas uma vez durante boot (BSP).
 /// Recarrega CS, DS, ES, SS, TR.
 pub unsafe fn init() {
@@ -222,7 +220,7 @@ pub unsafe fn init() {
     // 3. Recarregar Segmentos
     // CS deve ser recarregado com um salto distante (retq hack) ou push/retq
     // DS, ES, SS devem ser carregados com KERNEL_DATA_SEL
-    
+
     let kcode = KERNEL_CODE_SEL.0;
     let kdata = KERNEL_DATA_SEL.0;
     let tss_sel = TSS_SEL.0;

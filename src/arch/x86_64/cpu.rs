@@ -9,56 +9,38 @@
 /// - Verifica o bit de interrupção (IF) no registrador RFLAGS.
 /// - Fornece acesso seguro (unsafe) a MSRs via `rdmsr` e `wrmsr`.
 /// - Gerencia leitura/escrita do registrador de tabela de páginas (CR3).
-
-//! Implementação de CPU para x86_64
-
+// Implementação de CPU para x86_64
 use crate::arch::traits::CpuTrait;
 
 /// Implementação x86_64 do trait CPU
 pub struct Cpu;
 
-impl CpuTrait for Cpu {
-    #[inline(always)]
-    fn disable_interrupts() {
-        // SAFETY: cli é seguro, apenas desabilita interrupções no core atual
-        unsafe { core::arch::asm!("cli", options(nomem, nostack)); }
-    }
-    
-    #[inline(always)]
-    fn enable_interrupts() {
-        // SAFETY: sti é seguro, apenas habilita interrupções no core atual
-        unsafe { core::arch::asm!("sti", options(nomem, nostack)); }
-    }
-    
-    #[inline(always)]
-    fn halt() {
-        // SAFETY: hlt para a CPU até a próxima interrupção; seguro e economiza energia
-        unsafe { core::arch::asm!("hlt", options(nomem, nostack)); }
-    }
-    
-    fn current_core_id() -> u32 {
-        // Lê APIC ID do LAPIC
-        // TODO: Implementar leitura real do LAPIC quando o módulo APIC estiver pronto
-        0
-    }
-    
-    fn interrupts_enabled() -> bool {
-        let rflags: u64;
-        // SAFETY: Leitura de RFLAGS é segura e não tem efeitos colaterais
-        unsafe {
-            core::arch::asm!(
-                "pushfq",
-                "pop {}",
-                out(reg) rflags,
-                options(nomem)
-            );
-        }
-        (rflags & (1 << 9)) != 0 // Verifica o Bit 9 (Interrupt Flag)
-    }
-}
-
-// Funções auxiliares específicas para x86_64 que NÃO fazem parte do trait genérico
 impl Cpu {
+    #[inline(always)]
+    pub fn disable_interrupts() {
+        <Self as CpuTrait>::disable_interrupts();
+    }
+
+    #[inline(always)]
+    pub fn enable_interrupts() {
+        <Self as CpuTrait>::enable_interrupts();
+    }
+
+    #[inline(always)]
+    pub fn halt() {
+        <Self as CpuTrait>::halt();
+    }
+
+    #[inline(always)]
+    pub fn current_core_id() -> u32 {
+        <Self as CpuTrait>::current_core_id()
+    }
+
+    #[inline(always)]
+    pub fn interrupts_enabled() -> bool {
+        <Self as CpuTrait>::interrupts_enabled()
+    }
+
     /// Lê um MSR (Model Specific Register)
     #[inline]
     pub fn read_msr(msr: u32) -> u64 {
@@ -75,7 +57,7 @@ impl Cpu {
         }
         ((high as u64) << 32) | (low as u64)
     }
-    
+
     /// Escreve em um MSR (Model Specific Register)
     #[inline]
     pub fn write_msr(msr: u32, value: u64) {
@@ -92,7 +74,7 @@ impl Cpu {
             );
         }
     }
-    
+
     /// Lê o registrador de controle CR3 (Page Table Base)
     #[inline]
     pub fn read_cr3() -> u64 {
@@ -103,11 +85,11 @@ impl Cpu {
         }
         value
     }
-    
+
     /// Escreve no registrador de controle CR3 (Troca de Tabela de Páginas / Contexto de Memória)
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// O valor fornecido DEVE ser um endereço físico válido de uma tabela de páginas (PML4) alinhada.
     /// Carregar um CR3 inválido causará Triple Fault imediato.
     #[inline]

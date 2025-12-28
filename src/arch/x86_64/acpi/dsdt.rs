@@ -11,12 +11,12 @@
 /// - O Kernel geralmente apenas localiza esta tabela para passá-la a um parser AML (se houver)
 ///   ou para extrair informações básicas se o bytecode for conhecido.
 
-//! ACPI DSDT (Differentiated System Description Table)
+/// Estrutura DSDT (Differentiated System Description Table)
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct Dsdt {
-    pub signature: [u8; 4],     // "DSDT"
+    pub signature: [u8; 4], // "DSDT"
     pub length: u32,
     pub revision: u8,
     pub checksum: u8,
@@ -25,7 +25,6 @@ pub struct Dsdt {
     pub oem_revision: u32,
     pub creator_id: u32,
     pub creator_revision: u32,
-    
     // O restante da tabela é o Definition Block contendo AML Bytecode.
     // O tamanho é (length - sizeof(header)).
 }

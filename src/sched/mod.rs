@@ -49,7 +49,7 @@ pub use task::{Task, TaskState, Tid};
 /// Algoritmos e runqueues
 pub mod scheduler;
 
-pub use scheduler::{schedule, yield_now, Scheduler, SCHEDULER};
+pub use scheduler::{schedule, yield_now};
 
 // =============================================================================
 // EXECUTION
@@ -97,7 +97,7 @@ extern "C" {
 #[no_mangle]
 pub unsafe extern "C" fn user_entry_trampoline() {
     core::arch::asm!(
-        "mov ax, 0x23",  // USER_DATA_SEL | RPL 3
+        "mov ax, 0x23", // USER_DATA_SEL | RPL 3
         "mov ds, ax",
         "mov es, ax",
         "mov fs, ax",
