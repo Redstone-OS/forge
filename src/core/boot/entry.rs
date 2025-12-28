@@ -18,8 +18,8 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 1. Inicialização Precoce (Early Init) - Antes do Heap
     // Configurar Log Serial para que possamos ver o que está acontecendo.
     // (Serial driver geralmente não precisa de heap)
-    crate::drivers::serial::init_early();
-    crate::kinfo!("--- Iniciando Kernel RedstoneOS ---");
+    crate::drivers::serial::init();
+    crate::kinfo!("--- Iniciando Forge Kernel ---");
     crate::kinfo!("Versão do Protocolo de Boot: ", boot_info.version);
 
     // 2. Inicialização da Arquitetura (CPU, GDT, IDT, Interrupções)
@@ -30,7 +30,9 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 3. Inicialização de Memória (PMM, VMM, Heap)
     crate::kinfo!("Inicializando Memória...");
-    crate::mm::init(boot_info.memory_map);
+    unsafe {
+        crate::mm::init(boot_info);
+    }
 
     // 4. Inicialização do Core (Time, SMP, Sched)
     crate::kinfo!("Inicializando Subsistemas do Núcleo...");
@@ -39,7 +41,8 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 5. ACPI e Descoberta de Hardware
     crate::kinfo!("Inicializando ACPI...");
     if boot_info.rsdp_addr != 0 {
-        crate::drivers::acpi::init(boot_info.rsdp_addr);
+        // Inicializa ACPI via implementação da arquitetura (x86_64)
+        crate::arch::platform::acpi::init(boot_info.rsdp_addr);
     }
 
     // 6. SMP Bringup (Acordar outros cores)

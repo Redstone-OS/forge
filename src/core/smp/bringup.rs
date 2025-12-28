@@ -5,6 +5,12 @@
 use super::topology::CpuId;
 use crate::core::smp::ipi::{send_ipi, IpiTarget, IpiVector};
 
+/// Inicializa o subsistema de SMP
+pub fn init() {
+    crate::kinfo!("(SMP) Init");
+    // TODO: Detectar CPUs e iniciar APs via wake_ap
+}
+
 /// Tenta acordar uma CPU específica.
 ///
 /// # Argumentos

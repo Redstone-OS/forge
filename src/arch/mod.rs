@@ -77,6 +77,7 @@ pub const PAGE_SHIFT: usize = 12;
 // RE-EXPORTS
 // =============================================================================
 
+pub use platform::init_basics;
 pub use platform::Cpu;
 pub use traits::cpu::CpuTrait;
 

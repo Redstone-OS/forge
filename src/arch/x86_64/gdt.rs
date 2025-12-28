@@ -226,20 +226,20 @@ pub unsafe fn init() {
     let tss_sel = TSS_SEL.0;
 
     core::arch::asm!(
-        "push {0}",         // Push CS Selector
-        "leaq 1f(%rip), {1}", // Push Return RIP
-        "push {1}",
-        "lretq",            // "Return" to new CS:RIP
+        "push {0}",           // Push CS (64-bit)
+        "lea {1}, [rip + 1f]", // Load return address (Intel syntax)
+        "push {1}",           // Push RIP
+        "retfq",                // Far return to reload CS
         "1:",
-        "mov ds, {2:e}",    // Reload DS
-        "mov es, {2:e}",    // Reload ES
-        "mov ss, {2:e}",    // Reload SS
-        "mov ax, {3:x}",    // Load TSS selector
-        "ltr ax",           // Load Task Register
+        "mov ds, {2:e}",      // Reload DS (32-bit reg name)
+        "mov es, {2:e}",      // Reload ES
+        "mov ss, {2:e}",      // Reload SS
+        "mov ax, {3:x}",      // Load TSS selector (16-bit reg name)
+        "ltr ax",             // Load Task Register
         in(reg) kcode,
         out(reg) _,
         in(reg) kdata,
         in(reg) tss_sel,
-        options(att_syntax, nostack)
+        options(nostack)
     );
 }

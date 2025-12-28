@@ -1,3 +1,5 @@
+pub mod dsdt;
+pub mod fadt;
 /// Arquivo: x86_64/acpi/mod.rs
 ///
 /// Propósito: Módulo de suporte a ACPI (Advanced Configuration and Power Interface).
@@ -10,7 +12,10 @@
 /// - `madt`: Multiple APIC Description Table.
 /// - `fadt`: Fixed ACPI Description Table.
 /// - `dsdt`: Differentiated System Description Table.
-
 pub mod madt;
-pub mod fadt;
-pub mod dsdt;
+
+/// Inicializa o subsistema ACPI
+pub fn init(rsdp: u64) {
+    crate::kinfo!("(ACPI) Init with RSDP: ", rsdp);
+    // TODO: Parse RSDP, XSDT, FADT, MADT
+}
