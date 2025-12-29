@@ -24,11 +24,11 @@ default = []
 
 [profile.release]
 panic = "abort"
-opt-level = 2         # Nível 2 equilibrado. O 3 pode ser excessivamente agressivo (inlining e loops).
-lto = "thin"          # "thin" permite otimizações básicas sem fundir o código de forma ilegível como o "fat".
-codegen-units = 1     # Garante que o compilador veja o módulo como um todo para otimizar melhor, mantendo ordem.
-strip = "none"        # ESSENCIAL: Não remover símbolos. Precisamos deles para ver endereços no GDB e logs.
-debug = 2             # Gerar informação completa de debug (Line numbers, etc) mesmo em release.
-debug-assertions = true # Ativa assertions em execução para pegar erros de lógica cedo.
-overflow-checks = true  # Detecta transbordamento de números (u32/u64), crucial para segurança do kernel.
-incremental = false   # Build limpo para evitar inconsistências em builds de kernel.
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+debug = 0
+debug-assertions = true
+overflow-checks = false
+incremental = false
