@@ -27,19 +27,11 @@ default = []
 # =========================================================
 [profile.release]
 panic = "abort"
-
-# 🔒 previsibilidade e performance equilibrada
-opt-level = 2     # Nível 2 é o padrão seguro para performance sem quebrar debug agressivamente
-lto = false       # Manter false para compilação mais rápida e menos problemas de link
-codegen-units = 1 # Determinismo
-
-# 🧠 debug
-debug = 2         # Full debug info para backtraces precisos
+opt-level = 2
+lto = false
+codegen-units = 1
+debug = 2
 strip = "none"
-
-# 🚨 segurança
 debug-assertions = true
 overflow-checks = true
-
-# ❌ incremental
 incremental = false
