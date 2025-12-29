@@ -15,8 +15,11 @@ static CURRENT: Spinlock<Option<Pin<Box<Task>>>> = Spinlock::new(None);
 /// Inicializa o scheduler
 pub fn init() {
     crate::kinfo!("(Sched) Inicializando scheduler...");
-    // Criar idle task
-    // TODO: criar idle task que só faz hlt
+
+    // A idle task não precisa ser criada explicitamente.
+    // O scheduler simplesmente faz hlt quando a runqueue está vazia (em run()).
+    // Isso é mais simples e evita overhead de context switch.
+    crate::kinfo!("(Sched) Scheduler inicializado. Idle loop integrado.");
 }
 
 /// Retorna task atual
@@ -98,10 +101,12 @@ pub fn schedule() {
 
         unsafe {
             // Atualizar TSS RSP0 para a nova task (para interrupções Ring 3 -> Ring 0)
+            // E KERNEL_GS_BASE para syscalls
             if let Some(current_task) = current_guard.as_ref() {
                 let stack_top = current_task.as_ref().kernel_stack.as_u64();
                 if stack_top != 0 {
                     crate::arch::x86_64::gdt::set_kernel_stack(stack_top);
+                    crate::arch::x86_64::syscall::set_kernel_rsp(stack_top);
                 }
             }
 
@@ -118,6 +123,7 @@ pub fn schedule() {
         let ctx_ptr =
             &{ Pin::get_ref(next_ref) }.context as *const crate::sched::context::CpuContext;
         let new_cr3 = { Pin::get_ref(next_ref) }.cr3;
+        let kernel_stack = { Pin::get_ref(next_ref) }.kernel_stack.as_u64();
 
         *current_guard = Some(next);
 
@@ -129,6 +135,12 @@ pub fn schedule() {
             crate::ktrace!("(Sched) Saltando para contexto. RIP=", (*ctx_ptr).rip);
             crate::ktrace!("(Sched) Contexto PTR=", ctx_ptr as u64);
             crate::ktrace!("(Sched) Carregando CR3=", new_cr3);
+
+            // Configurar TSS RSP0 e KERNEL_GS_BASE para syscalls
+            if kernel_stack != 0 {
+                crate::arch::x86_64::gdt::set_kernel_stack(kernel_stack);
+                crate::arch::x86_64::syscall::set_kernel_rsp(kernel_stack);
+            }
 
             if new_cr3 != 0 {
                 core::arch::asm!("mov cr3, {}", in(reg) new_cr3);

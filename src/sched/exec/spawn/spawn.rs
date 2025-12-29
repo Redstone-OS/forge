@@ -165,53 +165,55 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
 
     // 7. Configurar Trap Frame na Kernel Stack (Visível em ambas P4s)
     unsafe {
-        // Debug: Patch entry point
-        let code_ptr = entry_point.as_u64() as *mut u8;
-        code_ptr.write(0xEB);
-        code_ptr.add(1).write(0xFE);
-
         crate::kinfo!("(Spawn) Building TrapFrame at:", kstack_top);
         let ptr = kstack_top as *mut u64;
 
         // Seletores (RPL 3)
-        const USER_CODE_SEL: u64 = 0x1B;
-        const USER_DATA_SEL: u64 = 0x23;
+        // GDT Order: 0=Null, 1=KCode, 2=KData, 3=UData, 4=UCode, 5-6=TSS
+        // index 3 = User Data = (3 << 3) | 3 = 0x1B
+        // index 4 = User Code = (4 << 3) | 3 = 0x23
+        const USER_CODE_SEL: u64 = 0x23; // Index 4, RPL 3
+        const USER_DATA_SEL: u64 = 0x1B; // Index 3, RPL 3
 
         // RFLAGS:
         // 0x202 = Interrupts Enabled + Reserved Bit 1
         const RFLAGS_IF: u64 = 0x202;
 
-        // Escrever frame (lembrando que stack cresce para baixo, mas estamos acessando offsets negativos ou pointers decrescentes)
-        // Ptr aponta para o topo. Ptr-1 = SS, Ptr-2 = RSP...
+        // === Layout do TrapFrame na stack ===
+        //
+        // O jump_to_context_asm faz:
+        //   mov rsp, [context.rsp]   ; RSP = context.rsp
+        //   push [context.rip]       ; RSP -= 8, escreve trampolim
+        //   ret                      ; pop, RSP volta a context.rsp
+        //
+        // Após ret, RSP = context.rsp. O iretq vai ler a partir de RSP.
+        // Então o TrapFrame deve estar a partir de context.rsp:
+        //   [context.rsp + 0]  = RIP (user)
+        //   [context.rsp + 8]  = CS
+        //   [context.rsp + 16] = RFLAGS
+        //   [context.rsp + 24] = RSP (user)
+        //   [context.rsp + 32] = SS
+        //
+        // E context.rsp = kstack_top - 40 (para ter espaço para 5 qwords)
 
-        ptr.offset(-1).write(USER_DATA_SEL); // SS
-        ptr.offset(-2).write(USER_STACK_TOP); // RSP
-        ptr.offset(-3).write(RFLAGS_IF); // RFLAGS
-        ptr.offset(-4).write(USER_CODE_SEL); // CS
-        ptr.offset(-5).write(entry_point.as_u64()); // RIP
+        let trapframe_base = ptr.offset(-5); // kstack_top - 40
+        trapframe_base.offset(0).write(entry_point.as_u64()); // RIP
+        trapframe_base.offset(1).write(USER_CODE_SEL); // CS
+        trapframe_base.offset(2).write(RFLAGS_IF); // RFLAGS
+        trapframe_base.offset(3).write(USER_STACK_TOP); // RSP
+        trapframe_base.offset(4).write(USER_DATA_SEL); // SS
 
-        // Trampolim address
+        // Trampolim
         let trampoline = crate::sched::context::switch::iretq_restore as u64;
 
-        // Stack layout for Context Switch:
-        // jump_to_context loads RSP from context.rsp.
-        // It then 'ret's. 'ret' pops RIP.
-        // So RSP must point to a location containing 'trampoline'.
-        // location = ptr - 6.
-        ptr.offset(-6).write(trampoline);
-
-        // Update task context
-        // context.rsp must point to the 'trampoline' value on stack.
-        // So context.rsp = ptr - 6.
-        // When 'ret' executes, it reads from [ptr-6] (which is trampoline),
-        // increments RSP to ptr-5 (which is RIP of TrapFrame), and jumps to trampoline.
-        // Inside trampoline (iretq_restore), RSP is ptr-5.
-        // It executes 'iretq' which pops RIP, CS, RFLAGS, RSP, SS.
-        // Everything matches!
-
-        let context_rsp = (ptr.offset(-6)) as u64; // Corrected from -5 to -6
+        // context.rsp deve apontar para o início do TrapFrame
+        // Após push+ret no asm, RSP = context.rsp
+        let context_rsp = trapframe_base as u64;
         task.context.rsp = context_rsp;
         task.context.rip = trampoline;
+
+        crate::ktrace!("(Spawn) TrapFrame base:", context_rsp);
+        crate::ktrace!("(Spawn) Trampolim:", trampoline);
     }
 
     // 6. Marcar como pronta

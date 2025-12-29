@@ -122,23 +122,40 @@ pub fn sys_poweroff() -> SysResult<usize> {
 }
 
 /// Escreve na console (framebuffer + serial)
+///
+/// VERSÃO MÍNIMA: Usa inline assembly direto para evitar qualquer
+/// código Rust que possa gerar instruções SSE/AVX
 pub fn sys_console_write(buf_ptr: usize, len: usize) -> SysResult<usize> {
     if buf_ptr == 0 || len == 0 {
         return Ok(0);
     }
 
-    // TODO: Validar ponteiro com copy_from_user
-    let slice = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, len) };
+    // Limitar tamanho
+    let safe_len = if len > 4096 { 4096 } else { len };
 
-    // Escreve no framebuffer (console gráfico)
-    crate::drivers::video::console_write_bytes(slice);
+    // Escrever diretamente na porta serial COM1 (0x3F8) usando inline assembly
+    // Isso evita chamar qualquer função Rust que possa usar SSE
+    for i in 0..safe_len {
+        let byte: u8 = unsafe { core::ptr::read_volatile((buf_ptr + i) as *const u8) };
 
-    // Também escreve na serial (para debug)
-    for &byte in slice {
-        crate::drivers::serial::emit(byte);
+        // Esperar que TX esteja vazio (bit 5 de Line Status Register)
+        // Port 0x3FD = 0x3F8 + 5
+        unsafe {
+            core::arch::asm!(
+                "2:",
+                "in al, 0x3FD",
+                "test al, 0x20",
+                "jz 2b",
+                "mov al, {byte}",
+                "out 0x3F8, al",
+                byte = in(reg_byte) byte,
+                out("al") _,
+                options(nostack, preserves_flags),
+            );
+        }
     }
 
-    Ok(len)
+    Ok(safe_len)
 }
 
 /// Lê da console (serial) - blocking

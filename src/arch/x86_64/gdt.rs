@@ -27,13 +27,13 @@ impl SegmentSelector {
 // Index 0: Null
 // Index 1: Kernel Code
 // Index 2: Kernel Data
-// Index 3: User Code
-// Index 4: User Data
+// Index 3: User Data  ← SYSRET requer Data antes de Code!
+// Index 4: User Code  ← SYSRET: CS = Base+16, SS = Base+8
 // Index 5: TSS (ocupa 2 slots em 64-bit)
 pub const KERNEL_CODE_SEL: SegmentSelector = SegmentSelector::new(1, 0);
 pub const KERNEL_DATA_SEL: SegmentSelector = SegmentSelector::new(2, 0);
-pub const USER_CODE_SEL: SegmentSelector = SegmentSelector::new(3, 3);
-pub const USER_DATA_SEL: SegmentSelector = SegmentSelector::new(4, 3);
+pub const USER_DATA_SEL: SegmentSelector = SegmentSelector::new(3, 3); // Antes de Code para SYSRET!
+pub const USER_CODE_SEL: SegmentSelector = SegmentSelector::new(4, 3); // Depois de Data para SYSRET!
 pub const TSS_SEL: SegmentSelector = SegmentSelector::new(5, 0);
 
 /// Entrada da GDT (64-bit)
@@ -179,10 +179,10 @@ static mut GDT: [GdtEntry; 7] = [
     GdtEntry::null(),
     GdtEntry::kernel_code(),
     GdtEntry::kernel_data(),
-    GdtEntry::user_code(),
-    GdtEntry::user_data(),
-    GdtEntry::null(), // TSS low (será preenchido no init)
-    GdtEntry::null(), // TSS high (será preenchido no init)
+    GdtEntry::user_data(), // Index 3: User Data (antes de Code para SYSRET!)
+    GdtEntry::user_code(), // Index 4: User Code (SYSRET: CS = Base+16)
+    GdtEntry::null(),      // TSS low (será preenchido no init)
+    GdtEntry::null(),      // TSS high (será preenchido no init)
 ];
 
 // TSS global estática

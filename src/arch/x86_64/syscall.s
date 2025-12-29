@@ -1,19 +1,27 @@
+.intel_syntax noprefix
 .section .text
 .global syscall_entry
 .code64
 
+# Syscall entry point
+# Convenção: RCX = RIP de retorno, R11 = RFLAGS
+# SYSCALL clobbers RCX e R11
+
 syscall_entry:
     swapgs
 
-    mov gs:[0], rsp
-    mov rsp, gs:[8]
+    # Salvar RSP do user e carregar kernel RSP
+    mov gs:0, rsp
+    mov rsp, gs:8
 
-    push 0x1b
-    push qword ptr gs:[0]
-    push r11
-    push 0x23
-    push rcx
+    # Construir frame para IRETQ (5 * 8 = 40 bytes)
+    push 0x1b               # SS = User Data
+    push QWORD PTR gs:0     # RSP do user
+    push r11                # RFLAGS (salvo por SYSCALL)
+    push 0x23               # CS = User Code  
+    push rcx                # RIP do user (salvo por SYSCALL)
 
+    # Salvar registradores de propósito geral (15 * 8 = 120 bytes)
     push rax
     push rbx
     push rcx
@@ -30,10 +38,12 @@ syscall_entry:
     push r14
     push r15
 
+    # Chamar dispatcher Rust
+    # RDI = ponteiro para o TrapFrame (primeiro argumento)
     mov rdi, rsp
-    
     call syscall_dispatcher
 
+    # Restaurar registradores
     pop r15
     pop r14
     pop r13
@@ -48,14 +58,11 @@ syscall_entry:
     pop rdx
     pop rcx
     pop rbx
-    pop rax
+    pop rax     # RAX foi modificado pelo dispatcher com o resultado
 
-    pop rcx
-    add rsp, 8
-    pop r11
-    
-    pop rsp
-    
+    # Trocar GS de volta para userspace
     swapgs
-
-    sysretq
+    
+    # Retornar ao userspace via IRETQ
+    # Stack tem: RIP, CS, RFLAGS, RSP, SS
+    iretq
