@@ -142,14 +142,17 @@ pub fn sys_console_write(buf_ptr: usize, len: usize) -> SysResult<usize> {
         // Port 0x3FD = 0x3F8 + 5
         unsafe {
             core::arch::asm!(
+                "mov dx, 0x3FD", // Line Status Register
                 "2:",
-                "in al, 0x3FD",
-                "test al, 0x20",
+                "in al, dx",
+                "test al, 0x20", // Empty Transmitter Holding Register
                 "jz 2b",
+                "mov dx, 0x3F8", // Data Register
                 "mov al, {byte}",
-                "out 0x3F8, al",
+                "out dx, al",
                 byte = in(reg_byte) byte,
                 out("al") _,
+                out("dx") _,
                 options(nostack, preserves_flags),
             );
         }

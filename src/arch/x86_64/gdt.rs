@@ -228,12 +228,12 @@ pub unsafe fn init() {
     core::arch::asm!(
         "push {0:r}",           // Push CS (64-bit)
         "lea {1}, [rip + 1f]", // Load return address (Intel syntax)
-        "push {1}",           // Push RIP
+        "push {1:r}",           // Push RIP
         "retfq",                // Far return to reload CS
         "1:",
-        "mov ds, {2:e}",      // Reload DS (32-bit reg name)
-        "mov es, {2:e}",      // Reload ES
-        "mov ss, {2:e}",      // Reload SS
+        "mov ds, {2:x}",      // Reload DS (16-bit reg name - AX/BX/etc)
+        "mov es, {2:x}",      // Reload ES
+        "mov ss, {2:x}",      // Reload SS
         "mov ax, {3:x}",      // Load TSS selector (16-bit reg name)
         "ltr ax",             // Load Task Register
         in(reg) kcode,

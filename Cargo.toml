@@ -28,18 +28,18 @@ default = []
 [profile.release]
 panic = "abort"
 
-# 🔒 previsibilidade > performance
-opt-level = 1     # NÃO use 0, NÃO use z
-lto = false       # LTO embaralha layout
-codegen-units = 1 # layout determinístico
+# 🔒 previsibilidade e performance equilibrada
+opt-level = 2     # Nível 2 é o padrão seguro para performance sem quebrar debug agressivamente
+lto = false       # Manter false para compilação mais rápida e menos problemas de link
+codegen-units = 1 # Determinismo
 
-# 🧠 debug real
-debug = 1      # símbolos úteis (sem exagero)
+# 🧠 debug
+debug = 2         # Full debug info para backtraces precisos
 strip = "none"
 
-# 🚨 segurança durante dev
+# 🚨 segurança
 debug-assertions = true
 overflow-checks = true
 
-# ❌ incremental quebra determinismo
+# ❌ incremental
 incremental = false
