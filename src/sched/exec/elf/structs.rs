@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(non_camel_case_types)]
 //! Estruturas ELF64
 
 /// Arquivo Executável

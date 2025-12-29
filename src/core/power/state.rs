@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Arquivo: core/power/state.rs
 ///
 /// Propósito: Definição dos Estados de Energia do Sistema.

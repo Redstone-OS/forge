@@ -1,4 +1,5 @@
-.intel_syntax noprefix
+
+
 .section .text
 .global syscall_entry
 .code64

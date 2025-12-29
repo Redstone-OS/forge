@@ -182,7 +182,7 @@ impl VMO {
 
     /// Aloca todas as páginas
     fn commit_all(&mut self) -> MmResult<()> {
-        let mut pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
+        let pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
 
         for i in 0..self.pages.len() {
             if matches!(self.pages[i], PageState::NotPresent | PageState::ZeroFill) {
@@ -218,7 +218,7 @@ impl VMO {
             PageState::Present(addr) => Ok(addr),
 
             PageState::NotPresent | PageState::ZeroFill => {
-                let mut pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
+                let pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
                 let frame = pmm.allocate_frame().ok_or(MmError::OutOfMemory)?;
                 let addr = PhysAddr::new(frame.addr());
 
@@ -234,7 +234,7 @@ impl VMO {
 
             PageState::CopyOnWrite(original) => {
                 // Alocar nova página e copiar
-                let mut pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
+                let pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
                 let frame = pmm.allocate_frame().ok_or(MmError::OutOfMemory)?;
                 let new_addr = PhysAddr::new(frame.addr());
 
@@ -278,7 +278,7 @@ impl VMO {
 impl Drop for VMO {
     fn drop(&mut self) {
         // Liberar páginas físicas
-        let mut pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
+        let pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
 
         for page in &self.pages {
             if let PageState::Present(addr) = page {

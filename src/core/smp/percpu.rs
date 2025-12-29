@@ -1,4 +1,3 @@
-use crate::arch::traits::cpu::CpuTrait;
 /// Arquivo: core/smp/percpu.rs
 ///
 /// Propósito: Gerenciamento de variáveis Por-CPU (Per-CPU variables).

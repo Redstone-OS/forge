@@ -35,7 +35,7 @@ impl Futex {
     
     /// Wake: acorda até N threads esperando em addr
     pub fn wake(addr: VirtAddr, count: u32) -> u32 {
-        let mut table = FUTEX_TABLE.lock();
+        let table = FUTEX_TABLE.lock();
         
         if let Some(queue) = table.get(&addr.as_u64()) {
             let mut woken = 0;

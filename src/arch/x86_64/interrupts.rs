@@ -25,7 +25,7 @@ pub struct ExceptionStackFrame {
 /// Inicializa a Tabela de Descritores de Interrupção (IDT).
 /// Deve ser chamado no boot antes de habilitar interrupções.
 pub fn init_idt() {
-    let idt = unsafe { &mut IDT };
+    let idt = unsafe { &mut *core::ptr::addr_of_mut!(IDT) };
 
     // Debug: Print handler address
     crate::kinfo!(

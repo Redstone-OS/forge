@@ -1,11 +1,12 @@
+#![allow(dead_code)]
 //! ZFS POSIX Layer (ZPL)
 //!
 //! Interfaces RFS with the Kernel VFS.
 
 use super::dmu::{ObjSet, Object};
-use crate::fs::vfs::inode::{InodeOps, FsError, DirEntry};
-use alloc::vec::Vec;
+use crate::fs::vfs::inode::{DirEntry, FsError, InodeOps};
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 pub struct Zpl {
     os: Arc<ObjSet>,

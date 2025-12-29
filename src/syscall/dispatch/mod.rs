@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! # Syscall Dispatcher
 //!
 //! Table-based dispatcher para O(1) dispatch.

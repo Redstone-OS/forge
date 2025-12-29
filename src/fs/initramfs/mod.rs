@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! InitramFS - filesystem em memória do boot
 
 use crate::fs::vfs::inode::{DirEntry, FsError, InodeOps};
@@ -90,7 +91,7 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
 
     // Remover leading slash e ./ para comparar apenas via bytes
     // No VFS normal isso seria tratado, mas aqui fazemos manual
-    let search_bytes = path.as_bytes();
+    let _search_bytes_orig = path.as_bytes();
     // Normalização simplificada: ignorar ./ inicial ou / inicial se houver
     // Mas como estamos hardcoded para system/core/init, vamos comparar manual
 

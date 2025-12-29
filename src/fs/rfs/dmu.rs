@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Data Management Unit (DMU)
 //!
 //! Handles objects, object sets (filesystems), and transactions.
@@ -25,9 +26,12 @@ impl ObjSet {
         // TODO: Assign transaction group
         0
     }
-    
+
     pub fn object_create(&self) -> Object {
         // TODO: Create object
-        Object { object_id: 0, size: 0 }
+        Object {
+            object_id: 0,
+            size: 0,
+        }
     }
 }

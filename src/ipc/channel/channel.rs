@@ -1,13 +1,15 @@
 //! Canal bidirecional (par de portas)
 
 use super::super::message::Message;
-use super::super::port::{IpcError, Port, PortHandle};
+use super::super::port::{IpcError, Port};
 
 /// Canal bidirecional
 pub struct Channel {
     /// Porta de envio
+    #[allow(dead_code)]
     send_port: Port,
     /// Porta de recepção
+    #[allow(dead_code)]
     recv_port: Port,
 }
 
@@ -28,8 +30,8 @@ pub struct ChannelEndpoint {
 impl Channel {
     /// Cria par de canais conectados
     pub fn create_pair() -> ChannelPair {
-        let port_a = Port::new(16);
-        let port_b = Port::new(16);
+        let _port_a = Port::new(16);
+        let _port_b = Port::new(16);
 
         // TODO: armazenar em algum lugar e retornar handles
         // Nota: O guia tinha unimplemented!(), mantendo estrutura mas completando o básico para compilação se possível.

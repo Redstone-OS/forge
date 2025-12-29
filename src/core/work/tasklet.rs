@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Arquivo: core/work/tasklet.rs
 ///
 /// Propósito: Implementação de Tasklets (Mini-tarefas atômicas).

@@ -57,7 +57,7 @@ pub fn schedule() {
 
     // Trocar contexto
     let mut current_guard = CURRENT.lock();
-    if let Some(ref mut current) = *current_guard {
+    if let Some(ref mut _current) = *current_guard {
         // Salvar task atual de volta na fila
         // Nota: para fazer isso com segurança precisa tomar cuidado com ownership.
         // O guia simplifica, mas vamos seguir a lógica de mover de volta.

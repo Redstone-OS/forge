@@ -15,9 +15,7 @@ use core::panic::PanicInfo;
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     // Desabilita interrupções imediatamente para evitar reentrância ou ruído
-    unsafe {
-        crate::arch::Cpu::disable_interrupts();
-    }
+    crate::arch::Cpu::disable_interrupts();
 
     crate::kerror!("*****************************************************");
     crate::kerror!("*                   PANICO DO KERNEL                    *");
@@ -47,8 +45,6 @@ fn panic(info: &PanicInfo) -> ! {
     // TODO: Enviar IPI para parar outras CPUs (crate::smp::ipi::send_context(Panic))
 
     loop {
-        unsafe {
-            crate::arch::Cpu::halt();
-        }
+        crate::arch::Cpu::halt();
     }
 }

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Arquivo aberto
 
 use super::inode::{FsError, Inode};

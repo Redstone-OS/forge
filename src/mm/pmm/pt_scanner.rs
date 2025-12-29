@@ -18,7 +18,7 @@
 //! }
 //! ```
 
-use crate::mm::addr::{phys_to_virt, PhysAddr};
+use crate::mm::addr::{phys_to_virt};
 use crate::mm::config::{PAGE_HUGE, PAGE_MASK, PAGE_PRESENT};
 use crate::mm::pmm::BitmapFrameAllocator;
 use core::arch::asm;

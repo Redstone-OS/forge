@@ -1,9 +1,10 @@
+#![allow(dead_code)]
 //! Storage Pool Allocator (SPA)
 //!
 //! Manages storage pools and virtual devices (vdevs).
 
-use alloc::vec::Vec;
 use crate::sync::Mutex;
+use alloc::vec::Vec;
 
 /// Storage Pool
 pub struct Spa {

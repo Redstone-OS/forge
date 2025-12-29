@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Pipes unidirecionais
 //!
 //! Implementado como um wrapper sobre Port para fornecer semântica de stream/uni-direcional.

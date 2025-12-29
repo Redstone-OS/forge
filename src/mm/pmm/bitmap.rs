@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Bitmap Frame Allocator
 //!
 //! Alocador de frames físicos usando um bitmap simples.

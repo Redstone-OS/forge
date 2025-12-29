@@ -2,8 +2,6 @@
 //!
 //! Responsável por acordar outros núcleos da CPU.
 
-use super::topology::CpuId;
-use crate::core::smp::ipi::{send_ipi, IpiTarget, IpiVector};
 
 /// Inicializa o subsistema de SMP
 pub fn init() {

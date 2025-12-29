@@ -20,7 +20,7 @@ impl CondVar {
 
     /// Espera pela condição.
     /// Libera o lock atômica e dorme (simulado com spin) até ser notificado.
-    pub fn wait<T>(&self, guard: &mut MutexGuard<'_, T>) {
+    pub fn wait<T>(&self, _guard: &mut MutexGuard<'_, T>) {
         let current_signal = self.signal_counter.load(Ordering::Relaxed);
 
         // 1. Liberar Mutex (Drop manual simulado ou suporte no Mutex)

@@ -1,14 +1,4 @@
-/// Arquivo: core/boot/cmdline.rs
-///
-/// Propósito: Parser da Linha de Comando do Kernel.
-/// Gerencia os parâmetros passados pelo Bootloader (ex: "debug", "root=/dev/sda1").
-///
-/// Detalhes de Implementação:
-/// - Armazenamento estático (sem heap) para estar disponível muito cedo no boot.
-/// - Parser simples de chave=valor separados por espaços.
-
-/// Kernel Command Line
-use crate::klib::string::strcmp; // Assumindo klib existente ou usamos u8 compare manual
+ // Assumindo klib existente ou usamos u8 compare manual
 
 /// Tamanho máximo da linha de comando
 const CMDLINE_MAX_LEN: usize = 256;

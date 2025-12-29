@@ -11,7 +11,6 @@ pub mod region;
 pub mod stats;
 
 use crate::mm::addr::PhysAddr;
-use crate::mm::error::MmResult;
 use crate::sync::Spinlock;
 
 /// Trait para alocadores de frames físicos

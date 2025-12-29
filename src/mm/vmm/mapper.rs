@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Mapper: Funções de mapeamento de memória virtual
 //!
 //! Implementação real de mapeamento de páginas para x86_64.

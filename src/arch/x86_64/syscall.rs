@@ -1,3 +1,4 @@
+#![allow(bad_asm_style)]
 use crate::arch::x86_64::cpu::Cpu;
 /// Arquivo: x86_64/syscall.rs
 ///

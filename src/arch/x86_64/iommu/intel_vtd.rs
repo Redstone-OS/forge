@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Arquivo: x86_64/iommu/intel_vtd.rs
 ///
 /// Propósito: Implementação do suporte a Intel VT-d (Virtualization Technology for Directed I/O).

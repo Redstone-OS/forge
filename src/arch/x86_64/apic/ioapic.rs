@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Arquivo: x86_64/apic/ioapic.rs
 ///
 /// Propósito: Driver para o I/O APIC.
