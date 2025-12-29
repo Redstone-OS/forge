@@ -69,6 +69,7 @@ impl BuddyAllocator {
     }
 
     /// Adiciona um bloco de memória ao alocador (usado no init e grow)
+    /// Versão mínima sem logs
     unsafe fn add_to_free_list(&mut self, addr: usize, size: usize) {
         use core::sync::atomic::{compiler_fence, Ordering};
 
@@ -199,20 +200,27 @@ impl BuddyAllocator {
 
     /// Insere um bloco na free list de uma ordem
     ///
-    /// NOTA: SSE desabilitado no target, write_volatile é seguro.
+    /// Versão mínima sem logs para debugging
+    #[inline(never)]
     unsafe fn push(&mut self, addr: usize, order: usize) {
         use core::sync::atomic::{compiler_fence, Ordering};
 
         compiler_fence(Ordering::SeqCst);
 
-        let block_ptr = addr as *mut usize; // Ponteiro para o campo 'next'
-        let next_val = match self.free_lists[order] {
+        // Ler valor anterior da free list (0 se vazia)
+        let next_val: usize = match self.free_lists[order] {
             Some(ptr) => ptr.as_ptr() as usize,
-            None => 0, // null
+            None => 0,
         };
 
-        // Escrever usando write_volatile (seguro: SSE desabilitado no target)
-        core::ptr::write_volatile(block_ptr, next_val);
+        // Escrever usando assembly inline puro
+        // NOTA: Se crashar aqui, significa que o endereço não está mapeado
+        core::arch::asm!(
+            "mov [{0}], {1}",
+            in(reg) addr,
+            in(reg) next_val,
+            options(nostack, preserves_flags)
+        );
 
         compiler_fence(Ordering::SeqCst);
 

@@ -29,6 +29,19 @@ const MAX_MEMORY_MAP_ENTRIES: usize = 128;
 /// Padding de segurança para não sobrescrever o Kernel ou Bootloader (2MB)
 const KERNEL_SAFETY_PADDING: u64 = 2 * 1024 * 1024;
 
+/// Primeiro endereço físico que pode ser alocado (1MB)
+/// O primeiro 1MB é historicamente problemático:
+/// - 0x000-0x3FF: Real Mode IVT
+/// - 0x400-0x4FF: BIOS Data Area (BDA)
+/// - 0x500-0x7BFF: Área livre convencional (mas perigosa)
+/// - 0x7C00-0x7DFF: MBR carregado pelo BIOS
+/// - 0x80000-0x9FFFF: EBDA (Extended BIOS Data Area)
+/// - 0xA0000-0xFFFFF: Video RAM, ROMs, etc.
+const FIRST_ALLOCATABLE_ADDR: u64 = 1024 * 1024; // 1 MB
+
+/// Primeiro frame que pode ser alocado (1MB / 4KB = 256)
+const FIRST_ALLOCATABLE_FRAME: u64 = FIRST_ALLOCATABLE_ADDR / PAGE_SIZE;
+
 /// Endereço mínimo para alocar o bitmap (evita região ISA DMA < 16MB se possível)
 const MIN_REGION_ADDR: u64 = 16 * 1024 * 1024;
 
@@ -345,8 +358,19 @@ impl BitmapFrameAllocator {
 
     /// Libera uma região contígua de memória física no bitmap
     fn free_region(&self, start: u64, end: u64) {
-        let start_frame = start / PAGE_SIZE;
+        let mut start_frame = start / PAGE_SIZE;
         let end_frame = end / PAGE_SIZE;
+
+        // CRÍTICO: Nunca liberar frames no primeiro 1MB
+        // Região historicamente problemática (IVT, BDA, EBDA, ROMs)
+        if start_frame < FIRST_ALLOCATABLE_FRAME {
+            start_frame = FIRST_ALLOCATABLE_FRAME;
+        }
+
+        // Se toda a região está abaixo de 1MB, não há nada a liberar
+        if start_frame >= end_frame {
+            return;
+        }
 
         let mut frame = start_frame;
         while frame < end_frame {
@@ -396,9 +420,10 @@ impl BitmapFrameAllocator {
         // Scan simples (Next Fit ou First Fit)
         // Para simplificar: First Fit com otimização de word
 
-        // TODO: Implementar LastAlloc pointer para Next Fit
+        // Começar busca a partir do frame 256 (1MB) para evitar região baixa
+        let start_word = (FIRST_ALLOCATABLE_FRAME / 64) as usize;
 
-        for i in 0..self.bitmap_len {
+        for i in start_word..self.bitmap_len {
             unsafe {
                 let word_ptr = self.bitmap_ptr.add(i);
                 let word = *word_ptr;
