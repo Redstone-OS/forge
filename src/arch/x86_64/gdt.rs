@@ -243,3 +243,10 @@ pub unsafe fn init() {
         options(nostack)
     );
 }
+
+/// Define o stack pointer do kernel (RSP0) no TSS
+///
+/// Usado pelo scheduler ao trocar de tasks.
+pub unsafe fn set_kernel_stack(stack_top: u64) {
+    TSS.rsp0 = stack_top;
+}

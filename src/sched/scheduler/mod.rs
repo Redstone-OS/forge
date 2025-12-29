@@ -91,12 +91,20 @@ pub fn schedule() {
         let mut old_task_pin = old_task;
         let old_ctx_ptr =
             &mut unsafe { Pin::get_unchecked_mut(old_task_pin.as_mut()) }.context as *mut _;
-        let new_ctx_ptr = &unsafe { Pin::get_ref(next.as_ref()) }.context as *const _;
+        let new_ctx_ptr = &{ Pin::get_ref(next.as_ref()) }.context as *const _;
 
         RUNQUEUE.lock().push(old_task_pin);
         *current_guard = Some(next);
 
         unsafe {
+            // Atualizar TSS RSP0 para a nova task (para interrupções Ring 3 -> Ring 0)
+            if let Some(current_task) = current_guard.as_ref() {
+                let stack_top = current_task.as_ref().kernel_stack.as_u64();
+                if stack_top != 0 {
+                    crate::arch::x86_64::gdt::set_kernel_stack(stack_top);
+                }
+            }
+
             super::context::switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
         }
     } else {
@@ -105,8 +113,8 @@ pub fn schedule() {
         crate::ktrace!("(Sched) Primeira task, usando jump_to_context");
 
         // Obter referência ao contexto ANTES de mover next para CURRENT
-        let ctx_ptr = &unsafe { Pin::get_ref(next.as_ref()) }.context
-            as *const crate::sched::context::CpuContext;
+        let ctx_ptr =
+            &{ Pin::get_ref(next.as_ref()) }.context as *const crate::sched::context::CpuContext;
         *current_guard = Some(next);
 
         // Liberar o guard antes do jump (não vai retornar)
@@ -127,6 +135,9 @@ pub fn schedule() {
 
 /// Loop principal do scheduler (nunca retorna)
 pub fn run() -> ! {
+    // Garante interrupções desabilitadas ao entrar no loop de scheduling
+    Cpu::disable_interrupts();
+
     loop {
         schedule();
 

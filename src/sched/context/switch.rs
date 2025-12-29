@@ -72,7 +72,6 @@ pub unsafe fn switch(old: &mut CpuContext, new: &CpuContext) {
 /// - Nunca retorna
 pub unsafe fn jump_to_context(ctx: &CpuContext) -> ! {
     jump_to_context_asm(ctx as *const CpuContext as u64);
-    core::hint::unreachable_unchecked()
 }
 
 // Assembly implementation of context_switch_asm
@@ -134,10 +133,15 @@ jump_to_context_asm:
     mov rax, [rdi + 0x38]
     push rax
     ret
+
+.global iretq_restore
+iretq_restore:
+    iretq
 "#
 );
 
 extern "C" {
     fn context_switch_asm(old: u64, new: u64);
     fn jump_to_context_asm(new: u64) -> !;
+    pub fn iretq_restore() -> !;
 }
