@@ -136,6 +136,12 @@ jump_to_context_asm:
 
 .global iretq_restore
 iretq_restore:
+    // Carregar segmentos de dados de usuário (RPL 3)
+    // Isso é CRÍTICO: se DS/ES tiverem seletor de Kernel, pode causar #GP ou erros estranhos em User Mode
+    mov ax, 0x1B  
+    mov ds, ax
+    mov es, ax
+    swapgs
     iretq
 "#
 );

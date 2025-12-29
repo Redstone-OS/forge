@@ -124,7 +124,7 @@ pub unsafe fn init() {
     let syscall_kcode_base: u64 = 0x08; // Kernel Code (Index 1, RPL 0)
     let sysret_base: u64 = 0x13; // User Data (0x1B) - 8 = 0x13
 
-    let star_val: u64 = (syscall_kcode_base << 48) | (sysret_base << 32);
+    let star_val: u64 = (sysret_base << 48) | (syscall_kcode_base << 32);
     Cpu::write_msr(MSR_STAR, star_val);
 
     // 4. Configurar FMASK (Mask RFLAGS)
