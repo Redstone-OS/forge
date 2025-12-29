@@ -1,9 +1,9 @@
 //! Thread Control Block
 
-use crate::sys::types::Tid;
-use crate::mm::VirtAddr;
-use super::state::TaskState;
 use super::super::context::CpuContext;
+use super::state::TaskState;
+use crate::mm::VirtAddr;
+use crate::sys::types::Tid;
 
 /// Task ID counter
 static NEXT_TID: crate::sync::AtomicCounter = crate::sync::AtomicCounter::new(1);
@@ -27,29 +27,67 @@ pub struct Task {
 }
 
 impl Task {
-    /// Cria nova task
+    /// Cria nova task diretamente no heap
+    ///
+    /// Evita cópia de struct grande através do stack
     pub fn new(name: &str) -> Self {
-        let tid = Tid::new(NEXT_TID.inc() as u32);
+        crate::ktrace!("(Task) new entrada");
+
+        // Criar TID primeiro
+        let tid_val = NEXT_TID.inc() as u32;
+        crate::ktrace!("(Task) tid_val=", tid_val as u64);
+        let tid = Tid::new(tid_val);
+
+        // Buffer de nome zerado
         let mut name_buf = [0u8; 32];
-        let len = name.len().min(31);
-        name_buf[..len].copy_from_slice(&name.as_bytes()[..len]);
-        
-        Self {
+
+        // Copiar bytes do nome manualmente usando ponteiros raw
+        let name_bytes = name.as_bytes();
+        let len = if name_bytes.len() < 31 {
+            name_bytes.len()
+        } else {
+            31
+        };
+
+        crate::ktrace!("(Task) copiando nome, len=", len as u64);
+
+        // Cópia ultra segura byte a byte via ponteiro
+        let src = name_bytes.as_ptr();
+        let dst = name_buf.as_mut_ptr();
+        let mut i = 0usize;
+        while i < len {
+            unsafe {
+                // Ler byte da fonte
+                let byte = core::ptr::read_volatile(src.add(i));
+                // Escrever byte no destino
+                core::ptr::write_volatile(dst.add(i), byte);
+            }
+            i = i.wrapping_add(1);
+        }
+
+        crate::ktrace!("(Task) nome copiado OK");
+        crate::ktrace!("(Task) construindo struct...");
+
+        // Construir struct manualmente
+        let task = Self {
             tid,
             state: TaskState::Created,
             context: CpuContext::new(),
             kernel_stack: VirtAddr::new(0),
             user_stack: VirtAddr::new(0),
-            priority: 128, // Prioridade média
+            priority: 128,
             name: name_buf,
-        }
+        };
+
+        crate::ktrace!("(Task) struct construída, retornando...");
+        task
     }
-    
+
     /// Marca como pronta
     pub fn set_ready(&mut self) {
         self.state = TaskState::Ready;
     }
-    
+
     /// Marca como bloqueada
     pub fn set_blocked(&mut self) {
         self.state = TaskState::Blocked;

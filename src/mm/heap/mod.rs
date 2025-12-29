@@ -188,6 +188,10 @@ unsafe impl GlobalAlloc for LockedHeap {
             crate::kerror!("(Heap) OOM! size=", layout.size() as u64);
         }
 
+        // Drop explícito do guard antes de retornar
+        drop(guard);
+        crate::ktrace!("(Heap) [H5] guard dropped, retornando");
+
         ptr
     }
 
