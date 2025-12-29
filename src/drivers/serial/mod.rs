@@ -1,32 +1,68 @@
-//! Driver de porta serial simplificado (QEMU Debug Port)
+//! Driver de porta serial COM1 (0x3F8)
 //!
-//! Escreve diretamente na porta 0xE9 (Hack do Bochs/QEMU) para debug.
-//! Não requer inicialização de UART, baud rate, etc.
+//! Driver simples para saída serial via porta COM1.
+//! Utilizado como fallback e debug principal.
 
-use crate::arch::x86_64::ports::outb;
+use crate::arch::x86_64::ports::{inb, outb};
 use crate::sync::Spinlock;
 
-/// Porta de debug do QEMU/Bochs
-const QEMU_PORT: u16 = 0xE9;
+/// Endereço base da porta COM1
+const COM1_PORT: u16 = 0x3F8;
 
-/// Serial "fake" que apenas escreve no QEMU
+/// Registradores (Offsets)
+const DATA_REG: u16 = 0;
+const INT_ENABLE: u16 = 1;
+const FIFO_CTRL: u16 = 2;
+const LINE_CTRL: u16 = 3;
+const MODEM_CTRL: u16 = 4;
+const LINE_STATUS: u16 = 5;
+
 pub struct SerialPort;
 
 static SERIAL: Spinlock<SerialPort> = Spinlock::new(SerialPort);
 
 impl SerialPort {
-    /// Inicialização "fake" (não necessária para 0xE9)
+    /// Inicializa a porta serial COM1
     pub fn init(&self) {
-        // Nada a fazer para porta 0xE9
+        // Desabilitar interrupções
+        outb(COM1_PORT + INT_ENABLE, 0x00);
+
+        // Setar Baud Rate (DLAB enabled)
+        outb(COM1_PORT + LINE_CTRL, 0x80);
+        outb(COM1_PORT + DATA_REG, 0x03); // Divisor Low = 3 (38400 baud)
+        outb(COM1_PORT + INT_ENABLE, 0x00); // Divisor High
+
+        // Configurar linha: 8 bits, sem paridade, 1 stop bit
+        outb(COM1_PORT + LINE_CTRL, 0x03);
+
+        // Habilitar FIFO, limpar buffers, 14-byte threshold
+        outb(COM1_PORT + FIFO_CTRL, 0xC7);
+
+        // Habilitar IRQs, RTS/DSR set
+        outb(COM1_PORT + MODEM_CTRL, 0x0B);
+
+        // Debug: Emitir byte para confirmar init
+        // outb(COM1_PORT, b'S');
     }
 
-    /// Escreve byte diretamente
+    /// Verifica se pode transmitir
+    fn is_transmit_empty(&self) -> bool {
+        inb(COM1_PORT + LINE_STATUS) & 0x20 != 0
+    }
+
+    /// Escreve byte diretamente com polling
     pub fn write_byte(&self, byte: u8) {
-        outb(QEMU_PORT, byte);
+        // Esperar buffer esvaziar (Busy Wait)
+        // TODO: Adicionar timeout para evitar travamento se hardware falhar
+        while !self.is_transmit_empty() {
+            core::hint::spin_loop();
+        }
+
+        outb(COM1_PORT, byte);
     }
 }
 
-/// Inicializa serial (No-op para QEMU port, mantido para compatibilidade de API)
+/// Inicializa serial
 pub fn init() {
     SERIAL.lock().init();
 }
