@@ -29,7 +29,7 @@ pub fn init_idt() {
 
     // Debug: Print handler address
     crate::kinfo!(
-        "(IDT) Divide Error Handler Addr: {:x}",
+        "(IDT) Divide Error Handler Addr:",
         divide_error_handler as u64
     );
 
@@ -137,8 +137,8 @@ extern "x86-interrupt" fn general_protection_handler(
     error_code: u64,
 ) {
     crate::kerror!("EXCEPTION: GENERAL PROTECTION FAULT (#GP)");
-    crate::kerror!("RIP: {:x}", stack_frame.instruction_pointer);
-    crate::kerror!("Error Code: {:x}", error_code);
+    crate::kerror!("RIP:", stack_frame.instruction_pointer);
+    crate::kerror!("Error Code:", error_code);
     loop {
         crate::arch::Cpu::halt();
     }
@@ -151,13 +151,13 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, e
     }
 
     crate::kerror!("EXCEPTION: PAGE FAULT (#PF)");
-    crate::kerror!("Accessed Address: {:x}", cr2);
-    crate::kerror!("Error Code: {:x}", error_code);
-    crate::kerror!("RIP: {:x}", stack_frame.instruction_pointer);
-    crate::kerror!("CS: {:x}", stack_frame.code_segment);
-    crate::kerror!("RFLAGS: {:x}", stack_frame.cpu_flags);
-    crate::kerror!("RSP: {:x}", stack_frame.stack_pointer);
-    crate::kerror!("SS: {:x}", stack_frame.stack_segment);
+    crate::kerror!("Accessed Address:", cr2);
+    crate::kerror!("Error Code:", error_code);
+    crate::kerror!("RIP:", stack_frame.instruction_pointer);
+    crate::kerror!("CS:", stack_frame.code_segment);
+    crate::kerror!("RFLAGS:", stack_frame.cpu_flags);
+    crate::kerror!("RSP:", stack_frame.stack_pointer);
+    crate::kerror!("SS:", stack_frame.stack_segment);
 
     loop {
         crate::arch::Cpu::halt();

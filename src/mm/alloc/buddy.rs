@@ -63,6 +63,8 @@ impl BuddyAllocator {
         compiler_fence(Ordering::SeqCst);
 
         // Adiciona a região inicial à free list da maior ordem possível
+        crate::ktrace!("(Buddy) add_to_free_list: addr=", heap_start as u64);
+        crate::ktrace!("(Buddy) add_to_free_list: size=", heap_size as u64);
         self.add_to_free_list(heap_start, heap_size);
 
         compiler_fence(Ordering::SeqCst);

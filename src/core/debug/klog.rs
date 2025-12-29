@@ -10,56 +10,56 @@ pub trait SerialDebug {
 
 impl SerialDebug for u64 {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_hex(*self);
     }
 }
 
 impl SerialDebug for usize {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_hex(*self as u64);
     }
 }
 
 impl SerialDebug for u32 {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_hex(*self as u64);
     }
 }
 
 impl SerialDebug for i32 {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_hex(*self as u64);
     }
 }
 
 impl SerialDebug for &str {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" ");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_str(self);
     }
 }
 
 impl SerialDebug for u8 {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_hex(*self as u64);
     }
 }
 
 impl<T> SerialDebug for *const T {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_hex(*self as u64);
     }
 }
 
 impl<T> SerialDebug for *mut T {
     fn serial_debug(&self) {
-        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_byte(b' ');
         crate::drivers::serial::write_hex(*self as u64);
     }
 }

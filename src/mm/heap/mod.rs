@@ -231,6 +231,13 @@ pub fn init(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> bool {
     crate::kinfo!("(Heap) Início=", heap_start);
 
     let pages = heap_size / 4096;
+    if heap_size & (heap_size - 1) != 0 {
+        crate::kerror!(
+            "(Heap) FATAL: Tamanho do heap deve ser potencia de 2:",
+            heap_size as u64
+        );
+        return false;
+    }
     crate::kinfo!("(Heap) Mapeando páginas=", pages as u64);
 
     let flags = crate::mm::config::PAGE_PRESENT | crate::mm::config::PAGE_WRITABLE;
