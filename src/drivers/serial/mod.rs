@@ -29,7 +29,7 @@ impl SerialPort {
 
         // Setar Baud Rate (DLAB enabled)
         outb(COM1_PORT + LINE_CTRL, 0x80);
-        outb(COM1_PORT + DATA_REG, 0x03); // Divisor Low = 3 (38400 baud)
+        outb(COM1_PORT + DATA_REG, 0x01); // Divisor Low = 1 (115200 baud) - INSTANTÂNEO EM QEMU
         outb(COM1_PORT + INT_ENABLE, 0x00); // Divisor High
 
         // Configurar linha: 8 bits, sem paridade, 1 stop bit
@@ -40,9 +40,6 @@ impl SerialPort {
 
         // Habilitar IRQs, RTS/DSR set
         outb(COM1_PORT + MODEM_CTRL, 0x0B);
-
-        // Debug: Emitir byte para confirmar init
-        // outb(COM1_PORT, b'S');
     }
 
     /// Verifica se pode transmitir
@@ -50,15 +47,15 @@ impl SerialPort {
         inb(COM1_PORT + LINE_STATUS) & 0x20 != 0
     }
 
-    /// Escreve byte diretamente com polling
+    /// Escreve byte diretamente (Non-Blocking / Fire-and-Forget)
     pub fn write_byte(&self, byte: u8) {
-        // Esperar buffer esvaziar (Busy Wait)
-        // TODO: Adicionar timeout para evitar travamento se hardware falhar
-        while !self.is_transmit_empty() {
-            core::hint::spin_loop();
+        // CRÍTICO: Removido loop de espera (busy wait).
+        // Se a porta estiver ocupada, o byte é DESCARTADO para não travar o kernel.
+        // Risco: Perda de logs em carga alta.
+        // Benefício: Kernel nunca trava por causa do log.
+        if self.is_transmit_empty() {
+            outb(COM1_PORT, byte);
         }
-
-        outb(COM1_PORT, byte);
     }
 }
 
