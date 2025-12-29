@@ -22,13 +22,24 @@ bench = false
 [features]
 default = []
 
+# =========================================================
+# SINGLE PROFILE — KERNEL DEV SAFE
+# =========================================================
 [profile.release]
 panic = "abort"
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-strip = "symbols"
-debug = 0
+
+# 🔒 previsibilidade > performance
+opt-level = 1     # NÃO use 0, NÃO use z
+lto = false       # LTO embaralha layout
+codegen-units = 1 # layout determinístico
+
+# 🧠 debug real
+debug = 1      # símbolos úteis (sem exagero)
+strip = "none"
+
+# 🚨 segurança durante dev
 debug-assertions = true
-overflow-checks = false
+overflow-checks = true
+
+# ❌ incremental quebra determinismo
 incremental = false

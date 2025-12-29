@@ -10,28 +10,18 @@ runner = "qemu-system-x86_64 -kernel"
 
 rustflags = [
     "-C",
-    "target-feature=-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-mmx,+soft-float",
-    "-C",
-    "link-arg=-Tlinker.ld",
-    "-C",
     "force-frame-pointers=yes",
     "-C",
-    "inline-threshold=275",
+    "codegen-units=1",
     "-C",
     "relocation-model=static",
     "-C",
     "code-model=kernel",
     "-C",
-    "llvm-args=-x86-asm-syntax=intel",
+    "debuginfo=2",
     "-C",
-    "llvm-args=-unroll-threshold=250",
-    "-C",
-    "llvm-args=-tailcallopt",
-    "-C",
-    "llvm-args=-mergefunc-use-aliases",
+    "link-arg=-Tlinker.ld",
 ]
 
 [alias]
 k = "build --release"
-kr = "build --release --no-default-features --features no_logs"
-kd = "build --release --features log_debug"
