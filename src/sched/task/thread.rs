@@ -32,6 +32,7 @@ impl Task {
     /// Cria nova task diretamente no heap
     ///
     /// Evita cópia de struct grande através do stack
+    #[inline(never)]
     pub fn new(name: &str) -> Self {
         crate::ktrace!("(Task) new entrada");
 

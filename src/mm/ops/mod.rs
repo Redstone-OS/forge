@@ -2,6 +2,7 @@
 //!
 //! Operações de memória em ASM puro e funções auxiliares.
 
+pub mod compiler;
 pub mod memops;
 
 // Futuro:
