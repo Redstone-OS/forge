@@ -220,7 +220,10 @@ pub fn map_page_with_pmm(
     }
 
     // Flags para tabelas intermediárias (sempre presentes e graváveis)
-    let table_flags = FLAG_PRESENT | FLAG_WRITABLE;
+    let mut table_flags = FLAG_PRESENT | FLAG_WRITABLE;
+    if flags.contains(MapFlags::USER) {
+        table_flags |= FLAG_USER;
+    }
 
     unsafe {
         // Garante que PDPT existe

@@ -64,29 +64,44 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     crate::kinfo!("(Spawn) Task created via Task::new");
 
     // 4. Alocar e Mapear Stack de Usuário
+    crate::kinfo!("(Spawn) Allocating user stack...");
     {
+        crate::kinfo!("(Spawn) Locking PMM...");
         let mut pmm = FRAME_ALLOCATOR.lock();
+        crate::kinfo!("(Spawn) PMM locked.");
+        // Removendo MapFlags::USER para testar execução em Ring 0 sem SMAP issues
+        // let flags = MapFlags::PRESENT | MapFlags::WRITABLE; // | MapFlags::USER; (Testando SEM USER)
+        // REATIVANDO USER e MUDANDO PARA HIGH MEMORY para evitar conflitos de Lower Half
         let flags = MapFlags::PRESENT | MapFlags::WRITABLE | MapFlags::USER;
 
-        let start_page = USER_STACK_TOP - USER_STACK_SIZE;
+        // Usar endereço ALTO para stack de usuário (fake por enquanto, rodando em Ring 0)
+        // Canonical High: 0xFFFF_8000_0000_0000 + ...
+        // Vamos usar 0xFFFF_9001_0000_0000 (acima do Heap que começa em 9000...)
+        const HIGH_STACK_TOP: u64 = 0xFFFF_9001_0000_0000;
+        let start_page = HIGH_STACK_TOP - USER_STACK_SIZE;
         let pages = USER_STACK_SIZE / FRAME_SIZE;
+        crate::kinfo!("(Spawn) Stack pages needed:", pages);
 
         for i in 0..pages {
             let vaddr = start_page + i * FRAME_SIZE;
+            // crate::kinfo!("(Spawn) Stack page:", i);
             if let Some(frame) = pmm.allocate_frame() {
                 // TODO: Mapear no address space do processo (atualmente no kernel)
                 unsafe {
                     if let Err(_e) = map_page_with_pmm(vaddr, frame.as_u64(), flags, &mut *pmm) {
                         return Err(ExecError::OutOfMemory);
                     }
-                    // Zerar stack
+                    // Zerar stack (volatile)
                     let ptr = vaddr as *mut u8;
-                    core::ptr::write_bytes(ptr, 0, FRAME_SIZE as usize);
+                    for j in 0..FRAME_SIZE as usize {
+                        ptr.add(j).write_volatile(0);
+                    }
                 }
             } else {
                 return Err(ExecError::OutOfMemory);
             }
         }
+        crate::kinfo!("(Spawn) Stack allocated OK.");
     }
 
     // 5. Configurar contexto (Entry Point + Stack Pointer)
