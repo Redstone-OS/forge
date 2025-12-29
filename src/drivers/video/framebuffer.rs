@@ -20,8 +20,8 @@ static FRAMEBUFFER: Spinlock<Option<FramebufferInfo>> = Spinlock::new(None);
 /// Inicializa com informações do bootloader
 pub fn init(info: HandoffFbInfo) {
     crate::kinfo!("(FB) Inicializando Framebuffer...");
-    crate::kinfo!("(FB) Width:", info.width as u64);
-    crate::kinfo!("(FB) Height:", info.height as u64);
+    crate::ktrace!("(FB) Width:", info.width as u64);
+    crate::ktrace!("(FB) Height:", info.height as u64);
 
     let bpp = match info.format {
         PixelFormat::Rgb | PixelFormat::Bgr | PixelFormat::Bitmask => 32,

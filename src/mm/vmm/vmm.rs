@@ -26,6 +26,5 @@ pub struct PageTable {
 
 /// Inicializa o subsistema VMM
 pub fn init(_boot_info: &crate::core::boot::handoff::BootInfo) {
-    crate::kinfo!("(VMM) Inicializando VMM...");
     // TODO: Implementar init real (trocar para page table do kernel, etc)
 }
