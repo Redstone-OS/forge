@@ -31,16 +31,6 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
         crate::ktrace!("[SYSCALL] arg1=", arg1 as u64);
         crate::ktrace!("[SYSCALL] arg2=", arg2 as u64);
 
-        // Dump debug de TrapFrame
-        let tf_ptr = ctx as *const u64;
-        crate::ktrace!("[SYSCALL] TrapFrame Dump:");
-        // TrapFrame tem 20 u64s
-        for i in 0..20 {
-            let val = core::ptr::read_volatile(tf_ptr.add(i));
-            crate::ktrace!("[SYSCALL] TF offset", i as u64);
-            crate::ktrace!("[SYSCALL]    value=", val);
-        }
-
         // Dispatch hardcoded
         let result: u64 = match num {
             0xF3 => {

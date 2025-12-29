@@ -137,17 +137,9 @@ pub fn schedule() {
             crate::ktrace!("(Sched) Contexto RSP=", (*ctx_ptr).rsp);
             crate::ktrace!("(Sched) Carregando CR3=", new_cr3);
 
-            // Verificar conteúdo do TrapFrame (antes de trocar CR3)
-            let trapframe_ptr = (*ctx_ptr).rsp as *const u64;
-            crate::ktrace!("(Sched) TrapFrame[0] RIP=", *trapframe_ptr.offset(0));
-            crate::ktrace!("(Sched) TrapFrame[1] CS=", *trapframe_ptr.offset(1));
-            crate::ktrace!("(Sched) TrapFrame[2] RFLAGS=", *trapframe_ptr.offset(2));
-            crate::ktrace!("(Sched) TrapFrame[3] RSP=", *trapframe_ptr.offset(3));
-            crate::ktrace!("(Sched) TrapFrame[4] SS=", *trapframe_ptr.offset(4));
-
             // Configurar TSS RSP0 e KERNEL_GS_BASE para syscalls
             if kernel_stack != 0 {
-                crate::ktrace!("(Sched) Configurando kernel_stack=", kernel_stack);
+                // crate::ktrace!("(Sched) Configurando kernel_stack=", kernel_stack);
                 crate::arch::x86_64::gdt::set_kernel_stack(kernel_stack);
                 crate::arch::x86_64::syscall::set_kernel_rsp(kernel_stack);
             } else {
@@ -158,13 +150,10 @@ pub fn schedule() {
                 core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
             }
 
-            // Verificar TrapFrame APÓS trocar CR3
-            crate::ktrace!("(Sched) Após CR3 swap, verificando TrapFrame...");
-            crate::ktrace!("(Sched) POST TrapFrame[0] RIP=", *trapframe_ptr.offset(0));
-            crate::ktrace!("(Sched) POST TrapFrame[1] CS=", *trapframe_ptr.offset(1));
-
-            // Verificar CpuContext na heap após CR3 swap
-            crate::ktrace!("(Sched) POST CpuContext.rsp=", (*ctx_ptr).rsp);
+            let cpu_context_ptr = ctx_ptr as *const u64;
+            crate::ktrace!("(Sched) Post-switch checks done.");
+            crate::ktrace!("(Sched) POST CpuContext.rsp=", *(cpu_context_ptr.offset(6)));
+            crate::ktrace!("(Sched) POST CpuContext.rip=", *(cpu_context_ptr.offset(7)));
             crate::ktrace!("(Sched) POST CpuContext.rip=", (*ctx_ptr).rip);
 
             super::context::jump_to_context(&*ctx_ptr);

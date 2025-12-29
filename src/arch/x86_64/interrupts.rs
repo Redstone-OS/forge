@@ -205,48 +205,6 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, e
         crate::kerror!("[PF] Operação: LEITURA");
     }
 
-    // Tentar ler bytes no RIP para ver a instrução
-    crate::kerror!("----------------------------------------");
-    crate::kerror!("[PF] Tentando ler bytes em RIP...");
-
-    // Só tenta ler se estiver em kernel space ou se tivermos acesso
-    let rip = stack_frame.instruction_pointer;
-    if rip >= 0xFFFF_8000_0000_0000 {
-        // Kernel space - podemos ler diretamente
-        unsafe {
-            let ptr = rip as *const u8;
-            crate::kerror!("[PF] Byte[0] @RIP:", core::ptr::read_volatile(ptr) as u64);
-            crate::kerror!(
-                "[PF] Byte[1] @RIP+1:",
-                core::ptr::read_volatile(ptr.add(1)) as u64
-            );
-            crate::kerror!(
-                "[PF] Byte[2] @RIP+2:",
-                core::ptr::read_volatile(ptr.add(2)) as u64
-            );
-            crate::kerror!(
-                "[PF] Byte[3] @RIP+3:",
-                core::ptr::read_volatile(ptr.add(3)) as u64
-            );
-        }
-    } else {
-        crate::kerror!("[PF] RIP em USER SPACE - não podemos ler diretamente do handler");
-        crate::kerror!(
-            "[PF] User RIP offset from 0x400000:",
-            rip.wrapping_sub(0x400000)
-        );
-    }
-
-    // Se o endereço acessado parece ser uma porta I/O
-    if cr2 < 0x10000 {
-        crate::kerror!("----------------------------------------");
-        crate::kerror!("[PF] NOTA: Endereço baixo pode indicar tentativa de I/O!");
-        if cr2 == 0x3F8 {
-            crate::kerror!("[PF] 0x3F8 = COM1 Serial Port!");
-            crate::kerror!("[PF] User mode tentou acessar porta serial diretamente?");
-        }
-    }
-
     crate::kerror!("========================================");
 
     loop {
