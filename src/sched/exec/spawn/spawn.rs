@@ -31,8 +31,6 @@ impl From<ExecError> for KernelError {
 const USER_STACK_TOP: u64 = 0x7FFF_FFFF_F000;
 /// Tamanho da stack (32KB)
 const USER_STACK_SIZE: u64 = 8 * 4096;
-/// Topo da stack de High Memory (debugging)
-const HIGH_STACK_TOP: u64 = 0xFFFF_9001_0000_0000;
 
 /// Cria novo processo a partir de executável
 pub fn spawn(path: &str) -> Result<Pid, ExecError> {
@@ -169,8 +167,6 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     unsafe {
         // Debug: Patch entry point
         let code_ptr = entry_point.as_u64() as *mut u8;
-        // ... (Debug logs suppressed for brevity/speed, kept minimal)
-        crate::kinfo!("(Spawn) DEBUG: Patching Entry Point with 'jmp $'");
         code_ptr.write(0xEB);
         code_ptr.add(1).write(0xFE);
 
@@ -215,7 +211,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
 
         let context_rsp = (ptr.offset(-6)) as u64; // Corrected from -5 to -6
         task.context.rsp = context_rsp;
-        task.context.rip = trampoline; // Redundant but explicit? Actually unused by jump_to_context logic but good for debug.
+        task.context.rip = trampoline;
     }
 
     // 6. Marcar como pronta
@@ -232,8 +228,8 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
 /// Função de teste para validar troca de contexto
 #[no_mangle]
 extern "C" fn test_kernel_task() {
-    crate::kinfo!("!!! HELLO FROM KERNEL TASK !!!");
-    crate::kinfo!("Context switch worked successfully.");
+    crate::kinfo!("!!! OLÁ DA TAREFA DO KERNEL !!!");
+    crate::kinfo!("A troca de contexto funcionou corretamente.");
     loop {
         crate::arch::Cpu::halt();
     }
