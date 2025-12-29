@@ -42,6 +42,9 @@ fn panic(info: &PanicInfo) -> ! {
     crate::kerror!("*             SISTEMA HALTED FOREVER                *");
     crate::kerror!("*****************************************************");
 
+    // Garantir que todas as mensagens de erro saiam pela serial
+    crate::drivers::serial::force_flush();
+
     // TODO: Enviar IPI para parar outras CPUs (crate::smp::ipi::send_context(Panic))
 
     loop {

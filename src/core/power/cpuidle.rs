@@ -25,6 +25,11 @@ pub struct IdleState {
 /// 3. Entra no estado.
 pub fn enter_idle_loop() -> ! {
     loop {
+        // 0. Flushes de manutenção (Logs, etc)
+        // Isso garante que logs pendentes no buffer circular sejam transmitidos
+        // enquanto a CPU está ociosa, antes de dormir.
+        crate::drivers::serial::try_drain();
+
         // TODO: Verificar se há callbacks de RCU ou SoftIRQs pendentes antes de dormir.
 
         // IMPORTANTE: Chamar o scheduler para verificar se há tasks prontas para rodar
@@ -33,14 +38,7 @@ pub fn enter_idle_loop() -> ! {
 
         // Caminho simples: C1 (HLT)
         // Isso coloca a CPU em pause até a próxima interrupção.
-
-        // Em x86: HLT para até a próxima interrupção.
-        // As interrupções DEVEM estar habilitadas para acordar.
-        // O trait CpuTrait::halt() geralmente faz isso.
         crate::arch::Cpu::halt();
-
-        // Ao acordar (após interrupção de timer), verificamos se precisamos reagendar.
-        // O scheduler cuidará disso na próxima iteração do loop.
     }
 }
 
