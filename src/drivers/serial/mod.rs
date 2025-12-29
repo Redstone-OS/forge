@@ -61,6 +61,14 @@ impl SerialPort {
 
     /// Escreve byte no buffer circular interna (requer lock ja adquirido)
     fn write_byte_internal(&mut self, byte: u8) {
+        // FAST PATH: Se o buffer estiver vazio e o hardware estiver pronto,
+        // enviamos diretamente para o hardware. Isso remove overhead de buffer
+        // e garante que logs apareçam imediatamente no QEMU/Simuladores.
+        if self.head == self.tail && self.is_transmit_empty() {
+            outb(COM1_PORT, byte);
+            return;
+        }
+
         let next_head = (self.head + 1) & SERIAL_BUFFER_MASK;
 
         // Se o buffer estiver cheio, avançamos a cauda (perdemos o mais antigo)
@@ -73,15 +81,26 @@ impl SerialPort {
         self.head = next_head;
 
         // Tenta enviar o que puder
-        self.drain_internal();
+        self.drain_greedy();
     }
 
-    /// Tenta enviar o máximo de bytes possível sem bloquear (requer lock)
-    fn drain_internal(&mut self) {
-        while self.head != self.tail && self.is_transmit_empty() {
+    /// Tenta enviar o máximo de bytes possível (GREEDY)
+    /// Em QEMU, isso vai descarregar o buffer quase instantaneamente.
+    fn drain_greedy(&mut self) {
+        // No QEMU, is_transmit_empty costuma ser verdadeiro quase sempre.
+        // Limitamos a 128 bytes por drain para não prender a CPU eternamente
+        // em hardware real lento, mas ser agressivo o suficiente para o log sair.
+        let mut count = 0;
+        while self.head != self.tail && self.is_transmit_empty() && count < 128 {
             outb(COM1_PORT, self.buffer[self.tail]);
             self.tail = (self.tail + 1) & SERIAL_BUFFER_MASK;
+            count += 1;
         }
+    }
+
+    /// Mantido para compatibilidade, aponta para o novo greedy drain
+    fn drain_internal(&mut self) {
+        self.drain_greedy();
     }
 
     /// Força a descarga total do buffer (bloqueante).
