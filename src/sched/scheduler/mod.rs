@@ -101,14 +101,20 @@ pub fn schedule() {
         }
     } else {
         // Primeira task (boot) -> next
-        // Não tem old task para salvar
-        let new_ctx_ptr = &unsafe { Pin::get_ref(next.as_ref()) }.context as *const _;
+        // Não tem old task para salvar, usamos jump_to_context
+        crate::ktrace!("(Sched) Primeira task, usando jump_to_context");
+
+        // Obter referência ao contexto ANTES de mover next para CURRENT
+        let ctx_ptr = &unsafe { Pin::get_ref(next.as_ref()) }.context as *const _;
         *current_guard = Some(next);
 
-        // Aqui precisamos de um "fake" old context ou apenas pular o save.
-        // O switch salva o old. Se old for garbage, corrompemos stack?
-        // Sim. Na primeira vez, thread de boot deve ter se registrado como CURRENT em init().
-        // Assumindo que init() popula CURRENT.
+        // Liberar o guard antes do jump (não vai retornar)
+        drop(current_guard);
+
+        // Saltar para o contexto da primeira task (nunca retorna)
+        unsafe {
+            super::context::jump_to_context(&*ctx_ptr);
+        }
     }
 }
 

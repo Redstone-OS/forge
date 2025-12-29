@@ -62,6 +62,19 @@ pub unsafe fn switch(old: &mut CpuContext, new: &CpuContext) {
     );
 }
 
+/// Salta diretamente para um contexto sem salvar o atual
+/// Usado para a primeira task quando não há contexto anterior
+///
+/// # Safety
+///
+/// - Interrupções devem estar desabilitadas
+/// - ctx deve ser um ponteiro válido
+/// - Nunca retorna
+pub unsafe fn jump_to_context(ctx: &CpuContext) -> ! {
+    jump_to_context_asm(ctx as *const CpuContext as u64);
+    core::hint::unreachable_unchecked()
+}
+
 // Assembly implementation of context_switch_asm
 // RDI = old (mut ptr), RSI = new (ptr)
 // Struct offsets (CpuContext):
@@ -98,11 +111,33 @@ context_switch_asm:
     // Switch Stack
     mov rsp, [rsi + 0x30]
 
-    // Return to new context
+    // Push RIP and ret to it
+    mov rax, [rsi + 0x38]
+    push rax
+    ret
+
+.global jump_to_context_asm
+jump_to_context_asm:
+    // RDI = ptr to CpuContext
+    // Load all registers from context
+    mov rbx, [rdi + 0x00]
+    mov rbp, [rdi + 0x08]
+    mov r12, [rdi + 0x10]
+    mov r13, [rdi + 0x18]
+    mov r14, [rdi + 0x20]
+    mov r15, [rdi + 0x28]
+    
+    // Switch Stack
+    mov rsp, [rdi + 0x30]
+
+    // Push RIP and ret to it
+    mov rax, [rdi + 0x38]
+    push rax
     ret
 "#
 );
 
 extern "C" {
     fn context_switch_asm(old: u64, new: u64);
+    fn jump_to_context_asm(new: u64) -> !;
 }

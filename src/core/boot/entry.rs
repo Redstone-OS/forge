@@ -73,6 +73,5 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Inicialização do Kernel Concluída. Entrando em Loop Ocioso'");
 
     // 9. Loop de Ociosidade (Idle Loop)
-    // A thread de boot se torna a thread idle da CPU 0 (ou morre se spawnarmos uma task idle separada)
     cpuidle::enter_idle_loop();
 }

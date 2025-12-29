@@ -14,6 +14,7 @@
 //! | 0x10-0x1F | Memória       |
 //! | 0x20-0x2F | Handles       |
 //! | 0x30-0x3F | IPC           |
+//! | 0x40-0x4F | Gráficos/Input|
 //! | 0x50-0x5F | Tempo         |
 //! | 0x60-0x6F | Filesystem    |
 //! | 0x80-0x8F | Events        |
@@ -114,6 +115,35 @@ pub const SYS_SEND_MSG: usize = 0x31;
 /// Args: (port_handle, buf_ptr, buf_len, timeout_ms)
 /// Retorno: bytes recebidos ou erro
 pub const SYS_RECV_MSG: usize = 0x32;
+
+// ============================================================================
+// GRÁFICOS / INPUT (0x40 - 0x4F)
+// ============================================================================
+
+/// Obtém informações do framebuffer.
+/// Args: (out_ptr: *mut FramebufferInfo)
+/// Retorno: 0 ou erro
+pub const SYS_FB_INFO: usize = 0x40;
+
+/// Escreve pixels no framebuffer.
+/// Args: (offset: usize, data_ptr: *const u8, len: usize)
+/// Retorno: bytes escritos ou erro
+pub const SYS_FB_WRITE: usize = 0x41;
+
+/// Limpa todo o framebuffer com uma cor.
+/// Args: (color: u32)
+/// Retorno: 0 ou erro
+pub const SYS_FB_CLEAR: usize = 0x42;
+
+/// Lê estado do mouse (posição e botões).
+/// Args: (out_ptr: *mut MouseState)
+/// Retorno: 0 ou erro
+pub const SYS_MOUSE_READ: usize = 0x48;
+
+/// Lê eventos de teclado.
+/// Args: (out_ptr: *mut KeyEvent, max_events: usize)
+/// Retorno: número de eventos ou erro
+pub const SYS_KEYBOARD_READ: usize = 0x49;
 
 // ============================================================================
 // TEMPO (0x50 - 0x5F)

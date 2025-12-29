@@ -42,6 +42,13 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_SEND_MSG] = Some(super::super::ipc::sys_send_msg_wrapper);
     table[SYS_RECV_MSG] = Some(super::super::ipc::sys_recv_msg_wrapper);
 
+    // === GRÁFICOS / INPUT (0x40-0x4F) ===
+    table[SYS_FB_INFO] = Some(super::super::gfx::sys_fb_info_wrapper);
+    table[SYS_FB_WRITE] = Some(super::super::gfx::sys_fb_write_wrapper);
+    table[SYS_FB_CLEAR] = Some(super::super::gfx::sys_fb_clear_wrapper);
+    table[SYS_MOUSE_READ] = Some(super::super::gfx::sys_mouse_read_wrapper);
+    table[SYS_KEYBOARD_READ] = Some(super::super::gfx::sys_keyboard_read_wrapper);
+
     // === TEMPO (0x50-0x5F) ===
     table[SYS_CLOCK_GET] = Some(super::super::time::sys_clock_get_wrapper);
     table[SYS_SLEEP] = Some(super::super::time::sys_sleep_wrapper);

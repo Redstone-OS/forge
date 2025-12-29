@@ -27,18 +27,20 @@ pub fn enter_idle_loop() -> ! {
     loop {
         // TODO: Verificar se há callbacks de RCU ou SoftIRQs pendentes antes de dormir.
 
+        // IMPORTANTE: Chamar o scheduler para verificar se há tasks prontas para rodar
+        // Antes de fazer HLT, tentamos executar qualquer task pendente
+        crate::sched::scheduler::schedule();
+
         // Caminho simples: C1 (HLT)
         // Isso coloca a CPU em pause até a próxima interrupção.
 
-        unsafe {
-            // Em x86: HLT para até a próxima interrupção.
-            // As interrupções DEVEM estar habilitadas para acordar.
-            // O trait CpuTrait::halt() geralmente faz isso.
-            crate::arch::Cpu::halt();
-        }
+        // Em x86: HLT para até a próxima interrupção.
+        // As interrupções DEVEM estar habilitadas para acordar.
+        // O trait CpuTrait::halt() geralmente faz isso.
+        crate::arch::Cpu::halt();
 
-        // Ao acordar, verificamos se precisamos reagendar.
-        // O scheduler cuidará disso se for uma interrupção de timer.
+        // Ao acordar (após interrupção de timer), verificamos se precisamos reagendar.
+        // O scheduler cuidará disso na próxima iteração do loop.
     }
 }
 
