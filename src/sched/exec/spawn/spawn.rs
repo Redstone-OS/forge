@@ -154,7 +154,27 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
                 return Err(ExecError::OutOfMemory);
             }
         }
-        crate::kinfo!("(Spawn) Stack allocated OK.");
+    }
+
+    // DEBUG: Validate entry point code
+    unsafe {
+        let entry_ptr = entry_point.as_u64() as *const u8;
+        crate::ktrace!(
+            "(Spawn) Validating Entry Point Code at:",
+            entry_point.as_u64()
+        );
+        let b0 = core::ptr::read_volatile(entry_ptr);
+        let b1 = core::ptr::read_volatile(entry_ptr.add(1));
+        let b2 = core::ptr::read_volatile(entry_ptr.add(2));
+        let b3 = core::ptr::read_volatile(entry_ptr.add(3));
+        crate::ktrace!("(Spawn) Code Bytes:", b0 as u64);
+        crate::ktrace!("(Spawn) Code Bytes:", b1 as u64);
+        crate::ktrace!("(Spawn) Code Bytes:", b2 as u64);
+        crate::ktrace!("(Spawn) Code Bytes:", b3 as u64);
+
+        if b0 == 0 && b1 == 0 && b2 == 0 && b3 == 0 {
+            crate::kerror!("(Spawn) CRITICAL: Entry point code is all ZEROS!");
+        }
     }
 
     // 6. Restaurar CR3 original
@@ -197,11 +217,14 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         // E context.rsp = kstack_top - 40 (para ter espaço para 5 qwords)
 
         let trapframe_base = ptr.offset(-5); // kstack_top - 40
-        trapframe_base.offset(0).write(entry_point.as_u64()); // RIP
-        trapframe_base.offset(1).write(USER_CODE_SEL); // CS
-        trapframe_base.offset(2).write(RFLAGS_IF); // RFLAGS
-        trapframe_base.offset(3).write(USER_STACK_TOP); // RSP
-        trapframe_base.offset(4).write(USER_DATA_SEL); // SS
+                                             // Usar write_volatile para garantir que as escritas não sejam reordenadas ou otimizadas
+        trapframe_base
+            .offset(0)
+            .write_volatile(entry_point.as_u64()); // RIP
+        trapframe_base.offset(1).write_volatile(USER_CODE_SEL); // CS
+        trapframe_base.offset(2).write_volatile(RFLAGS_IF); // RFLAGS
+        trapframe_base.offset(3).write_volatile(USER_STACK_TOP); // RSP
+        trapframe_base.offset(4).write_volatile(USER_DATA_SEL); // SS
 
         // Trampolim
         let trampoline = crate::sched::context::switch::iretq_restore as u64;

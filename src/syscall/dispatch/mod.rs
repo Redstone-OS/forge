@@ -48,15 +48,21 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
                             options(nostack, preserves_flags),
                         );
                     }
-                    crate::ktrace!("[SYSCALL] Escrita serial OK");
+                    crate::ktrace!("[SYSCALL] Result:", arg2 as u64);
                     arg2 as u64
                 } else {
                     crate::ktrace!("[SYSCALL] args inválidos");
                     0
                 }
             }
+            0x04 => {
+                // SYS_YIELD
+                // crate::ktrace!("[SYSCALL] SYS_YIELD");
+                // crate::sched::scheduler::yield_now(); // TODO: Implement yield in scheduler
+                0
+            }
             _ => {
-                crate::ktrace!("[SYSCALL] syscall desconhecida!");
+                crate::ktrace!("[SYSCALL] syscall desconhecida!", num as u64);
                 (-1i64) as u64 // ENOSYS
             }
         };
