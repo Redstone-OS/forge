@@ -78,21 +78,27 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
             crate::ktrace!("(ELF) pages needed:", pages);
 
             let mut pmm = FRAME_ALLOCATOR.lock();
+            crate::ktrace!("(ELF) PMM locked");
 
             for page_idx in 0..pages {
                 let vaddr = start_page + page_idx * FRAME_SIZE;
+                crate::ktrace!("(ELF) Processing page:", page_idx);
 
                 // Tenta alocar frame físico
+                crate::ktrace!("(ELF) Calling allocate_frame...");
                 if let Some(frame) = pmm.allocate_frame() {
                     let frame_phys = frame.as_u64();
+                    crate::ktrace!("(ELF) Frame allocated:", frame_phys);
 
                     // Mapeia na tabela de páginas ATUAL (Kernel)
                     // TODO: Mapear na tabela de páginas do novo processo
                     // Por enquanto funciona pois init roda no espaço do kernel
+                    crate::ktrace!("(ELF) Mapping page...");
                     if let Err(_e) = map_page_with_pmm(vaddr, frame_phys, flags, &mut *pmm) {
                         crate::kerror!("(ELF) Map failed:", vaddr);
                         return Err(KernelError::OutOfMemory);
                     }
+                    crate::ktrace!("(ELF) Page mapped OK");
 
                     // Zera frame (limpa lixo anterior)
                     unsafe {
@@ -100,6 +106,7 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
                         core::ptr::write_bytes(ptr, 0, FRAME_SIZE as usize);
                     }
                 } else {
+                    crate::kerror!("(ELF) Alloc failed OOM");
                     return Err(KernelError::OutOfMemory);
                 }
             }

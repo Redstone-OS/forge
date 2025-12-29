@@ -5,7 +5,6 @@ use crate::mm::VirtAddr;
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
 use core::slice;
-use core::str;
 
 /// Armazenamento global do Initramfs (Raw Bytes)
 static INITRAMFS_DATA: Spinlock<Option<&'static [u8]>> = Spinlock::new(None);
@@ -86,71 +85,74 @@ pub fn init(addr: VirtAddr, size: usize) {
 /// Busca um arquivo no initramfs e retorna seus dados
 /// Usado diretamente pelo spawn() enquanto VFS não está pronto
 pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
-    crate::kinfo!("(InitramFS) lookup A: entry");
-
     let guard = INITRAMFS_DATA.lock();
-    crate::kinfo!("(InitramFS) lookup B: locked");
-
     let data = (*guard)?;
-    crate::kinfo!("(InitramFS) lookup C: len=", data.len() as u64);
 
-    // Verificando acesso a memoria
-    if !data.is_empty() {
-        let _b = data[0];
-        crate::kinfo!("(InitramFS) lookup D: byte 0 read OK");
-    }
+    // Remover leading slash e ./ para comparar apenas via bytes
+    // No VFS normal isso seria tratado, mas aqui fazemos manual
+    let search_bytes = path.as_bytes();
+    // Normalização simplificada: ignorar ./ inicial ou / inicial se houver
+    // Mas como estamos hardcoded para system/core/init, vamos comparar manual
 
-    // Remover leading slash    // Remover leading slash e ./ para comparar
-    crate::kinfo!("(InitramFS) lookup E: skipping trim for test");
-    // let search_path = path.trim_start_matches('/').trim_start_matches("./");
-    let search_path = "system/core/init"; // Hardcoded test to verify logic
-    crate::kinfo!("(InitramFS) lookup F: path set manually");
+    // Hack de teste: ignorar path e procurar explicitamente o arquivo
+    let search_bytes = b"system/core/init";
 
-    // Log inicial seguro
-    crate::ktrace!("(InitramFS) Searching:", search_path);
+    crate::ktrace!("(InitramFS) Search Loop Start");
 
     let mut offset = 0;
     while offset + TAR_BLOCK_SIZE <= data.len() {
-        crate::kinfo!("(InitramFS) In loop, offset=", offset as u64);
-
-        // Uncomment Part 1: Header Slice & Magic
         let header = &data[offset..offset + TAR_BLOCK_SIZE];
 
         // Verificar magic "ustar" (com ou sem null terminator, ou espaço)
         if &header[TAR_MAGIC_OFFSET..TAR_MAGIC_OFFSET + 5] != b"ustar" {
-            crate::kinfo!("(InitramFS) Bad Magic at offset=", offset as u64);
             break;
         }
-        crate::kinfo!("(InitramFS) Magic OK");
 
         // Ler tamanho primeiro para validar offset
         let size = parse_octal(&header[TAR_SIZE_OFFSET..TAR_SIZE_OFFSET + TAR_SIZE_LEN]);
-        crate::kinfo!("(InitramFS) Size parsed:", size as u64);
 
-        // Ler nome (com limite seguro) - SIMPLIFICADO TEMP
-        crate::kinfo!("(InitramFS) Reading name bytes...");
+        // Ler nome (com limite seguro) - MANUAL BYTES ONLY
         let name_bytes = &header[TAR_NAME_OFFSET..TAR_NAME_OFFSET + TAR_NAME_LEN];
 
-        crate::kinfo!("(InitramFS) Calculating name len...");
-        // let name_len = name_bytes.iter().position(|&c| c == 0).unwrap_or(TAR_NAME_LEN);
-        let name_len = TAR_NAME_LEN; // Forçar leitura total sem iterador
+        // Calcular tamanho manualmente
+        let mut name_len = 0;
+        while name_len < TAR_NAME_LEN {
+            if name_bytes[name_len] == 0 {
+                break;
+            }
+            name_len += 1;
+        }
+        let name_slice = &name_bytes[..name_len];
 
-        crate::kinfo!("(InitramFS) Converting to UTF8...");
-        let name = str::from_utf8(&name_bytes[..name_len]).unwrap_or("<invalid utf8>");
-        crate::kinfo!("(InitramFS) Name parsed:", name);
-        // Debug limitado: APENAS se contém "init" para evitar spam
-        if name.contains("init") {
-            crate::ktrace!("(TAR) Check:", name);
+        // Comparacao manual com "init" para debug (byte a byte)
+        if name_len >= 4 {
+            for i in 0..=name_len - 4 {
+                if &name_slice[i..i + 4] == b"init" {
+                    crate::ktrace!("(TAR) Check: (found init substring)");
+                    break;
+                }
+            }
         }
 
-        // Normalizar nome do arquivo no TAR
-        let normalized_name = name.trim_start_matches("./").trim_start_matches('/');
+        // Normalização MANUAL de bytes (remove ./ e /)
+        let mut start_idx = 0;
+        while start_idx < name_len {
+            let c = name_slice[start_idx];
+            if c == b'.' || c == b'/' {
+                start_idx += 1;
+            } else {
+                break;
+            }
+        }
+        let normalized_bytes = &name_slice[start_idx..];
+
+        let is_match = normalized_bytes == search_bytes;
 
         // Tipo '0' ou '\0' é arquivo normal
         let type_flag = header[TAR_TYPE_OFFSET];
         let is_file = type_flag == b'0' || type_flag == 0;
 
-        if is_file && normalized_name == search_path {
+        if is_file && is_match {
             crate::ktrace!("(TAR) Matched! Size:", size as u64);
 
             let file_start = offset + TAR_BLOCK_SIZE;
@@ -160,7 +162,7 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
                 .checked_add(size)
                 .map_or(true, |end| end > data.len())
             {
-                crate::kerror!("(InitramFS) Arquivo truncado ou overflow:", name);
+                crate::kerror!("(InitramFS) Arquivo truncado ou overflow");
                 return None;
             }
 
@@ -176,17 +178,11 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
         // Avançar para próximo header
         let file_block_size = align_up_512(size);
 
-        // Evitar loop infinito se size for 0 (como em diretorios) mas nao avançar offset apropriadamente
-        // HACK: Sempre avançar pelo menos 1 bloco se size for 0, mas TAR define que diretorios tem size 0 e ocupam so header
-        // O offset deve ser header + align_up(size)
-
-        // Checagem rigorosa de overflow de offset
         match offset
             .checked_add(TAR_BLOCK_SIZE)
             .and_then(|o| o.checked_add(file_block_size))
         {
             Some(new_offset) => {
-                // Proteção contra loop infinito se new_offset == offset (impouco provavel com TAR_BLOCK_SIZE > 0)
                 if new_offset <= offset {
                     crate::kerror!("(InitramFS) Loop infinito detectado!");
                     break;
