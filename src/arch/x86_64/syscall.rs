@@ -25,6 +25,7 @@ const MSR_STAR: u32 = 0xC0000081;
 const MSR_LSTAR: u32 = 0xC0000082;
 const MSR_FMASK: u32 = 0xC0000084;
 const MSR_KERNEL_GS_BASE: u32 = 0xC0000102;
+const MSR_GS_BASE: u32 = 0xC0000101;
 
 // Flags
 const EFER_SCE: u64 = 1; // System Call Extensions
@@ -132,12 +133,23 @@ pub unsafe fn init() {
     // e permitir que o kernel decida quando habilitar.
     Cpu::write_msr(MSR_FMASK, RFLAGS_IF);
 
-    // 5. Configurar KERNEL_GS_BASE para apontar para SYSCALL_STACK
-    // Quando swapgs é executado, GS base vai trocar com este MSR.
-    // Em user mode, GS base é 0 (ou TLS do user). Após swapgs, GS base = SYSCALL_STACK.
+    // 5. Configurar GS Base para syscalls
+    // INICIALIZAÇÃO CRÍTICA:
+    // Estamos em Kernel Mode. O 'Active' GS Base deve apontar para as estruturas do Kernel (SYSCALL_STACK).
+    // O 'Shadow' (KERNEL_GS_BASE MSR) deve guardar o valor do GS do usuário (ou 0 inicialmente).
+    // Quando 'iretq_restore' executar 'swapgs', ele trocará Active(Kernel) <-> Shadow(User).
+    // Assim, o User Mode rodará com GS=User e MSR=Kernel.
+    // Quando 'syscall' ocorrer, 'swapgs' trocará Active(User) <-> Shadow(Kernel).
     let syscall_stack_addr = core::ptr::addr_of!(SYSCALL_STACK) as u64;
-    Cpu::write_msr(MSR_KERNEL_GS_BASE, syscall_stack_addr);
-    crate::kinfo!("(Syscall) KERNEL_GS_BASE configurado:", syscall_stack_addr);
+
+    // Configurar Active GS Base (para uso imediato no Kernel)
+    Cpu::write_msr(MSR_GS_BASE, syscall_stack_addr);
+
+    // Configurar Shadow GS Base (para ser carregado via swapgs ao ir para user)
+    Cpu::write_msr(MSR_KERNEL_GS_BASE, 0);
+
+    crate::kinfo!("(Syscall) GS_BASE inicializado:", syscall_stack_addr);
+    crate::kinfo!("(Syscall) KERNEL_GS_BASE (Shadow) inicializado com 0");
 }
 
 /// Configura o kernel RSP para a task atual.

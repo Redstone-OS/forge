@@ -146,18 +146,108 @@ extern "x86-interrupt" fn general_protection_handler(
 
 extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, error_code: u64) {
     let cr2: u64;
+    let cr3: u64;
     unsafe {
         core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
+        core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
     }
 
+    crate::kerror!("========================================");
     crate::kerror!("EXCEPTION: PAGE FAULT (#PF)");
-    crate::kerror!("Accessed Address:", cr2);
+    crate::kerror!("========================================");
+    crate::kerror!("CR2 (Faulting Addr):", cr2);
+    crate::kerror!("CR3 (Page Table):", cr3);
     crate::kerror!("Error Code:", error_code);
     crate::kerror!("RIP:", stack_frame.instruction_pointer);
     crate::kerror!("CS:", stack_frame.code_segment);
     crate::kerror!("RFLAGS:", stack_frame.cpu_flags);
     crate::kerror!("RSP:", stack_frame.stack_pointer);
     crate::kerror!("SS:", stack_frame.stack_segment);
+
+    // Decodificar error code:
+    // Bit 0 (P): 0 = página não presente, 1 = proteção violada
+    // Bit 1 (W): 0 = leitura, 1 = escrita
+    // Bit 2 (U): 0 = kernel, 1 = user mode
+    // Bit 3 (R): 1 = reserved bit violation
+    // Bit 4 (I): 1 = instruction fetch
+    let p = (error_code & 1) != 0;
+    let w = (error_code & 2) != 0;
+    let u = (error_code & 4) != 0;
+    let r = (error_code & 8) != 0;
+    let i = (error_code & 16) != 0;
+
+    crate::kerror!("----------------------------------------");
+    crate::kerror!("[PF] Error Code Decode:");
+    crate::kerror!("[PF] P(present):", if p { 1u64 } else { 0u64 });
+    crate::kerror!("[PF] W(write):", if w { 1u64 } else { 0u64 });
+    crate::kerror!("[PF] U(user):", if u { 1u64 } else { 0u64 });
+    crate::kerror!("[PF] R(rsvd):", if r { 1u64 } else { 0u64 });
+    crate::kerror!("[PF] I(instr):", if i { 1u64 } else { 0u64 });
+
+    // Interpretação humana
+    if p {
+        crate::kerror!("[PF] Causa: Violação de PROTEÇÃO (página presente mas acesso negado)");
+    } else {
+        crate::kerror!("[PF] Causa: Página NÃO MAPEADA");
+    }
+
+    if u {
+        crate::kerror!("[PF] Contexto: USER MODE tentou acessar");
+    } else {
+        crate::kerror!("[PF] Contexto: KERNEL MODE tentou acessar");
+    }
+
+    if w {
+        crate::kerror!("[PF] Operação: ESCRITA");
+    } else if i {
+        crate::kerror!("[PF] Operação: INSTRUCTION FETCH");
+    } else {
+        crate::kerror!("[PF] Operação: LEITURA");
+    }
+
+    // Tentar ler bytes no RIP para ver a instrução
+    crate::kerror!("----------------------------------------");
+    crate::kerror!("[PF] Tentando ler bytes em RIP...");
+
+    // Só tenta ler se estiver em kernel space ou se tivermos acesso
+    let rip = stack_frame.instruction_pointer;
+    if rip >= 0xFFFF_8000_0000_0000 {
+        // Kernel space - podemos ler diretamente
+        unsafe {
+            let ptr = rip as *const u8;
+            crate::kerror!("[PF] Byte[0] @RIP:", core::ptr::read_volatile(ptr) as u64);
+            crate::kerror!(
+                "[PF] Byte[1] @RIP+1:",
+                core::ptr::read_volatile(ptr.add(1)) as u64
+            );
+            crate::kerror!(
+                "[PF] Byte[2] @RIP+2:",
+                core::ptr::read_volatile(ptr.add(2)) as u64
+            );
+            crate::kerror!(
+                "[PF] Byte[3] @RIP+3:",
+                core::ptr::read_volatile(ptr.add(3)) as u64
+            );
+        }
+    } else {
+        crate::kerror!("[PF] RIP em USER SPACE - não podemos ler diretamente do handler");
+        crate::kerror!(
+            "[PF] User RIP offset from 0x400000:",
+            rip.wrapping_sub(0x400000)
+        );
+    }
+
+    // Se o endereço acessado parece ser uma porta I/O
+    if cr2 < 0x10000 {
+        crate::kerror!("----------------------------------------");
+        crate::kerror!("[PF] NOTA: Endereço baixo pode indicar tentativa de I/O!");
+        if cr2 == 0x3F8 {
+            crate::kerror!("[PF] 0x3F8 = COM1 Serial Port!");
+            crate::kerror!("[PF] User mode tentou acessar porta serial diretamente?");
+        }
+    }
+
+    crate::kerror!("========================================");
 
     loop {
         crate::arch::Cpu::halt();

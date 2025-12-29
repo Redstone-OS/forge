@@ -71,6 +71,63 @@ pub unsafe fn switch(old: &mut CpuContext, new: &CpuContext) {
 /// - ctx deve ser um ponteiro válido
 /// - Nunca retorna
 pub unsafe fn jump_to_context(ctx: &CpuContext) -> ! {
+    crate::ktrace!("(Switch) jump_to_context ENTRADA");
+    crate::ktrace!("(Switch) ctx.rsp=", ctx.rsp);
+    crate::ktrace!("(Switch) ctx.rip=", ctx.rip);
+
+    // Verificar se a página do entry point está acessível
+    let trapframe = ctx.rsp as *const u64;
+    let user_entry = *trapframe;
+    crate::ktrace!("(Switch) User entry point=", user_entry);
+
+    // Verificar primeiros 4 bytes do código (deve ser B8 F3 00 00)
+    let entry_ptr = user_entry as *const u8;
+    let b0 = core::ptr::read_volatile(entry_ptr);
+    let b1 = core::ptr::read_volatile(entry_ptr.add(1));
+    let b8 = core::ptr::read_volatile(entry_ptr.add(8));
+    let ba = core::ptr::read_volatile(entry_ptr.add(0xA));
+    crate::ktrace!("(Switch) Code byte[0]=", b0 as u64);
+    crate::ktrace!("(Switch) Code byte[1]=", b1 as u64);
+    crate::ktrace!("(Switch) Code byte[8]=", b8 as u64);
+    crate::ktrace!("(Switch) Code byte[A]=", ba as u64);
+
+    // Verificar mapeamento de 0x400000
+    let cr3: u64;
+    core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack));
+
+    let vaddr = 0x400000u64;
+    let pml4_idx = (vaddr >> 39) & 0x1FF;
+    let pdpt_idx = (vaddr >> 30) & 0x1FF;
+    let pd_idx = (vaddr >> 21) & 0x1FF;
+    let pt_idx = (vaddr >> 12) & 0x1FF;
+
+    let pml4_ptr = cr3 as *const u64;
+    let pml4_entry = core::ptr::read_volatile(pml4_ptr.add(pml4_idx as usize));
+
+    if pml4_entry & 1 != 0 {
+        let pdpt_phys = pml4_entry & 0x000F_FFFF_FFFF_F000;
+        let pdpt_ptr = pdpt_phys as *const u64;
+        let pdpt_entry = core::ptr::read_volatile(pdpt_ptr.add(pdpt_idx as usize));
+
+        if pdpt_entry & 1 != 0 && (pdpt_entry & (1 << 7)) == 0 {
+            let pd_phys = pdpt_entry & 0x000F_FFFF_FFFF_F000;
+            let pd_ptr = pd_phys as *const u64;
+            let pd_entry = core::ptr::read_volatile(pd_ptr.add(pd_idx as usize));
+
+            let is_huge_2mb = (pd_entry & (1 << 7)) != 0;
+            if is_huge_2mb {
+                crate::kerror!("(Switch) ERRO: 0x400000 ainda usa HUGE PAGE 2MB!");
+            } else if pd_entry & 1 != 0 {
+                let pt_phys = pd_entry & 0x000F_FFFF_FFFF_F000;
+                let pt_ptr = pt_phys as *const u64;
+                let pt_entry = core::ptr::read_volatile(pt_ptr.add(pt_idx as usize));
+                let frame_phys = pt_entry & 0x000F_FFFF_FFFF_F000;
+                crate::ktrace!("(Switch) Frame físico 0x400000=", frame_phys);
+            }
+        }
+    }
+
+    crate::ktrace!("(Switch) Chamando jump_to_context_asm...");
     jump_to_context_asm(ctx as *const CpuContext as u64);
 }
 
@@ -129,10 +186,9 @@ jump_to_context_asm:
     // Switch Stack
     mov rsp, [rdi + 0x30]
 
-    // Push RIP and ret to it
+    // Jump to RIP directly (avoid push which writes to memory)
     mov rax, [rdi + 0x38]
-    push rax
-    ret
+    jmp rax
 
 .global iretq_restore
 iretq_restore:

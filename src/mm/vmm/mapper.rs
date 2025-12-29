@@ -55,16 +55,96 @@ pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u
         let src_ptr = current_pml4 as *const u64;
         let dst_ptr = pml4_phys as *mut u64;
 
-        // Copiar metada superior (Kernel)
+        // Copiar metade superior (Kernel)
         for i in 256..512 {
             let entry = core::ptr::read_volatile(src_ptr.add(i));
             core::ptr::write_volatile(dst_ptr.add(i), entry);
         }
 
-        // Copiar Identity Map (Entry 0) para que o Kernel possa acessar endereços físicos (Initramfs, PMM)
-        // enquanto estiver rodando com o novo CR3.
+        // Para Entry 0 (Identity Map), fazemos DEEP COPY completo das tabelas
+        // Isso permite que o kernel acesse memória baixa (Initramfs, etc.)
+        // enquanto permite que o ELF loader crie mapeamentos independentes.
+        //
+        // IMPORTANTE: Precisamos copiar PDPT E PD[0] para que as modificações
+        // feitas pelo ELF loader não afetem as tabelas do kernel.
         let entry0 = core::ptr::read_volatile(src_ptr.add(0));
-        core::ptr::write_volatile(dst_ptr.add(0), entry0);
+        if entry0 & FLAG_PRESENT != 0 {
+            // 1. Alocar nova PDPT para Entry 0
+            let new_pdpt_frame = pmm
+                .allocate_frame()
+                .ok_or("(Mapper) OOM allocating PDPT copy")?;
+            let new_pdpt_phys = new_pdpt_frame.as_u64();
+            zero_page(new_pdpt_phys);
+
+            // 2. Copiar entries da PDPT original, mas fazer deep copy de PD[0]
+            let src_pdpt = (entry0 & PAGE_MASK) as *const u64;
+            let dst_pdpt = new_pdpt_phys as *mut u64;
+
+            for i in 0..512 {
+                let pdpt_entry = core::ptr::read_volatile(src_pdpt.add(i));
+
+                // Para PDPT[0] (range 0-1GB onde fica 0x400000), fazer deep copy da PD
+                if i == 0 && (pdpt_entry & FLAG_PRESENT != 0) && (pdpt_entry & (1 << 7) == 0) {
+                    // Não é huge page (1GB), então há uma PD
+                    let new_pd_frame = pmm
+                        .allocate_frame()
+                        .ok_or("(Mapper) OOM allocating PD copy")?;
+                    let new_pd_phys = new_pd_frame.as_u64();
+                    zero_page(new_pd_phys);
+
+                    // Copiar entries da PD original
+                    let src_pd = (pdpt_entry & PAGE_MASK) as *const u64;
+                    let dst_pd = new_pd_phys as *mut u64;
+
+                    for j in 0..512 {
+                        let pd_entry = core::ptr::read_volatile(src_pd.add(j));
+
+                        // Para PD[2] (range 4MB-6MB onde fica 0x400000):
+                        // - Se for huge page 2MB, NÃO copiar! Deixar zerada.
+                        // - Se for PT normal, fazer deep copy.
+                        // 0x400000 >> 21 = 2, então é PD entry 2
+                        if j == 2 {
+                            let is_huge_2mb = (pd_entry & (1 << 7)) != 0;
+                            if pd_entry & FLAG_PRESENT != 0 && !is_huge_2mb {
+                                // É uma PT normal, fazer deep copy
+                                let new_pt_frame = pmm
+                                    .allocate_frame()
+                                    .ok_or("(Mapper) OOM allocating PT copy")?;
+                                let new_pt_phys = new_pt_frame.as_u64();
+
+                                // Copiar entries da PT original
+                                let src_pt = (pd_entry & PAGE_MASK) as *const u64;
+                                let dst_pt = new_pt_phys as *mut u64;
+                                for k in 0..512 {
+                                    let pt_entry = core::ptr::read_volatile(src_pt.add(k));
+                                    core::ptr::write_volatile(dst_pt.add(k), pt_entry);
+                                }
+
+                                // Nova PD entry apontando para PT copiada
+                                let new_pd_entry = new_pt_phys | (pd_entry & 0xFFF);
+                                core::ptr::write_volatile(dst_pd.add(j), new_pd_entry);
+                            }
+                            // Se for huge page 2MB ou não presente, NÃO copiar!
+                            // Deixar PD[2] zerada para que o ELF loader crie mapeamento limpo.
+                        } else {
+                            // Outras entries: copiar diretamente (identity map para outras regiões)
+                            core::ptr::write_volatile(dst_pd.add(j), pd_entry);
+                        }
+                    }
+
+                    // Nova PDPT entry apontando para PD copiada
+                    let new_pdpt_entry = new_pd_phys | (pdpt_entry & 0xFFF);
+                    core::ptr::write_volatile(dst_pdpt.add(i), new_pdpt_entry);
+                } else {
+                    // Outras entries: copiar diretamente (identity map para memória alta)
+                    core::ptr::write_volatile(dst_pdpt.add(i), pdpt_entry);
+                }
+            }
+
+            // 3. Criar nova Entry 0 apontando para a PDPT copiada
+            let new_entry0 = new_pdpt_phys | (entry0 & 0xFFF);
+            core::ptr::write_volatile(dst_ptr.add(0), new_entry0);
+        }
     }
 
     Ok(pml4_phys)

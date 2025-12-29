@@ -48,9 +48,19 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
         let phdr = unsafe { &*(data.as_ptr().add(offset) as *const Elf64_Phdr) };
 
         if phdr.p_type == PT_LOAD {
+            crate::ktrace!("(ELF) ----------------------------------------");
             crate::ktrace!("(ELF) LOAD Segment:", phdr.p_vaddr);
             crate::ktrace!("(ELF) MemSize:", phdr.p_memsz);
             crate::ktrace!("(ELF) FileSize:", phdr.p_filesz);
+            crate::ktrace!("(ELF) p_flags:", phdr.p_flags as u64);
+
+            // Decodificar flags
+            let is_r = (phdr.p_flags & PF_R) != 0;
+            let is_w = (phdr.p_flags & PF_W) != 0;
+            let is_x = (phdr.p_flags & PF_X) != 0;
+            crate::ktrace!("(ELF) R:", if is_r { 1u64 } else { 0u64 });
+            crate::ktrace!("(ELF) W:", if is_w { 1u64 } else { 0u64 });
+            crate::ktrace!("(ELF) X:", if is_x { 1u64 } else { 0u64 });
 
             // Flags de mapeamento
             let mut flags = MapFlags::PRESENT | MapFlags::USER;
@@ -60,6 +70,8 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
             if phdr.p_flags & PF_X != 0 {
                 flags |= MapFlags::EXECUTABLE;
             }
+
+            crate::ktrace!("(ELF) MapFlags:", flags.bits() as u64);
 
             // Alocar e mapear páginas
             let start_page = phdr.p_vaddr & !(FRAME_SIZE - 1);
@@ -128,13 +140,8 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
             let file_offset = phdr.p_offset as usize;
             let file_size = phdr.p_filesz as usize;
 
-            // crate::ktrace!("(ELF) Copying segment data...");
-            // crate::ktrace!("(ELF) file_offset:", file_offset);
-            // crate::ktrace!("(ELF) file_size:", file_size);
-
             if file_size > 0 {
                 let dest = phdr.p_vaddr as *mut u8;
-                // let src = &data[file_offset..file_offset + file_size];
 
                 // Validar bounds do arquivo
                 if file_offset + file_size > data.len() {
@@ -143,14 +150,12 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
                 }
 
                 unsafe {
-                    // core::ptr::copy_nonoverlapping(src.as_ptr(), dest, file_size);
                     // Use Manual Copy to avoid intrinsics
                     for i in 0..file_size {
                         let b = data[file_offset + i];
                         dest.add(i).write_volatile(b);
                     }
                 }
-                crate::ktrace!("(ELF) Copy done (volatile)");
             }
         }
     }

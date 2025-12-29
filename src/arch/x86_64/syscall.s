@@ -59,7 +59,10 @@ syscall_entry:
     pop rdx
     pop rcx
     pop rbx
-    pop rax     # RAX foi modificado pelo dispatcher com o resultado
+    # Carregar resultado da syscall de ctx.rax (que o dispatcher modificou)
+    # O dispatcher escreve em [rsp], que é onde está o rax salvo
+    mov rax, [rsp]     # Carregar o resultado que o dispatcher escreveu
+    add rsp, 8         # Pular a posição do rax no stack
 
     # Trocar GS de volta para userspace
     swapgs
