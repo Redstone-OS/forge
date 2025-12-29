@@ -59,7 +59,9 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     };
 
     // 3. Criar task
+    crate::kinfo!("(Spawn) Creating task struct...");
     let mut task = crate::sched::task::Task::new(path);
+    crate::kinfo!("(Spawn) Task created via Task::new");
 
     // 4. Alocar e Mapear Stack de Usuário
     {
