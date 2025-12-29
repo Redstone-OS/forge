@@ -19,12 +19,119 @@ const FLAG_NO_EXEC: u64 = 1 << 63;
 
 /// Lê o registrador CR3 (endereço físico da PML4)
 #[inline]
-fn read_cr3() -> u64 {
+pub fn read_cr3() -> u64 {
     let cr3: u64;
     unsafe {
         asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
     }
     cr3 & PAGE_MASK
+}
+
+/// Escreve no registrador CR3
+#[inline]
+pub unsafe fn write_cr3(value: u64) {
+    asm!("mov cr3, {}", in(reg) value, options(nostack, preserves_flags));
+}
+
+/// Cria uma nova PML4 (Page map Level 4) para um processo
+/// Copia a parte do Kernel (Higher Half) da PML4 atual.
+pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u64, &'static str> {
+    // Alocar frame para a nova PML4
+    let frame = pmm.allocate_frame().ok_or("(Mapper) OOM allocating PML4")?;
+    let pml4_phys = frame.as_u64();
+
+    // Zerar (IMPORTANTE para garantir que USER space esteja vazio)
+    unsafe {
+        zero_page(pml4_phys);
+    }
+
+    // Copiar kernel mappings (Entradas 256 a 511)
+    let current_pml4 = read_cr3();
+
+    // Acessar fisicamente
+    // Nota: Como estamos em Identity Map nas tabelas, podemos ler diretamente
+    unsafe {
+        let src_ptr = current_pml4 as *const u64;
+        let dst_ptr = pml4_phys as *mut u64;
+
+        // Copiar metada superior (Kernel)
+        for i in 256..512 {
+            let entry = core::ptr::read_volatile(src_ptr.add(i));
+            core::ptr::write_volatile(dst_ptr.add(i), entry);
+        }
+
+        // Copiar Identity Map (Entry 0) para que o Kernel possa acessar endereços físicos (Initramfs, PMM)
+        // enquanto estiver rodando com o novo CR3.
+        let entry0 = core::ptr::read_volatile(src_ptr.add(0));
+        core::ptr::write_volatile(dst_ptr.add(0), entry0);
+    }
+
+    Ok(pml4_phys)
+}
+
+/// Concede acesso de usuário para um endereço virtual existente (Atualiza flags)
+pub fn grant_user_access(page_virt: u64) {
+    let pml4_phys = read_cr3();
+
+    let pml4_idx = ((page_virt >> 39) & 0x1FF) as usize;
+    let pdpt_idx = ((page_virt >> 30) & 0x1FF) as usize;
+    let pd_idx = ((page_virt >> 21) & 0x1FF) as usize;
+    let pt_idx = ((page_virt >> 12) & 0x1FF) as usize;
+
+    unsafe {
+        // PML4
+        let mut pml4e = get_table_entry(pml4_phys, pml4_idx);
+        if pml4e & FLAG_PRESENT != 0 {
+            pml4e |= FLAG_USER;
+            set_table_entry(pml4_phys, pml4_idx, pml4e);
+        } else {
+            return;
+        }
+
+        let pdpt_phys = pml4e & PAGE_MASK;
+
+        // PDPT
+        let mut pdpte = get_table_entry(pdpt_phys, pdpt_idx);
+        if pdpte & FLAG_PRESENT != 0 {
+            pdpte |= FLAG_USER;
+            set_table_entry(pdpt_phys, pdpt_idx, pdpte);
+
+            // Huge Page Check (1GB)
+            if pdpte & (1 << 7) != 0 {
+                return;
+            }
+        } else {
+            return;
+        }
+
+        let pd_phys = pdpte & PAGE_MASK;
+
+        // PD
+        let mut pde = get_table_entry(pd_phys, pd_idx);
+        if pde & FLAG_PRESENT != 0 {
+            pde |= FLAG_USER;
+            set_table_entry(pd_phys, pd_idx, pde);
+
+            // Huge Page Check (2MB)
+            if pde & (1 << 7) != 0 {
+                return;
+            }
+        } else {
+            return;
+        }
+
+        let pt_phys = pde & PAGE_MASK;
+
+        // PT
+        let mut pte = get_table_entry(pt_phys, pt_idx);
+        if pte & FLAG_PRESENT != 0 {
+            pte |= FLAG_USER;
+            set_table_entry(pt_phys, pt_idx, pte);
+        }
+
+        // Flush TLB
+        asm!("invlpg [{}]", in(reg) page_virt, options(nostack, preserves_flags));
+    }
 }
 
 /// Obtém entrada de uma tabela de página

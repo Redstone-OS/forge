@@ -20,6 +20,8 @@ pub struct Task {
     pub kernel_stack: VirtAddr,
     /// Stack pointer do usuário
     pub user_stack: VirtAddr,
+    /// CR3 (Physical Address da PML4)
+    pub cr3: u64,
     /// Prioridade (0 = maior)
     pub priority: u8,
     /// Nome (debug)
@@ -75,6 +77,7 @@ impl Task {
             context: CpuContext::new(),
             kernel_stack: VirtAddr::new(0),
             user_stack: VirtAddr::new(0),
+            cr3: 0, // Será definido no spawn
             priority: 128,
             name: name_buf,
         };

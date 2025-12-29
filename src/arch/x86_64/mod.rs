@@ -22,10 +22,12 @@ pub use cpu::Cpu;
 pub unsafe fn init_basics() {
     gdt::init();
     interrupts::init_idt();
-    // TODO: interrupts::init_pics(); // Se houver PIC legado.
-    // PICS geralmente são inicializados e *desabilitados* se usarmos APIC.
-    // Mas se o sistema depende de PIC inicialmente, deve inicializar.
-    // init_pics não existe em interrupts.rs ainda, então comentamos.
+    interrupts::init_pics(); // Remapear PIC para 32-47
+
+    // Inicializar PIT (Timer) - 100 Hz
+    crate::drivers::timer::pit::init(100);
+
+    // Inicializar syscall MSRs
 
     // Inicializar syscall MSRs
     syscall::init();

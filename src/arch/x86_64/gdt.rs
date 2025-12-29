@@ -226,7 +226,7 @@ pub unsafe fn init() {
     let tss_sel = TSS_SEL.0;
 
     core::arch::asm!(
-        "push {0}",           // Push CS (64-bit)
+        "push {0:r}",           // Push CS (64-bit)
         "lea {1}, [rip + 1f]", // Load return address (Intel syntax)
         "push {1}",           // Push RIP
         "retfq",                // Far return to reload CS

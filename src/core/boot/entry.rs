@@ -85,7 +85,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Iniciando Processo Init'");
     crate::core::process::spawn_init();
 
-    crate::kinfo!("'Inicialização do Kernel Concluída. Entrando em Loop Ocioso'");
+    crate::kinfo!("'Inicialização do Kernel Concluída'");
 
     // 9. Loop de Ociosidade (Idle Loop)
     cpuidle::enter_idle_loop();

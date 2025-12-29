@@ -113,21 +113,27 @@ pub fn schedule() {
         crate::ktrace!("(Sched) Primeira task, usando jump_to_context");
 
         // Obter referência ao contexto ANTES de mover next para CURRENT
+        // Precisamos do CR3 também
+        let next_ref = next.as_ref();
         let ctx_ptr =
-            &{ Pin::get_ref(next.as_ref()) }.context as *const crate::sched::context::CpuContext;
+            &{ Pin::get_ref(next_ref) }.context as *const crate::sched::context::CpuContext;
+        let new_cr3 = { Pin::get_ref(next_ref) }.cr3;
+
         *current_guard = Some(next);
 
         // Liberar o guard antes do jump (não vai retornar)
         drop(current_guard);
 
-        // Logar RIP alvo
+        // Logar RIP targets
         unsafe {
             crate::ktrace!("(Sched) Saltando para contexto. RIP=", (*ctx_ptr).rip);
-        }
-        crate::ktrace!("(Sched) Contexto PTR=", ctx_ptr as u64);
+            crate::ktrace!("(Sched) Contexto PTR=", ctx_ptr as u64);
+            crate::ktrace!("(Sched) Carregando CR3=", new_cr3);
 
-        // Saltar para o contexto da primeira task (nunca retorna)
-        unsafe {
+            if new_cr3 != 0 {
+                core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
+            }
+
             super::context::jump_to_context(&*ctx_ptr);
         }
     }

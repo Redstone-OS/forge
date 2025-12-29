@@ -43,6 +43,27 @@ impl SerialDebug for &str {
     }
 }
 
+impl SerialDebug for u8 {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_hex(*self as u64);
+    }
+}
+
+impl<T> SerialDebug for *const T {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_hex(*self as u64);
+    }
+}
+
+impl<T> SerialDebug for *mut T {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_hex(*self as u64);
+    }
+}
+
 /// Macro interna para escrita direta
 #[macro_export]
 macro_rules! kprint {

@@ -25,26 +25,74 @@ pub struct ExceptionStackFrame {
 /// Inicializa a Tabela de Descritores de Interrupção (IDT).
 /// Deve ser chamado no boot antes de habilitar interrupções.
 pub fn init_idt() {
-    // SAFETY: Acesso à estática mutável IDT é seguro aqui pois estamos no boot single-core
+    let idt = unsafe { &mut IDT };
+
+    // Debug: Print handler address
+    crate::kinfo!(
+        "(IDT) Divide Error Handler Addr: {:x}",
+        divide_error_handler as u64
+    );
+
+    idt.set_handler(0, divide_error_handler as u64);
+    idt.set_handler(3, breakpoint_handler as u64);
+    idt.set_handler(6, invalid_opcode_handler as u64);
+    idt.set_handler(8, double_fault_handler as u64);
+    idt.set_handler(13, general_protection_handler as u64);
+    idt.set_handler(14, page_fault_handler as u64);
+
+    // Remapear IRQs (PIC) -> 32..47
+    // Timer (IRQ 0) -> 32
+    idt.set_handler(32, irq_handler_stub as u64);
+    idt.set_handler(33, irq_handler_stub as u64); // KBD
+
     unsafe {
-        // Registrar handlers de exceção básicos
-        IDT.set_handler(0, divide_error_handler as u64);
-        IDT.set_handler(3, breakpoint_handler as u64);
-        IDT.set_handler(6, invalid_opcode_handler as u64);
-        IDT.set_handler(8, double_fault_handler as u64);
-        IDT.set_handler(13, general_protection_handler as u64);
-        IDT.set_handler(14, page_fault_handler as u64);
-
-        // Registrar handlers de IRQ (32-47)
-        // Por enquanto, stub genérico
-        // TODO: IRQ Router
-        for i in 32..48 {
-            IDT.set_handler(i, irq_handler_stub as u64);
-        }
-
-        // Carregar IDT
-        IDT.load();
+        idt.load();
     }
+}
+
+/// Inicializa e remapeia o PIC (Programmable Interrupt Controller) 8259
+/// Remapeia IRQs 0-15 para Vetores 32-47 para evitar conflito com Exceções da CPU (0-31).
+///
+/// # Safety
+///
+/// Realiza operações de I/O port inseguras.
+pub unsafe fn init_pics() {
+    use crate::arch::x86_64::ports::outb;
+
+    let pic1_command = 0x20;
+    let pic1_data = 0x21;
+    let pic2_command = 0xa0;
+    let pic2_data = 0xa1;
+
+    // ICW1: Init
+    outb(pic1_command, 0x11);
+    crate::arch::x86_64::ports::io_wait();
+    outb(pic2_command, 0x11);
+    crate::arch::x86_64::ports::io_wait();
+
+    // ICW2: Vector Offset
+    outb(pic1_data, 0x20); // Master -> 32
+    crate::arch::x86_64::ports::io_wait();
+    outb(pic2_data, 0x28); // Slave  -> 40
+    crate::arch::x86_64::ports::io_wait();
+
+    // ICW3: Cascading
+    outb(pic1_data, 4);
+    crate::arch::x86_64::ports::io_wait();
+    outb(pic2_data, 2);
+    crate::arch::x86_64::ports::io_wait();
+
+    // ICW4: 8086 Mode
+    outb(pic1_data, 0x01);
+    crate::arch::x86_64::ports::io_wait();
+    outb(pic2_data, 0x01);
+    crate::arch::x86_64::ports::io_wait();
+
+    // OCW1: Mask all interrupts
+    outb(pic1_data, 0xff);
+    outb(pic2_data, 0xff);
+
+    crate::kinfo!("(Arch) PICs remapped to 32-47 and masked.");
 }
 
 // =============================================================================
