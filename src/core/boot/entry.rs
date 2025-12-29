@@ -19,7 +19,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Configurar Log Serial para que possamos ver o que está acontecendo.
     // (Serial driver geralmente não precisa de heap)
     crate::drivers::serial::init();
-    crate::kinfo!("--- Iniciando Forge Kernel ---");
+    crate::kinfo!("--- 'Iniciando Forge Kernel' ---");
 
     // Validação da ABI do Bootloader
     if boot_info.magic != crate::core::boot::handoff::BOOT_INFO_MAGIC {
@@ -27,7 +27,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
         loop {}
     }
 
-    crate::kinfo!("Versão do Protocolo de Boot: {}", boot_info.version);
+    crate::kinfo!("Versão do Protocolo de Boot:", boot_info.version);
 
     // 2. Inicialização da Arquitetura (CPU, GDT, IDT, Interrupções)
     crate::kinfo!("Inicializando Arquitetura...");

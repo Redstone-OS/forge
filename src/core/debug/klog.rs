@@ -1,145 +1,122 @@
-/// Arquivo: core/debug/klog.rs
-///
-/// Propósito: Sistema centralizado de logging do kernel.
-/// Substitui macros ad-hoc println/print. Envia saída para serial (e futuramente framebuffer/log buffer).
-///
-/// Detalhes de Implementação:
-/// - Define níveis de severidade (Debug, Info, Warn, Error).
-/// - Macros expandem para chamadas de função estáticas para reduzir inchaço de código.
-/// - Depende de `crate::drivers::serial` para saída física.
-// Sistema de logging do kernel
+//! Sistema de Logging Simplificado
+//!
+//! Macros diretas para saída serial.
+//! Sem traits complexas, apenas texto e u64.
 
-// Nota: Assumimos que crate::drivers::serial existe e tem write_str/write_hex.
-// Se ainda não existir, isso causará erro de compilação até que o módulo drivers seja criado.
-use crate::drivers::serial;
-
-/// Nível de log
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u8)]
-pub enum LogLevel {
-    Debug = 0,
-    Info = 1,
-    Warn = 2,
-    Error = 3,
+/// Trait auxiliar para imprimir valores de tipos diferentes
+pub trait SerialDebug {
+    fn serial_debug(&self);
 }
 
-/// Emite uma linha de log
-pub fn log(level: LogLevel, message: &str) {
-    let prefix = match level {
-        LogLevel::Debug => "[DEBUG] ",
-        LogLevel::Info => "[INFO]  ",
-        LogLevel::Warn => "[WARN]  ",
-        LogLevel::Error => "[ERROR] ",
+impl SerialDebug for u64 {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_hex(*self);
+    }
+}
+
+impl SerialDebug for usize {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_hex(*self as u64);
+    }
+}
+
+impl SerialDebug for u32 {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_hex(*self as u64);
+    }
+}
+
+impl SerialDebug for i32 {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" 0x");
+        crate::drivers::serial::write_hex(*self as u64);
+    }
+}
+
+impl SerialDebug for &str {
+    fn serial_debug(&self) {
+        crate::drivers::serial::write_str(" ");
+        crate::drivers::serial::write_str(self);
+    }
+}
+
+/// Macro interna para escrita direta
+#[macro_export]
+macro_rules! kprint {
+    ($($arg:tt)*) => {
+        // TODO: Implementar quando tivermos core::fmt
     };
-
-    // SAFETY: Acesso à serial deve ser sincronizado internamente ou aceitamos corrupção em panic
-    serial::write_str(prefix);
-    serial::write_str(message);
-    serial::write_str("\n");
 }
 
-/// Trait para valores que podem ser logados
-pub trait LogValue {
-    fn log(&self);
-}
-
-impl LogValue for u64 {
-    fn log(&self) {
-        serial::write_str(" 0x");
-        serial::write_hex(*self);
-    }
-}
-
-impl LogValue for i32 {
-    fn log(&self) {
-        serial::write_str(" 0x");
-        serial::write_hex(*self as u64);
-    }
-}
-
-impl LogValue for u32 {
-    fn log(&self) {
-        serial::write_str(" 0x");
-        serial::write_hex(*self as u64);
-    }
-}
-
-impl LogValue for isize {
-    fn log(&self) {
-        serial::write_str(" 0x");
-        serial::write_hex(*self as u64);
-    }
-}
-
-impl LogValue for usize {
-    fn log(&self) {
-        serial::write_str(" 0x");
-        serial::write_hex(*self as u64);
-    }
-}
-
-impl LogValue for &str {
-    fn log(&self) {
-        serial::write_str(" ");
-        serial::write_str(self);
-    }
-}
-
-/// Emite log com valor genérico
-pub fn log_val(level: LogLevel, message: &str, value: impl LogValue) {
-    let prefix = match level {
-        LogLevel::Debug => "[DEBUG] ",
-        LogLevel::Info => "[INFO]  ",
-        LogLevel::Warn => "[WARN]  ",
-        LogLevel::Error => "[ERROR] ",
-    };
-
-    serial::write_str(prefix);
-    serial::write_str(message);
-    value.log();
-    serial::write_str("\n");
-}
-
-// Macros de conveniência
-
+/// Info Log
 #[macro_export]
 macro_rules! kinfo {
     ($msg:expr) => {
-        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Info, $msg)
+        $crate::drivers::serial::write_str("[INFO]  ");
+        $crate::drivers::serial::write_str($msg);
+        $crate::drivers::serial::write_str("\n");
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Info, $msg, $val)
+        $crate::drivers::serial::write_str("[INFO]  ");
+        $crate::drivers::serial::write_str($msg);
+        $crate::core::debug::klog::SerialDebug::serial_debug(&$val);
+        $crate::drivers::serial::write_str("\n");
     };
 }
 
+/// Warn Log
 #[macro_export]
 macro_rules! kwarn {
     ($msg:expr) => {
-        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Warn, $msg)
+        $crate::drivers::serial::write_str("[WARN]  ");
+        $crate::drivers::serial::write_str($msg);
+        $crate::drivers::serial::write_str("\n");
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Warn, $msg, $val)
+        $crate::drivers::serial::write_str("[WARN]  ");
+        $crate::drivers::serial::write_str($msg);
+        $crate::core::debug::klog::SerialDebug::serial_debug(&$val);
+        $crate::drivers::serial::write_str("\n");
     };
 }
 
+/// Error Log
 #[macro_export]
 macro_rules! kerror {
     ($msg:expr) => {
-        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Error, $msg)
+        $crate::drivers::serial::write_str("[ERROR] ");
+        $crate::drivers::serial::write_str($msg);
+        $crate::drivers::serial::write_str("\n");
     };
     ($msg:expr, $val:expr) => {
-        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Error, $msg, $val)
+        $crate::drivers::serial::write_str("[ERROR] ");
+        $crate::drivers::serial::write_str($msg);
+        $crate::core::debug::klog::SerialDebug::serial_debug(&$val);
+        $crate::drivers::serial::write_str("\n");
     };
 }
 
+/// Debug Log (Compilado apenas em debug/test ou se feature estiver ativa)
 #[macro_export]
 macro_rules! kdebug {
     ($msg:expr) => {
         #[cfg(debug_assertions)]
-        $crate::core::debug::klog::log($crate::core::debug::klog::LogLevel::Debug, $msg)
+        {
+            $crate::drivers::serial::write_str("[DEBUG] ");
+            $crate::drivers::serial::write_str($msg);
+            $crate::drivers::serial::write_str("\n");
+        }
     };
     ($msg:expr, $val:expr) => {
         #[cfg(debug_assertions)]
-        $crate::core::debug::klog::log_val($crate::core::debug::klog::LogLevel::Debug, $msg, $val)
+        {
+            $crate::drivers::serial::write_str("[DEBUG] ");
+            $crate::drivers::serial::write_str($msg);
+            $crate::core::debug::klog::SerialDebug::serial_debug(&$val);
+            $crate::drivers::serial::write_str("\n");
+        }
     };
 }

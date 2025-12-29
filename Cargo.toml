@@ -24,11 +24,11 @@ default = []
 
 [profile.release]
 panic = "abort"
-opt-level = "s"
+opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
 debug = 0
-debug-assertions = false
+debug-assertions = true
 overflow-checks = false
 incremental = false
