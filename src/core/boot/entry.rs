@@ -62,11 +62,26 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Inicializando SMP'");
     crate::core::smp::bringup::init();
 
+    // 6.5 Inicializar VFS (Sistema de Arquivos Virtual)
+    // Necessário antes de qualquer operação de arquivo
+    crate::fs::vfs::init();
+
     // 7. Executar Initcalls (Drivers, Filesystems, etc.)
+
     crate::kinfo!("'Executando Initcalls'");
     crate::core::boot::initcall::run_initcalls();
 
+    // 7.5. Inicializar InitRAMFS
+    if boot_info.initramfs_addr != 0 && boot_info.initramfs_size > 0 {
+        crate::kinfo!("'Inicializando InitRAMFS'");
+        let addr = crate::mm::VirtAddr::new(boot_info.initramfs_addr);
+        crate::fs::initramfs::init(addr, boot_info.initramfs_size as usize);
+    } else {
+        crate::kwarn!("InitRAMFS não encontrado!");
+    }
+
     // 8. Inicialização do Userspace (Init Process)
+
     crate::kinfo!("'Iniciando Processo Init'");
     crate::core::process::spawn_init();
 

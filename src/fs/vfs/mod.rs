@@ -87,12 +87,12 @@ pub fn init() {
         (3, "state"),
         (4, "data"),
         (5, "users"),
-        (6, "apps"),
-        (7, "snapshots"),
-        (8, "dev"),  // Necessário para devfs
-        (9, "proc"), // Necessário para procfs
-        (10, "sys"), // Necessário para sysfs
-        (11, "tmp"), // Utils
+        // (6, "apps"),
+        // (7, "snapshots"),
+        // (8, "dev"),  // Necessário para devfs
+        // (9, "proc"), // Necessário para procfs
+        // (10, "sys"), // Necessário para sysfs
+        // (11, "tmp"), // Utils
     ];
 
     for (id, name) in dirs {
