@@ -97,7 +97,7 @@ pub fn init() {
 
     for (id, name) in dirs {
         inodes.insert(id, create_dir_inode(id));
-        crate::kinfo!("(VFS) Criado diretório /", name);
+        // crate::kinfo!("(VFS) Criado diretório /", name);
     }
 }
 

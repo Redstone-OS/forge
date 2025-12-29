@@ -105,11 +105,18 @@ pub fn schedule() {
         crate::ktrace!("(Sched) Primeira task, usando jump_to_context");
 
         // Obter referência ao contexto ANTES de mover next para CURRENT
-        let ctx_ptr = &unsafe { Pin::get_ref(next.as_ref()) }.context as *const _;
+        let ctx_ptr = &unsafe { Pin::get_ref(next.as_ref()) }.context
+            as *const crate::sched::context::CpuContext;
         *current_guard = Some(next);
 
         // Liberar o guard antes do jump (não vai retornar)
         drop(current_guard);
+
+        // Logar RIP alvo
+        unsafe {
+            crate::ktrace!("(Sched) Saltando para contexto. RIP=", (*ctx_ptr).rip);
+        }
+        crate::ktrace!("(Sched) Contexto PTR=", ctx_ptr as u64);
 
         // Saltar para o contexto da primeira task (nunca retorna)
         unsafe {

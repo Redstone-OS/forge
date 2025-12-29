@@ -110,7 +110,7 @@ impl SlabAllocator {
     /// # Layout em Memória
     /// `[ CANARY_START (8B) | PADDING (Align) | DADOS USUÁRIO | CANARY_END (8B) ]`
     pub unsafe fn alloc(&mut self, layout: Layout, buddy: &mut BuddyAllocator) -> *mut u8 {
-        crate::ktrace!("(Slab) alloc: [S1] entrada");
+        // crate::ktrace!("(Slab) alloc: [S1] entrada");
 
         // Calcular tamanho total necessário incluindo Canaries e alinhamento
         let header_size = Self::align_up(CANARY_SIZE, layout.align());
@@ -119,17 +119,17 @@ impl SlabAllocator {
 
         let total_size = header_size + payload_size + footer_size;
 
-        crate::ktrace!("(Slab) alloc: [S2] total_size=", total_size as u64);
+        // crate::ktrace!("(Slab) alloc: [S2] total_size=", total_size as u64);
 
         if total_size > MAX_BLOCK_SIZE {
-            crate::ktrace!("(Slab) alloc: [S2a] -> buddy fallback");
+            // crate::ktrace!("(Slab) alloc: [S2a] -> buddy fallback");
             return buddy.alloc(layout);
         }
 
-        crate::ktrace!("(Slab) alloc: [S3] index_for...");
+        // crate::ktrace!("(Slab) alloc: [S3] index_for...");
         let idx = self.index_for(total_size);
 
-        crate::ktrace!("(Slab) alloc: [S4] alloc_block idx=", idx as u64);
+        // crate::ktrace!("(Slab) alloc: [S4] alloc_block idx=", idx as u64);
 
         // --- Início da lógica de alocação de bloco (Inner Alloc) ---
         let ptr = self.alloc_block(idx, buddy);
@@ -138,13 +138,13 @@ impl SlabAllocator {
             return core::ptr::null_mut();
         }
 
-        crate::ktrace!("(Slab) alloc: [S5] ptr=", ptr as u64);
+        // crate::ktrace!("(Slab) alloc: [S5] ptr=", ptr as u64);
         // --- Fim Inner Alloc ---
 
-        crate::ktrace!("(Slab) alloc: [S6] header_size=", header_size as u64);
+        // crate::ktrace!("(Slab) alloc: [S6] header_size=", header_size as u64);
         // Escrever Canaries
         let user_ptr = ptr.add(header_size);
-        crate::ktrace!("(Slab) alloc: [S7] user_ptr=", user_ptr as u64);
+        // crate::ktrace!("(Slab) alloc: [S7] user_ptr=", user_ptr as u64);
 
         // Bloco: [ H | P | User | F ]
         // H = ptr (block start)
@@ -153,26 +153,26 @@ impl SlabAllocator {
 
         // 1. Escrever Start Canary byte-a-byte (evita alinhamento u64)
         let canary_start_ptr = ptr;
-        crate::ktrace!("(Slab) alloc: [S8] escrevendo start canary...");
+        // crate::ktrace!("(Slab) alloc: [S8] escrevendo start canary...");
         let start_bytes = CANARY_START.to_le_bytes();
         let mut i = 0usize;
         while i < 8 {
             core::ptr::write_volatile(canary_start_ptr.add(i), start_bytes[i]);
             i += 1;
         }
-        crate::ktrace!("(Slab) alloc: [S9] start canary OK");
+        // crate::ktrace!("(Slab) alloc: [S9] start canary OK");
 
         // 2. Escrever End Canary byte-a-byte (footer_ptr pode não estar alinhado!)
         let footer_ptr = user_ptr.add(payload_size);
-        crate::ktrace!("(Slab) alloc: [S10] footer_ptr=", footer_ptr as u64);
-        crate::ktrace!("(Slab) alloc: [S11] escrevendo end canary...");
+        // crate::ktrace!("(Slab) alloc: [S10] footer_ptr=", footer_ptr as u64);
+        // crate::ktrace!("(Slab) alloc: [S11] escrevendo end canary...");
         let end_bytes = CANARY_END.to_le_bytes();
         let mut j = 0usize;
         while j < 8 {
             core::ptr::write_volatile(footer_ptr.add(j), end_bytes[j]);
             j += 1;
         }
-        crate::ktrace!("(Slab) alloc: [S12] end canary OK");
+        // crate::ktrace!("(Slab) alloc: [S12] end canary OK");
 
         user_ptr
     }
