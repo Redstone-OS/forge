@@ -49,8 +49,8 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
 
         if phdr.p_type == PT_LOAD {
             crate::ktrace!("(ELF) LOAD Segment:", phdr.p_vaddr);
-            crate::ktrace!("      MemSize:", phdr.p_memsz);
-            crate::ktrace!("      FileSize:", phdr.p_filesz);
+            crate::ktrace!("(ELF) MemSize:", phdr.p_memsz);
+            crate::ktrace!("(ELF) FileSize:", phdr.p_filesz);
 
             // Flags de mapeamento
             let mut flags = MapFlags::PRESENT | MapFlags::USER;
