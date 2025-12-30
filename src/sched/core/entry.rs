@@ -18,13 +18,18 @@ core::arch::global_asm!(
 .extern iretq_restore
 
 user_entry_stub:
-    // Ao entrar aqui:
-    // RSP aponta para o ExceptionStackFrame (TrapFrame) preparado pelo loader.
-    // [RIP, CS, RFLAGS, RSP, SS]
+    // Ao entrar aqui (via context_switch_asm 'push rax; ret'):
+    // RSP está no topo da área reservada (8 bytes acima do TrapFrame).
+    // O 'push rax' consumiu os 8 bytes e 'ret' restaurou RSP ao topo da reserva.
+    // Precisamos descer 48 bytes (40 do TF + 8 da Reserva) para apontar ao TrapFrame real.
+    sub rsp, 48
+    
+    // Agora RSP aponta para o ExceptionStackFrame (TrapFrame) preparado pelo loader.
+    // Layout: [RIP, CS, RFLAGS, RSP, SS]
     
     // Precisamos chamar release_scheduler_lock (função Rust).
     // Ela pode usar stack. Então precisamos preservar nosso ponteiro de TrapFrame.
-    // Vamos usar um registrador callee-saved (rbx ou r12-r15) para guardar o RSP original.
+    // Vamos usar um registrador callee-saved (r12) para guardar o RSP original.
     mov r12, rsp
     
     // Alinhar stack para chamada (System V ABI requer alinhamento de 16 bytes)

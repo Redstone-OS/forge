@@ -118,6 +118,8 @@ pub fn schedule() {
             &mut unsafe { Pin::get_unchecked_mut(old_task_pin.as_mut()) }.context as *mut _;
         let new_ctx_ptr = &{ Pin::get_ref(next.as_ref()) }.context as *const _;
 
+        let new_cr3 = { Pin::get_ref(next.as_ref()) }.cr3;
+
         // Devolve old task pra fila
         RUNQUEUE.lock().push(old_task_pin);
 
@@ -131,6 +133,9 @@ pub fn schedule() {
                     crate::arch::x86_64::gdt::set_kernel_stack(stack_top);
                     crate::arch::x86_64::syscall::set_kernel_rsp(stack_top);
                 }
+            }
+            if new_cr3 != 0 {
+                core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
             }
             crate::sched::task::context::switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
         }

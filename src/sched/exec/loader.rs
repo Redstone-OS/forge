@@ -203,10 +203,16 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
 
         use crate::arch::x86_64::interrupts::ExceptionStackFrame;
 
-        // Calcular base do frame (topo - sizeof(ExceptionStackFrame))
+        // BUGFIX: Reservar 8 bytes ACIMA do TrapFrame para o 'push rax' do context_switch_asm.
+        // O context_switch_asm faz 'mov rsp, [rsi+0x30]; push rax; ret' para saltar para nova task.
+        // Sem essa reserva, o 'push' sobrescreve o SS do TrapFrame, corrompendo-o.
+        const SWITCH_RESERVE: u64 = 8;
+
+        // Calcular base do TrapFrame (topo - reserva - sizeof(ExceptionStackFrame))
         // ExceptionStackFrame tem 5 u64s = 40 bytes.
-        let frame_ptr = (kstack_top - core::mem::size_of::<ExceptionStackFrame>() as u64)
-            as *mut ExceptionStackFrame;
+        let frame_ptr =
+            (kstack_top - SWITCH_RESERVE - core::mem::size_of::<ExceptionStackFrame>() as u64)
+                as *mut ExceptionStackFrame;
 
         // Escrever frame estruturado
         (*frame_ptr).instruction_pointer = entry_point.as_u64();
@@ -217,7 +223,11 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
 
         // Alteração DEADLOCK FIX: Usar user_entry_stub em vez de ir direto para iretq_restore
         let trampoline = crate::sched::core::entry::user_entry_stub as u64;
-        let context_rsp = frame_ptr as u64; // RSP aponta para o inicio do frame
+        // context.rsp aponta para a área reservada (8 bytes acima do TrapFrame)
+        // Após switch: push rax decrementa RSP, ret consome o valor, deixando RSP na reserva
+        // O user_entry_stub então ajusta para o TrapFrame.
+        let context_rsp =
+            frame_ptr as u64 + core::mem::size_of::<ExceptionStackFrame>() as u64 + SWITCH_RESERVE;
 
         task.context.rsp = context_rsp;
         task.context.rip = trampoline;
