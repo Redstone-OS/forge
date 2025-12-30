@@ -42,12 +42,87 @@ pub fn init_idt() {
 
     // Remapear IRQs (PIC) -> 32..47
     // Timer (IRQ 0) -> 32
-    idt.set_handler(32, irq_handler_stub as u64);
+    // Agora usamos o handler asm 'timer_handler' para permitir preempção
+    idt.set_handler(32, timer_handler as u64);
     idt.set_handler(33, irq_handler_stub as u64); // KBD
 
     unsafe {
         idt.load();
     }
+}
+
+// =============================================================================
+// HANDLERS ASM (IRQ0 PREEMPTS)
+// =============================================================================
+
+core::arch::global_asm!(
+    r#"
+.global timer_handler
+.extern timer_handler_inner
+
+// Macro para salvar scratch registers (caller-saved)
+.macro PUSH_SCRATCH_REGS
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+.endm
+
+// Macro para restaurar scratch registers
+.macro POP_SCRATCH_REGS
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+.endm
+
+timer_handler:
+    // 1. Salvar contexto volátil (scratch)
+    PUSH_SCRATCH_REGS
+
+    // 2. Chamar handler Rust (manda EOI e talvez schedule)
+    call timer_handler_inner
+
+    // 3. Restaurar contexto volátil
+    POP_SCRATCH_REGS
+
+    // 4. Retornar da interrupção
+    iretq
+"#
+);
+
+extern "C" {
+    fn timer_handler();
+}
+
+/// Handler Rust do Timer (chamado pelo ASM)
+///
+/// Este handler é responsável por:
+/// 1. Enviar EOI para o PIC.
+/// 2. Chamar o scheduler para possível troca de contexto.
+#[no_mangle]
+pub extern "C" fn timer_handler_inner() {
+    // 1. Enviar EOI para o PIC (Master = 0x20)
+    unsafe {
+        crate::arch::x86_64::ports::outb(0x20, 0x20);
+    }
+
+    // 2. Preempção: Forçar troca de contexto!
+    // Chamar schedule() vai salvar o resto do contexto (callee-saved) e trocar a stack.
+    // O schedule() só faz a troca se houver outra task pronta.
+    // Quando esta task for retomada, o schedule() retorna, voltamos para o ASM,
+    // restauramos scratch regs e retornamos da interrupção com iretq.
+    crate::sched::schedule();
 }
 
 /// Inicializa e remapeia o PIC (Programmable Interrupt Controller) 8259
@@ -96,7 +171,7 @@ pub unsafe fn init_pics() {
 }
 
 // =============================================================================
-// HANDLERS
+// EXCEPTION HANDLERS
 // =============================================================================
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: ExceptionStackFrame) {
@@ -213,10 +288,5 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, e
 }
 
 extern "x86-interrupt" fn irq_handler_stub(_stack_frame: ExceptionStackFrame) {
-    // Acknowledge interrupt (EOI) if APIC needed, but for now just loop/print
-    // crate::kinfo!("IRQ Stub Called");
-    // TODO: Send EOI to LAPIC
-    // E.g. crate::arch::x86_64::apic::lapic::end_of_interrupt();
-    // But we don't have safe access here yet.
-    // Just ignore for now or disable interrupt?
+    // Stub
 }
