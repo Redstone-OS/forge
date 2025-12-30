@@ -63,7 +63,7 @@ pub fn handle_irq() {
     let status = inb(STATUS_PORT);
     if (status & 0x01) != 0 {
         let scancode = inb(DATA_PORT);
-        crate::ktrace!("(KBD) IRQ: scancode=", scancode as u64);
+        // crate::ktrace!("(KBD) IRQ: scancode=", scancode as u64);
         KBD_BUFFER.lock().push(scancode);
     }
 }

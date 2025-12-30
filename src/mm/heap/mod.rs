@@ -167,22 +167,19 @@ unsafe impl GlobalAlloc for LockedHeap {
     /// ---------------------
     /// Retorna `null_mut` em caso de OOM.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // DEBUG: Log para TODAS as alocações durante debugging inicial
-        static mut ALLOC_COUNT: usize = 0;
-        let count = ALLOC_COUNT;
-        ALLOC_COUNT += 1;
+        // DEBUG desativado - gera muito overhead em loops rápidos
+        // static mut ALLOC_COUNT: usize = 0;
+        // let count = ALLOC_COUNT;
+        // ALLOC_COUNT += 1;
 
-        // Log antes do lock - para ver se chegamos aqui
-        crate::ktrace!("(Heap) [H1] alloc entrada, count=", count as u64);
-
-        // Tentar obter o lock
-        crate::ktrace!("(Heap) [H2] obtendo lock...");
+        // crate::ktrace!("(Heap) [H1] alloc entrada, count=", count as u64);
+        // crate::ktrace!("(Heap) [H2] obtendo lock...");
         let mut guard = self.inner.lock();
 
-        crate::ktrace!("(Heap) [H3] lock OK, chamando alloc...");
+        // crate::ktrace!("(Heap) [H3] lock OK, chamando alloc...");
         let ptr = guard.alloc(layout);
 
-        crate::ktrace!("(Heap) [H4] alloc retornou ptr=", ptr as u64);
+        // crate::ktrace!("(Heap) [H4] alloc retornou ptr=", ptr as u64);
 
         if ptr.is_null() {
             crate::kerror!("(Heap) OOM! size=", layout.size() as u64);
@@ -190,7 +187,7 @@ unsafe impl GlobalAlloc for LockedHeap {
 
         // Drop explícito do guard antes de retornar
         drop(guard);
-        crate::ktrace!("(Heap) [H5] guard dropped, retornando");
+        // crate::ktrace!("(Heap) [H5] guard dropped, retornando");
 
         ptr
     }
