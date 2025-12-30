@@ -41,7 +41,7 @@ impl SharedMemory {
         let num_frames = (size + FRAME_SIZE as usize - 1) / FRAME_SIZE as usize;
 
         let mut frames = Vec::with_capacity(num_frames);
-        let mut pmm = FRAME_ALLOCATOR.lock();
+        let pmm = FRAME_ALLOCATOR.lock();
 
         for _ in 0..num_frames {
             if let Some(frame_addr) = pmm.allocate_frame() {
@@ -154,7 +154,7 @@ impl ShmRegistry {
         if should_free {
             if let Some(shm) = self.regions.remove(&id) {
                 // Liberar frames
-                let mut pmm = FRAME_ALLOCATOR.lock();
+                let pmm = FRAME_ALLOCATOR.lock();
                 for frame_addr in shm.frames {
                     pmm.deallocate_frame(frame_addr);
                 }

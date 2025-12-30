@@ -113,9 +113,7 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn timer_handler_inner() {
     // 1. Enviar EOI para o PIC (Master = 0x20)
-    unsafe {
-        crate::arch::x86_64::ports::outb(0x20, 0x20);
-    }
+    crate::arch::x86_64::ports::outb(0x20, 0x20);
 
     // 2. Preempção: Forçar troca de contexto!
     // Chamar schedule() vai salvar o resto do contexto (callee-saved) e trocar a stack.

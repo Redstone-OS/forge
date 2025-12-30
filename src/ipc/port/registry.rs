@@ -2,7 +2,7 @@
 //!
 //! Registry global de portas nomeadas para IPC.
 
-use super::{Port, PortHandle, PortStatus};
+use super::{PortHandle, PortStatus};
 use crate::sync::Spinlock;
 use alloc::collections::BTreeMap;
 use alloc::string::String;

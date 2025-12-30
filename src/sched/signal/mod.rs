@@ -1,1 +1,27 @@
-//! TODO: Signals
+//! Gerenciamento de Sinais POSIX-like
+//!
+//! Submódulos para entrega e manipulação de sinais.
+
+pub mod delivery;
+pub mod handler;
+
+/// Standard Signals
+pub const SIGHUP: i32 = 1;
+pub const SIGINT: i32 = 2;
+pub const SIGQUIT: i32 = 3;
+pub const SIGILL: i32 = 4;
+pub const SIGTRAP: i32 = 5;
+pub const SIGABRT: i32 = 6;
+pub const SIGBUS: i32 = 7;
+pub const SIGFPE: i32 = 8;
+pub const SIGKILL: i32 = 9;
+pub const SIGUSR1: i32 = 10;
+pub const SIGSEGV: i32 = 11;
+pub const SIGUSR2: i32 = 12;
+pub const SIGPIPE: i32 = 13;
+pub const SIGALRM: i32 = 14;
+pub const SIGTERM: i32 = 15;
+pub const SIGCHLD: i32 = 17;
+pub const SIGCONT: i32 = 18;
+pub const SIGSTOP: i32 = 19;
+pub const SIGTSTP: i32 = 20;

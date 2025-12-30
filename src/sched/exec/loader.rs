@@ -194,7 +194,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         let current_cr3 = crate::mm::vmm::mapper::read_cr3();
         crate::ktrace!("(Spawn) TrapFrame escrito com CR3=", current_cr3);
         crate::kinfo!("(Spawn) Building TrapFrame at:", kstack_top);
-        let ptr = kstack_top as *mut u64;
+        let _ptr = kstack_top as *mut u64;
 
         // Seletores (RPL 3)
         const USER_CODE_SEL: u64 = 0x23; // Index 4, RPL 3
