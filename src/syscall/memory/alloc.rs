@@ -23,6 +23,10 @@ pub fn sys_unmap_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_unmap(args.arg1, args.arg2)
 }
 
+pub fn sys_mprotect_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_mprotect(args.arg1, args.arg2, args.arg3 as u32)
+}
+
 // === IMPLEMENTAÇÕES ===
 
 /// Aloca memória virtual
@@ -100,5 +104,12 @@ pub fn sys_unmap(addr: usize, size: usize) -> SysResult<usize> {
 
     let _ = (addr, size);
     crate::kwarn!("(Syscall) sys_unmap não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Altera as proteções de uma região de memória
+pub fn sys_mprotect(addr: usize, size: usize, flags: u32) -> SysResult<usize> {
+    let _ = (addr, size, flags);
+    crate::kwarn!("(Syscall) sys_mprotect não implementado");
     Err(SysError::NotImplemented)
 }

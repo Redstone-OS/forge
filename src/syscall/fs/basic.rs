@@ -35,6 +35,26 @@ pub fn sys_lseek_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_lseek(args.arg1 as u32, args.arg2 as i64, args.arg3 as u32)
 }
 
+pub fn sys_mkdir_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_mkdir(args.arg1, args.arg2)
+}
+
+pub fn sys_rmdir_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_rmdir(args.arg1, args.arg2)
+}
+
+pub fn sys_unlink_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_unlink(args.arg1, args.arg2)
+}
+
+pub fn sys_readdir_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_readdir(args.arg1 as u32, args.arg2, args.arg3)
+}
+
+pub fn sys_chmod_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_chmod(args.arg1, args.arg2, args.arg3 as u32)
+}
+
 // === IMPLEMENTAÇÕES ===
 
 /// Abre um arquivo
@@ -171,5 +191,40 @@ pub fn sys_lseek(handle: u32, offset: i64, whence: u32) -> SysResult<usize> {
 
     let _ = (handle, offset, whence);
     crate::kwarn!("(Syscall) sys_lseek não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Cria um diretório
+pub fn sys_mkdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+    let _ = (path_ptr, path_len);
+    crate::kwarn!("(Syscall) sys_mkdir não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Remove um diretório vazio
+pub fn sys_rmdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+    let _ = (path_ptr, path_len);
+    crate::kwarn!("(Syscall) sys_rmdir não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Remove um arquivo
+pub fn sys_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+    let _ = (path_ptr, path_len);
+    crate::kwarn!("(Syscall) sys_unlink não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Lê entradas enumeradas de um diretório
+pub fn sys_readdir(handle: u32, buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
+    let _ = (handle, buf_ptr, buf_len);
+    crate::kwarn!("(Syscall) sys_readdir não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Altera permissões de um arquivo
+pub fn sys_chmod(path_ptr: usize, path_len: usize, mode: u32) -> SysResult<usize> {
+    let _ = (path_ptr, path_len, mode);
+    crate::kwarn!("(Syscall) sys_chmod não implementado");
     Err(SysError::NotImplemented)
 }

@@ -25,6 +25,18 @@ pub fn sys_yield_wrapper(_args: &SyscallArgs) -> SysResult<usize> {
     sys_yield()
 }
 
+pub fn sys_gettid_wrapper(_args: &SyscallArgs) -> SysResult<usize> {
+    sys_gettid()
+}
+
+pub fn sys_thread_create_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_thread_create(args.arg1, args.arg2, args.arg3)
+}
+
+pub fn sys_thread_exit_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_thread_exit(args.arg1 as i32)
+}
+
 // === IMPLEMENTAÇÕES ===
 
 /// Encerra o processo atual
@@ -96,4 +108,26 @@ pub fn sys_wait(pid: usize, timeout_ms: u64) -> SysResult<usize> {
 pub fn sys_yield() -> SysResult<usize> {
     crate::sched::scheduler::yield_now();
     Ok(0)
+}
+
+/// Obtém o TID da thread atual
+pub fn sys_gettid() -> SysResult<usize> {
+    // TODO: Retornar TID real do scheduler
+    Ok(0)
+}
+
+/// Cria uma nova thread no processo atual
+pub fn sys_thread_create(entry_ptr: usize, stack_ptr: usize, arg: usize) -> SysResult<usize> {
+    let _ = (entry_ptr, stack_ptr, arg);
+    crate::kwarn!("(Syscall) sys_thread_create não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Encerra a thread atual
+pub fn sys_thread_exit(code: i32) -> SysResult<usize> {
+    crate::kinfo!("(Syscall) sys_thread_exit code=", code as u64);
+    // TODO: Implementar encerramento de thread no scheduler
+    loop {
+        let _ = sys_yield();
+    }
 }

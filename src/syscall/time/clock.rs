@@ -16,6 +16,14 @@ pub fn sys_sleep_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_sleep(args.arg1 as u64)
 }
 
+pub fn sys_timer_create_wrapper(_args: &SyscallArgs) -> SysResult<usize> {
+    sys_timer_create()
+}
+
+pub fn sys_timer_set_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_timer_set(args.arg1 as u32, args.arg2 as u64, args.arg3 as u64)
+}
+
 // === IMPLEMENTAÇÕES ===
 
 /// Obtém tempo do sistema
@@ -88,4 +96,17 @@ pub fn sys_sleep(ms: u64) -> SysResult<usize> {
     crate::drivers::timer::delay_ms(ms);
 
     Ok(0)
+}
+
+/// Cria um timer do sistema
+pub fn sys_timer_create() -> SysResult<usize> {
+    crate::kwarn!("(Syscall) sys_timer_create não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Configura/Inicia um timer
+pub fn sys_timer_set(handle: u32, initial_ms: u64, interval_ms: u64) -> SysResult<usize> {
+    let _ = (handle, initial_ms, interval_ms);
+    crate::kwarn!("(Syscall) sys_timer_set não implementado");
+    Err(SysError::NotImplemented)
 }

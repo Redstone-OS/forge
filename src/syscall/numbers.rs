@@ -54,6 +54,21 @@ pub const SYS_GETPID: usize = 0x05;
 /// Retorno: 0 ou erro
 pub const SYS_GETTASKINFO: usize = 0x06;
 
+/// Obtém o TID da thread atual.
+/// Args: nenhum
+/// Retorno: tid
+pub const SYS_GETTID: usize = 0x07;
+
+/// Cria uma nova thread no processo atual.
+/// Args: (entry_ptr, stack_ptr, arg)
+/// Retorno: tid ou erro
+pub const SYS_THREAD_CREATE: usize = 0x08;
+
+/// Encerra a thread atual.
+/// Args: (exit_code)
+/// Retorno: Nunca retorna
+pub const SYS_THREAD_EXIT: usize = 0x09;
+
 // ============================================================================
 // MEMÓRIA (0x10 - 0x1F)
 // ============================================================================
@@ -77,6 +92,11 @@ pub const SYS_MAP: usize = 0x12;
 /// Args: (addr, size)
 /// Retorno: 0 ou erro
 pub const SYS_UNMAP: usize = 0x13;
+
+/// Altera as proteções de uma região de memória.
+/// Args: (addr, size, new_flags)
+/// Retorno: 0 ou erro
+pub const SYS_MPROTECT: usize = 0x14;
 
 // ============================================================================
 // HANDLES (0x20 - 0x2F)
@@ -115,6 +135,16 @@ pub const SYS_SEND_MSG: usize = 0x31;
 /// Args: (port_handle, buf_ptr, buf_len, timeout_ms)
 /// Retorno: bytes recebidos ou erro
 pub const SYS_RECV_MSG: usize = 0x32;
+
+/// Suspende a thread até que o valor mude (futex).
+/// Args: (addr, expected, timeout_ms)
+/// Retorno: 0 ou erro
+pub const SYS_FUTEX_WAIT: usize = 0x33;
+
+/// Acorda threads esperando em um futex.
+/// Args: (addr, count)
+/// Retorno: número de threads acordadas ou erro
+pub const SYS_FUTEX_WAKE: usize = 0x34;
 
 // ============================================================================
 // GRÁFICOS / INPUT (0x40 - 0x4F)
@@ -159,6 +189,14 @@ pub const SYS_CLOCK_GET: usize = 0x50;
 /// Retorno: ms restantes (se interrompido)
 pub const SYS_SLEEP: usize = 0x51;
 
+/// Cria um timer do sistema.
+/// Retorno: handle do timer ou erro
+pub const SYS_TIMER_CREATE: usize = 0x52;
+
+/// Configura/Inicia um timer.
+/// Args: (handle, initial_ms, interval_ms)
+pub const SYS_TIMER_SET: usize = 0x53;
+
 // ============================================================================
 // FILESYSTEM (0x60 - 0x6F)
 // ============================================================================
@@ -197,6 +235,26 @@ pub const SYS_FSTAT: usize = 0x65;
 /// Args: (handle, offset, whence)
 /// Retorno: nova posição ou erro
 pub const SYS_LSEEK: usize = 0x66;
+
+/// Cria um diretório.
+/// Args: (path_ptr, path_len)
+pub const SYS_MKDIR: usize = 0x67;
+
+/// Remove um diretório vazio.
+/// Args: (path_ptr, path_len)
+pub const SYS_RMDIR: usize = 0x68;
+
+/// Remove (desvincula) um arquivo.
+/// Args: (path_ptr, path_len)
+pub const SYS_UNLINK: usize = 0x69;
+
+/// Lê entradas enumeradas de um diretório.
+/// Args: (handle, buf_ptr, buf_len)
+pub const SYS_READDIR: usize = 0x6A;
+
+/// Altera permissões de um arquivo/diretório.
+/// Args: (path_ptr, path_len, mode)
+pub const SYS_CHMOD: usize = 0x6B;
 
 // ============================================================================
 // EVENTS (0x80 - 0x8F)

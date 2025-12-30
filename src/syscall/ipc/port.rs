@@ -19,6 +19,14 @@ pub fn sys_recv_msg_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_recv_msg(args.arg1 as u32, args.arg2, args.arg3, args.arg4 as u64)
 }
 
+pub fn sys_futex_wait_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_futex_wait(args.arg1, args.arg2, args.arg3 as u64)
+}
+
+pub fn sys_futex_wake_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_futex_wake(args.arg1, args.arg2)
+}
+
 // === IMPLEMENTAÇÕES ===
 
 /// Cria uma porta de IPC
@@ -88,5 +96,19 @@ pub fn sys_recv_msg(
 
     let _ = (port_handle, buf_ptr, buf_len, timeout_ms);
     crate::kwarn!("(Syscall) sys_recv_msg não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Suspende a thread até que o valor mude (futex)
+pub fn sys_futex_wait(addr: usize, expected: usize, timeout_ms: u64) -> SysResult<usize> {
+    let _ = (addr, expected, timeout_ms);
+    crate::kwarn!("(Syscall) sys_futex_wait não implementado");
+    Err(SysError::NotImplemented)
+}
+
+/// Acorda threads esperando em um futex
+pub fn sys_futex_wake(addr: usize, count: usize) -> SysResult<usize> {
+    let _ = (addr, count);
+    crate::kwarn!("(Syscall) sys_futex_wake não implementado");
     Err(SysError::NotImplemented)
 }
