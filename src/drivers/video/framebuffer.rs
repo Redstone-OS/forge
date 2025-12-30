@@ -95,6 +95,12 @@ pub fn fill_rect(x: u32, y: u32, w: u32, h: u32, color: u32) {
 pub fn clear(color: u32) {
     let fb = FRAMEBUFFER.lock();
     if let Some(ref info) = *fb {
+        crate::kinfo!("(FB) Clear chamado, color=", color as u64);
+        crate::kinfo!("(FB) addr=", info.addr.as_u64());
+        crate::kinfo!("(FB) width=", info.width as u64);
+        crate::kinfo!("(FB) height=", info.height as u64);
+        crate::kinfo!("(FB) stride=", info.stride as u64);
+
         // Escrever diretamente sem chamar fill_rect para evitar deadlock
         for y in 0..info.height {
             for x in 0..info.width {
@@ -105,5 +111,8 @@ pub fn clear(color: u32) {
                 }
             }
         }
+        crate::kinfo!("(FB) Clear done!");
+    } else {
+        crate::kerror!("(FB) Clear: framebuffer não inicializado!");
     }
 }
