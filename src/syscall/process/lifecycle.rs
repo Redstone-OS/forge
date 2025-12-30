@@ -58,30 +58,63 @@ pub fn sys_exit(code: i32) -> SysResult<usize> {
 /// Cria novo processo
 ///
 /// # Args
-/// - path_ptr: caminho do executável
+/// - path_ptr: caminho do executável (userspace)
 /// - path_len: tamanho do caminho
-/// - args_ptr: argumentos (array de strings)
-/// - args_len: número de argumentos
+/// - args_ptr: argumentos (ignorado por enquanto)
+/// - args_len: número de argumentos (ignorado por enquanto)
 ///
 /// # Returns
 /// PID do novo processo ou erro
 pub fn sys_spawn(
     path_ptr: usize,
     path_len: usize,
-    args_ptr: usize,
-    args_len: usize,
+    _args_ptr: usize,
+    _args_len: usize,
 ) -> SysResult<usize> {
-    // TODO: Validar ponteiros
-    // TODO: Ler path do userspace
-    // TODO: Carregar ELF via VFS
-    // TODO: Criar novo address space
-    // TODO: Criar nova Task
-    // TODO: Adicionar ao scheduler
-    // TODO: Retornar PID
+    // Validar ponteiros básicos
+    if path_ptr == 0 || path_len == 0 || path_len > 256 {
+        crate::kerror!("(Syscall) sys_spawn: path inválido");
+        return Err(SysError::InvalidArgument);
+    }
 
-    let _ = (path_ptr, path_len, args_ptr, args_len);
-    crate::kwarn!("(Syscall) sys_spawn não implementado");
-    Err(SysError::NotImplemented)
+    // Ler path do userspace
+    // TODO: Validar que ponteiro está em região de usuário
+    let path_bytes = unsafe { core::slice::from_raw_parts(path_ptr as *const u8, path_len) };
+
+    // Converter para &str
+    let path = match core::str::from_utf8(path_bytes) {
+        Ok(s) => s,
+        Err(_) => {
+            crate::kerror!("(Syscall) sys_spawn: path não é UTF-8 válido");
+            return Err(SysError::InvalidArgument);
+        }
+    };
+
+    crate::kinfo!("(Syscall) sys_spawn:", path_ptr as u64);
+
+    // Chamar função de spawn existente
+    match crate::sched::exec::spawn::spawn::spawn(path) {
+        Ok(pid) => {
+            crate::kinfo!("(Syscall) spawn OK, PID=", pid.as_u32() as u64);
+            Ok(pid.as_u32() as usize)
+        }
+        Err(e) => {
+            crate::kerror!("(Syscall) spawn falhou");
+            // Converter ExecError para SysError
+            match e {
+                crate::sched::exec::spawn::spawn::ExecError::NotFound => Err(SysError::NotFound),
+                crate::sched::exec::spawn::spawn::ExecError::InvalidFormat => {
+                    Err(SysError::InvalidArgument)
+                }
+                crate::sched::exec::spawn::spawn::ExecError::OutOfMemory => {
+                    Err(SysError::OutOfMemory)
+                }
+                crate::sched::exec::spawn::spawn::ExecError::PermissionDenied => {
+                    Err(SysError::PermissionDenied)
+                }
+            }
+        }
+    }
 }
 
 /// Espera processo filho terminar

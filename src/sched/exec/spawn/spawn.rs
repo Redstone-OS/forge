@@ -34,7 +34,7 @@ const USER_STACK_SIZE: u64 = 8 * 4096;
 
 /// Cria novo processo a partir de executável
 pub fn spawn(path: &str) -> Result<Pid, ExecError> {
-    crate::kinfo!("Spawning:", path.as_ptr() as u64);
+    crate::kinfo!("(Spawn) Spawning:", path.as_ptr() as u64);
 
     // 1. Carregar arquivo do Initramfs (via lookup direto temporário)
     let data = match crate::fs::initramfs::lookup_file(path) {
