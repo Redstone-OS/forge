@@ -2,7 +2,6 @@
 //!
 //! Permite que userspace leia eventos de mouse e teclado.
 
-use crate::sync::Spinlock;
 use crate::syscall::abi::SyscallArgs;
 use crate::syscall::error::{SysError, SysResult};
 
@@ -13,88 +12,31 @@ use crate::syscall::error::{SysError, SysResult};
 /// Estado do mouse para userspace
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-pub struct MouseState {
+pub struct MouseStateABI {
     /// Posição X absoluta
     pub x: i32,
     /// Posição Y absoluta
     pub y: i32,
-    /// Movimento delta X desde última leitura
+    /// Movimento delta X
     pub delta_x: i32,
-    /// Movimento delta Y desde última leitura
+    /// Movimento delta Y
     pub delta_y: i32,
-    /// Botões pressionados (bit 0=esquerdo, 1=direito, 2=meio)
+    /// Botões
     pub buttons: u8,
-    /// Padding para alinhamento
+    /// Padding
     pub _pad: [u8; 3],
 }
 
 /// Evento de teclado para userspace
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-pub struct KeyEvent {
-    /// Scancode da tecla
+pub struct KeyEventABI {
+    /// Scancode
     pub scancode: u8,
-    /// Tecla pressionada (true) ou solta (false)
+    /// Pressionado?
     pub pressed: bool,
     /// Padding
     pub _pad: [u8; 2],
-}
-
-// ============================================================================
-// ESTADO GLOBAL DO MOUSE
-// ============================================================================
-
-/// Estado atual do mouse (gerenciado pelo kernel)
-static MOUSE_STATE: Spinlock<MouseStateInternal> = Spinlock::new(MouseStateInternal::new());
-
-struct MouseStateInternal {
-    x: i32,
-    y: i32,
-    delta_x: i32,
-    delta_y: i32,
-    buttons: u8,
-    screen_width: i32,
-    screen_height: i32,
-}
-
-impl MouseStateInternal {
-    const fn new() -> Self {
-        Self {
-            x: 0,
-            y: 0,
-            delta_x: 0,
-            delta_y: 0,
-            buttons: 0,
-            screen_width: 800, // Default
-            screen_height: 600,
-        }
-    }
-}
-
-/// Configura limites do mouse (chamado pelo kernel após init do framebuffer)
-pub fn set_mouse_bounds(width: i32, height: i32) {
-    let mut state = MOUSE_STATE.lock();
-    state.screen_width = width;
-    state.screen_height = height;
-    // Centralizar cursor
-    state.x = width / 2;
-    state.y = height / 2;
-}
-
-/// Processa pacote de mouse (chamado pelo handler de IRQ)
-pub fn process_mouse_packet(dx: i8, dy: i8, buttons: u8) {
-    let mut state = MOUSE_STATE.lock();
-
-    // Acumular deltas
-    state.delta_x += dx as i32;
-    state.delta_y -= dy as i32; // Y invertido no PS/2
-
-    // Atualizar posição absoluta com clamping
-    state.x = (state.x + dx as i32).clamp(0, state.screen_width - 1);
-    state.y = (state.y - dy as i32).clamp(0, state.screen_height - 1);
-
-    // Atualizar botões
-    state.buttons = buttons & 0x07; // Apenas 3 botões
 }
 
 // ============================================================================
@@ -102,30 +44,22 @@ pub fn process_mouse_packet(dx: i8, dy: i8, buttons: u8) {
 // ============================================================================
 
 /// SYS_MOUSE_READ: Lê estado do mouse
-///
-/// Args:
-///   - arg1: ponteiro para MouseState (userspace)
-///
-/// Retorna: 0 em sucesso
-pub fn sys_mouse_read(out_ptr: *mut MouseState) -> SysResult<usize> {
+pub fn sys_mouse_read(out_ptr: *mut MouseStateABI) -> SysResult<usize> {
     if out_ptr.is_null() {
         return Err(SysError::BadAddress);
     }
 
-    let mut internal = MOUSE_STATE.lock();
+    // Obter estado do driver
+    let driver_state = crate::drivers::input::mouse::get_state();
 
-    let user_state = MouseState {
-        x: internal.x,
-        y: internal.y,
-        delta_x: internal.delta_x,
-        delta_y: internal.delta_y,
-        buttons: internal.buttons,
+    let user_state = MouseStateABI {
+        x: driver_state.x,
+        y: driver_state.y,
+        delta_x: driver_state.delta_x,
+        delta_y: driver_state.delta_y,
+        buttons: driver_state.buttons,
         _pad: [0; 3],
     };
-
-    // Resetar deltas após leitura
-    internal.delta_x = 0;
-    internal.delta_y = 0;
 
     // Copiar para userspace
     unsafe {
@@ -136,26 +70,19 @@ pub fn sys_mouse_read(out_ptr: *mut MouseState) -> SysResult<usize> {
 }
 
 /// SYS_KEYBOARD_READ: Lê eventos de teclado pendentes
-///
-/// Args:
-///   - arg1: ponteiro para array de KeyEvent (userspace)
-///   - arg2: tamanho máximo do array
-///
-/// Retorna: número de eventos lidos
-pub fn sys_keyboard_read(out_ptr: *mut KeyEvent, max_events: usize) -> SysResult<usize> {
+pub fn sys_keyboard_read(out_ptr: *mut KeyEventABI, max_events: usize) -> SysResult<usize> {
     if out_ptr.is_null() || max_events == 0 {
         return Err(SysError::BadAddress);
     }
 
-    // Por enquanto, polling simples do driver de teclado
     let mut events_read = 0;
 
     while events_read < max_events {
-        if let Some(scancode) = crate::drivers::input::keyboard::read_scancode() {
+        if let Some(scancode) = crate::drivers::input::keyboard::pop_scancode() {
             let pressed = (scancode & 0x80) == 0;
             let code = scancode & 0x7F;
 
-            let event = KeyEvent {
+            let event = KeyEventABI {
                 scancode: code,
                 pressed,
                 _pad: [0; 2],
@@ -166,7 +93,7 @@ pub fn sys_keyboard_read(out_ptr: *mut KeyEvent, max_events: usize) -> SysResult
             }
             events_read += 1;
         } else {
-            break; // Sem mais eventos
+            break;
         }
     }
 
@@ -178,12 +105,18 @@ pub fn sys_keyboard_read(out_ptr: *mut KeyEvent, max_events: usize) -> SysResult
 // ============================================================================
 
 pub fn sys_mouse_read_wrapper(args: &SyscallArgs) -> SysResult<usize> {
-    let out_ptr = args.arg1 as *mut MouseState;
+    let out_ptr = args.arg1 as *mut MouseStateABI;
     sys_mouse_read(out_ptr)
 }
 
 pub fn sys_keyboard_read_wrapper(args: &SyscallArgs) -> SysResult<usize> {
-    let out_ptr = args.arg1 as *mut KeyEvent;
+    let out_ptr = args.arg1 as *mut KeyEventABI;
     let max_events = args.arg2;
     sys_keyboard_read(out_ptr, max_events)
+}
+
+/// Configura limites do mouse (chamado pelo kernel/compositor via syscall ou internal)
+/// Por enquanto mantemos internal wrapper se necessário
+pub fn set_mouse_bounds(width: i32, height: i32) {
+    crate::drivers::input::mouse::set_resolution(width, height);
 }

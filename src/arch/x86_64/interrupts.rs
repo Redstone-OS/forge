@@ -44,11 +44,27 @@ pub fn init_idt() {
     // Timer (IRQ 0) -> 32
     // Agora usamos o handler asm 'timer_handler' para permitir preempção
     idt.set_handler(32, timer_handler as u64);
-    idt.set_handler(33, irq_handler_stub as u64); // KBD
+    idt.set_handler(33, keyboard_interrupt_handler as u64);
+    idt.set_handler(44, mouse_interrupt_handler as u64);
 
     unsafe {
         idt.load();
     }
+}
+
+// =============================================================================
+// HANDLERS ASM
+// =============================================================================
+
+extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: ExceptionStackFrame) {
+    crate::drivers::input::keyboard::handle_irq();
+    crate::arch::x86_64::ports::outb(0x20, 0x20); // EOI Master
+}
+
+extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: ExceptionStackFrame) {
+    crate::drivers::input::mouse::handle_irq();
+    crate::arch::x86_64::ports::outb(0xA0, 0x20); // EOI Slave
+    crate::arch::x86_64::ports::outb(0x20, 0x20); // EOI Master
 }
 
 // =============================================================================
@@ -283,8 +299,4 @@ extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, e
     loop {
         crate::arch::Cpu::halt();
     }
-}
-
-extern "x86-interrupt" fn irq_handler_stub(_stack_frame: ExceptionStackFrame) {
-    // Stub
 }
