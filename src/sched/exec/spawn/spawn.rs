@@ -52,7 +52,17 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
 
     // === PROCESS ISOLATION SETUP ===
 
-    // 0. Alocar e Mapear Kernel Stack (ANTES de criar P4, para que seja copiado)
+    // 1. Criar nova Page Table isolada PRIMEIRO
+    // Isso copia Kernel Half + Identity Map do kernel P4
+    let new_p4 = {
+        let mut pmm = FRAME_ALLOCATOR.lock();
+        crate::mm::vmm::mapper::create_new_p4(&mut *pmm).expect("(Spawn) Falha ao criar P4")
+    };
+    task.cr3 = new_p4;
+    crate::kinfo!("(Spawn) Nova PML4 criada:", new_p4);
+
+    // 2. Alocar e Mapear Kernel Stack em AMBOS os P4s
+    // Isso garante que o TrapFrame seja visível em ambos os CR3s
     let pid = Pid::new(task.tid.as_u32());
     const KERNEL_STACK_BASE: u64 = 0xFFFF_9100_0000_0000;
     const KERNEL_STACK_SIZE: u64 = 8192; // 2 pages
@@ -61,7 +71,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     let kstack_start = KERNEL_STACK_BASE + (pid_u64 * KERNEL_STACK_SIZE);
     let kstack_top = kstack_start + KERNEL_STACK_SIZE;
 
-    // Alocar frames e mapear (no Kernel P4 atual)
+    // Alocar frames e mapear em AMBOS os P4s (kernel e processo)
     {
         crate::kinfo!("(Spawn) Allocating KStack frames for PID:", pid_u64);
         let mut pmm = FRAME_ALLOCATOR.lock();
@@ -71,11 +81,19 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         for i in 0..pages {
             let vaddr = kstack_start + i * FRAME_SIZE;
             if let Some(frame) = pmm.allocate_frame() {
+                let frame_phys = frame.as_u64();
                 unsafe {
-                    if let Err(_e) = map_page_with_pmm(vaddr, frame.as_u64(), flags, &mut *pmm) {
+                    // Mapear no Kernel P4 atual
+                    if let Err(_e) = map_page_with_pmm(vaddr, frame_phys, flags, &mut *pmm) {
                         return Err(ExecError::OutOfMemory);
                     }
-                    // Zerar stack
+                    // Mapear no P4 do processo (MESMO frame físico!)
+                    if let Err(_e) = crate::mm::vmm::map_page_in_target_p4(
+                        new_p4, vaddr, frame_phys, flags, &mut *pmm,
+                    ) {
+                        return Err(ExecError::OutOfMemory);
+                    }
+                    // Zerar stack (pode ser feito com qualquer CR3 pois está mapeado em ambos)
                     let ptr = vaddr as *mut u8;
                     for j in 0..FRAME_SIZE as usize {
                         ptr.add(j).write_volatile(0);
@@ -87,15 +105,6 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         }
     }
     task.kernel_stack = VirtAddr::new(kstack_top);
-
-    // 1. Criar nova Page Table isolada (copia Kernel Half + Identity Map)
-    // Agora inclui o mapeamento da KStack que acabamos de criar.
-    let new_p4 = {
-        let mut pmm = FRAME_ALLOCATOR.lock();
-        crate::mm::vmm::mapper::create_new_p4(&mut *pmm).expect("(Spawn) Falha ao criar P4")
-    };
-    task.cr3 = new_p4;
-    crate::kinfo!("(Spawn) Nova PML4 criada:", new_p4);
 
     // 2. Trocar para nova P4 temporariamente para carregar ELF e configurar User Space
     let old_cr3 = crate::mm::vmm::mapper::read_cr3();
@@ -177,47 +186,21 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         }
     }
 
-    // 6. Restaurar CR3 original
+    // 6. Configurar Trap Frame na Kernel Stack (ENQUANTO CR3 do processo está ativo!)
+    // Hotfix: escrever o TrapFrame com o CR3 do processo ativo garante que
+    // a escrita vá para a memória visível pelo processo.
     unsafe {
-        crate::mm::vmm::mapper::write_cr3(old_cr3);
-    }
-    crate::kinfo!("(Spawn) CR3 restaurado para Kernel P4");
-
-    // 7. Configurar Trap Frame na Kernel Stack (Visível em ambas P4s)
-    unsafe {
+        let current_cr3 = crate::mm::vmm::mapper::read_cr3();
+        crate::ktrace!("(Spawn) TrapFrame escrito com CR3=", current_cr3);
         crate::kinfo!("(Spawn) Building TrapFrame at:", kstack_top);
         let ptr = kstack_top as *mut u64;
 
         // Seletores (RPL 3)
-        // GDT Order: 0=Null, 1=KCode, 2=KData, 3=UData, 4=UCode, 5-6=TSS
-        // index 3 = User Data = (3 << 3) | 3 = 0x1B
-        // index 4 = User Code = (4 << 3) | 3 = 0x23
         const USER_CODE_SEL: u64 = 0x23; // Index 4, RPL 3
         const USER_DATA_SEL: u64 = 0x1B; // Index 3, RPL 3
-
-        // RFLAGS:
-        // 0x202 = Interrupts Enabled + Reserved Bit 1
         const RFLAGS_IF: u64 = 0x202;
 
-        // === Layout do TrapFrame na stack ===
-        //
-        // O jump_to_context_asm faz:
-        //   mov rsp, [context.rsp]   ; RSP = context.rsp
-        //   push [context.rip]       ; RSP -= 8, escreve trampolim
-        //   ret                      ; pop, RSP volta a context.rsp
-        //
-        // Após ret, RSP = context.rsp. O iretq vai ler a partir de RSP.
-        // Então o TrapFrame deve estar a partir de context.rsp:
-        //   [context.rsp + 0]  = RIP (user)
-        //   [context.rsp + 8]  = CS
-        //   [context.rsp + 16] = RFLAGS
-        //   [context.rsp + 24] = RSP (user)
-        //   [context.rsp + 32] = SS
-        //
-        // E context.rsp = kstack_top - 40 (para ter espaço para 5 qwords)
-
         let trapframe_base = ptr.offset(-5); // kstack_top - 40
-                                             // Usar write_volatile para garantir que as escritas não sejam reordenadas ou otimizadas
         trapframe_base
             .offset(0)
             .write_volatile(entry_point.as_u64()); // RIP
@@ -226,18 +209,28 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         trapframe_base.offset(3).write_volatile(USER_STACK_TOP); // RSP
         trapframe_base.offset(4).write_volatile(USER_DATA_SEL); // SS
 
-        // Trampolim
         let trampoline = crate::sched::context::switch::iretq_restore as u64;
-
-        // context.rsp deve apontar para o início do TrapFrame
-        // Após push+ret no asm, RSP = context.rsp
         let context_rsp = trapframe_base as u64;
         task.context.rsp = context_rsp;
         task.context.rip = trampoline;
 
         crate::ktrace!("(Spawn) TrapFrame base:", context_rsp);
         crate::ktrace!("(Spawn) Trampolim:", trampoline);
+        crate::ktrace!("(Spawn) Entry point escrito:", entry_point.as_u64());
+
+        // Verificar leitura de volta do TrapFrame
+        let rip_check = core::ptr::read_volatile(trapframe_base.offset(0));
+        crate::ktrace!("(Spawn) TrapFrame[RIP] lido:", rip_check);
+        if rip_check == 0 {
+            crate::kerror!("(Spawn) CRITICAL: TrapFrame RIP é ZERO após escrita!");
+        }
     }
+
+    // 7. Restaurar CR3 original (APÓS escrever TrapFrame!)
+    unsafe {
+        crate::mm::vmm::mapper::write_cr3(old_cr3);
+    }
+    crate::kinfo!("(Spawn) CR3 restaurado para Kernel P4");
 
     // 6. Marcar como pronta
     task.set_ready();

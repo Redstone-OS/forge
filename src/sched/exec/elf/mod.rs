@@ -87,28 +87,29 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
             }
 
             let pages = (end_page - start_page) / FRAME_SIZE;
-            // crate::ktrace!("(ELF) pages needed:", pages);
+            crate::ktrace!("(ELF) Pages needed:", pages);
+            crate::ktrace!("(ELF) start_page:", start_page);
+            crate::ktrace!("(ELF) end_page:", end_page);
 
             let mut pmm = FRAME_ALLOCATOR.lock();
             // crate::ktrace!("(ELF) PMM locked");
 
             for page_idx in 0..pages {
                 let vaddr = start_page + page_idx * FRAME_SIZE;
-                // crate::ktrace!("(ELF) Processing page:", page_idx);
 
-                // Tenta alocar frame físico
-                // crate::ktrace!("(ELF) Calling allocate_frame...");
+                // CORREÇÃO: Verificar se a página já está mapeada
+                // Se já está mapeada (por um segment anterior), NÃO re-alocar!
+                // Isso resolve o problema de segmentos que compartilham a mesma página.
+                if crate::mm::vmm::translate_addr(vaddr).is_some() {
+                    // Página já mapeada - apenas pular, os dados serão copiados depois
+                    continue;
+                }
+
+                // Página não mapeada - alocar novo frame
                 if let Some(frame) = pmm.allocate_frame() {
                     let frame_phys = frame.as_u64();
-                    // crate::ktrace!("(ELF) Frame allocated:", frame_phys);
 
-                    // Mapeia na tabela de páginas ATUAL (Kernel)
-                    // TODO: Mapear na tabela de páginas do novo processo
-                    // Por enquanto funciona pois init roda no espaço do kernel
-                    // crate::ktrace!("(ELF) Mapping page...");
-
-                    // FORÇAR WRITABLE para poder zerar e copiar!
-                    // Depois o scheduler/task deve ajustar permissões se necessário
+                    // FORÇAR WRITABLE para poder zerar e copiar
                     let effective_flags = flags | MapFlags::WRITABLE;
 
                     if let Err(_e) =
@@ -117,17 +118,14 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
                         crate::kerror!("(ELF) Map failed:", vaddr);
                         return Err(KernelError::OutOfMemory);
                     }
-                    // crate::ktrace!("(ELF) Page mapped OK");
 
-                    // Zera frame (limpa lixo anterior) - VOLATILE LOOP (Prevents SIMD/memset opt)
+                    // Zera APENAS páginas recém-alocadas
                     unsafe {
                         let ptr = vaddr as *mut u8;
-                        // core::ptr::write_bytes(ptr, 0, FRAME_SIZE as usize);
                         for i in 0..FRAME_SIZE as usize {
                             ptr.add(i).write_volatile(0);
                         }
                     }
-                    // crate::ktrace!("(ELF) Page zeroed OK (volatile)");
                 } else {
                     crate::kerror!("(ELF) Alloc failed OOM");
                     return Err(KernelError::OutOfMemory);

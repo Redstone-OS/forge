@@ -100,32 +100,10 @@ pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u
                         let pd_entry = core::ptr::read_volatile(src_pd.add(j));
 
                         // Para PD[2] (range 4MB-6MB onde fica 0x400000):
-                        // - Se for huge page 2MB, NÃO copiar! Deixar zerada.
-                        // - Se for PT normal, fazer deep copy.
-                        // 0x400000 >> 21 = 2, então é PD entry 2
+                        // NÃO copiar! Deixar zerada para que o ELF loader crie mapeamento limpo.
+                        // Isso garante que cada processo tenha seu próprio código.
                         if j == 2 {
-                            let is_huge_2mb = (pd_entry & (1 << 7)) != 0;
-                            if pd_entry & FLAG_PRESENT != 0 && !is_huge_2mb {
-                                // É uma PT normal, fazer deep copy
-                                let new_pt_frame = pmm
-                                    .allocate_frame()
-                                    .ok_or("(Mapper) OOM allocating PT copy")?;
-                                let new_pt_phys = new_pt_frame.as_u64();
-
-                                // Copiar entries da PT original
-                                let src_pt = (pd_entry & PAGE_MASK) as *const u64;
-                                let dst_pt = new_pt_phys as *mut u64;
-                                for k in 0..512 {
-                                    let pt_entry = core::ptr::read_volatile(src_pt.add(k));
-                                    core::ptr::write_volatile(dst_pt.add(k), pt_entry);
-                                }
-
-                                // Nova PD entry apontando para PT copiada
-                                let new_pd_entry = new_pt_phys | (pd_entry & 0xFFF);
-                                core::ptr::write_volatile(dst_pd.add(j), new_pd_entry);
-                            }
-                            // Se for huge page 2MB ou não presente, NÃO copiar!
-                            // Deixar PD[2] zerada para que o ELF loader crie mapeamento limpo.
+                            // Não copiar - deixar zerada para userspace privado
                         } else {
                             // Outras entries: copiar diretamente (identity map para outras regiões)
                             core::ptr::write_volatile(dst_pd.add(j), pd_entry);
@@ -477,6 +455,102 @@ pub fn map_page_with_pmm(
 
         // Invalida TLB
         asm!("invlpg [{}]", in(reg) page_virt, options(nostack, preserves_flags));
+    }
+
+    Ok(())
+}
+
+/// Mapeia página em uma P4 específica (não necessariamente a atual)
+///
+/// Útil para mapear kernel stack no P4 de um processo recém-criado.
+/// Usa identity mapping para acessar as tabelas de página.
+pub fn map_page_in_target_p4(
+    target_p4: u64,
+    page_virt: u64,
+    frame_phys: u64,
+    flags: MapFlags,
+    pmm: &mut crate::mm::pmm::BitmapFrameAllocator,
+) -> Result<(), &'static str> {
+    let pml4_idx = ((page_virt >> 39) & 0x1FF) as usize;
+    let pdpt_idx = ((page_virt >> 30) & 0x1FF) as usize;
+    let pd_idx = ((page_virt >> 21) & 0x1FF) as usize;
+    let pt_idx = ((page_virt >> 12) & 0x1FF) as usize;
+
+    // Converte MapFlags para flags de PTE
+    let mut pte_flags = FLAG_PRESENT;
+    if flags.contains(MapFlags::WRITABLE) {
+        pte_flags |= FLAG_WRITABLE;
+    }
+    if flags.contains(MapFlags::USER) {
+        pte_flags |= FLAG_USER;
+    }
+    if !flags.contains(MapFlags::EXECUTABLE) {
+        pte_flags |= FLAG_NO_EXEC;
+    }
+
+    // Flags para tabelas intermediárias
+    let mut table_flags = FLAG_PRESENT | FLAG_WRITABLE;
+    if flags.contains(MapFlags::USER) {
+        table_flags |= FLAG_USER;
+    }
+
+    unsafe {
+        // Garante que PDPT existe na target P4
+        let mut pml4e = get_table_entry(target_p4, pml4_idx);
+        let pdpt_phys: u64;
+        if pml4e & FLAG_PRESENT == 0 {
+            let new_pdpt = pmm.allocate_frame().ok_or("(VMM) OOM ao alocar PDPT")?;
+            pdpt_phys = new_pdpt.addr();
+            zero_page(pdpt_phys);
+            pml4e = pdpt_phys | table_flags;
+            set_table_entry(target_p4, pml4_idx, pml4e);
+        } else {
+            if flags.contains(MapFlags::USER) && (pml4e & FLAG_USER == 0) {
+                pml4e |= FLAG_USER;
+                set_table_entry(target_p4, pml4_idx, pml4e);
+            }
+            pdpt_phys = pml4e & PAGE_MASK;
+        }
+
+        // Garante que PD existe
+        let mut pdpte = get_table_entry(pdpt_phys, pdpt_idx);
+        let pd_phys: u64;
+        if pdpte & FLAG_PRESENT == 0 {
+            let new_pd = pmm.allocate_frame().ok_or("(VMM) OOM ao alocar PD")?;
+            pd_phys = new_pd.addr();
+            zero_page(pd_phys);
+            pdpte = pd_phys | table_flags;
+            set_table_entry(pdpt_phys, pdpt_idx, pdpte);
+        } else {
+            if flags.contains(MapFlags::USER) && (pdpte & FLAG_USER == 0) {
+                pdpte |= FLAG_USER;
+                set_table_entry(pdpt_phys, pdpt_idx, pdpte);
+            }
+            pd_phys = pdpte & PAGE_MASK;
+        }
+
+        // Garante que PT existe
+        let mut pde = get_table_entry(pd_phys, pd_idx);
+        let pt_phys: u64;
+        if pde & FLAG_PRESENT == 0 {
+            let new_pt = pmm.allocate_frame().ok_or("(VMM) OOM ao alocar PT")?;
+            pt_phys = new_pt.addr();
+            zero_page(pt_phys);
+            pde = pt_phys | table_flags;
+            set_table_entry(pd_phys, pd_idx, pde);
+        } else {
+            if flags.contains(MapFlags::USER) && (pde & FLAG_USER == 0) {
+                pde |= FLAG_USER;
+                set_table_entry(pd_phys, pd_idx, pde);
+            }
+            pt_phys = pde & PAGE_MASK;
+        }
+
+        // Escreve a PTE final
+        let pte = frame_phys | pte_flags;
+        set_table_entry(pt_phys, pt_idx, pte);
+
+        // Não faz invlpg aqui pois a target P4 pode não estar ativa
     }
 
     Ok(())

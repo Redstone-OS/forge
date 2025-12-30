@@ -21,8 +21,8 @@ pub use table::SYSCALL_TABLE;
 pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
     // Acesso via ponteiro bruto com volatile para evitar SSE
     unsafe {
-        // crate::ktrace!("(Syscall) ENTRADA no dispatcher");
-        // crate::ktrace!("(Syscall) ctx ptr=", ctx as u64);
+        crate::ktrace!("(Syscall) ENTRADA no dispatcher");
+        crate::ktrace!("(Syscall) ctx ptr=", ctx as u64);
         // Ative para depuração, desative quando puder
 
         // Ler argumentos da syscall
@@ -34,9 +34,9 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
         let arg5 = core::ptr::read_volatile(core::ptr::addr_of!((*ctx).r8)) as usize;
         let arg6 = core::ptr::read_volatile(core::ptr::addr_of!((*ctx).r9)) as usize;
 
-        // crate::ktrace!("(Syscall) num=", num as u64);
-        // crate::ktrace!("(Syscall) arg1=", arg1 as u64);
-        // crate::ktrace!("(Syscall) arg2=", arg2 as u64);
+        crate::ktrace!("(Syscall) num=", num as u64);
+        crate::ktrace!("(Syscall) arg1=", arg1 as u64);
+        crate::ktrace!("(Syscall) arg2=", arg2 as u64);
         // Ative para depuração, desative quando puder
 
         // Construir struct de argumentos
@@ -53,7 +53,7 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
         // Dispatch via tabela
         let result: u64 = if num < table::TABLE_SIZE {
             if let Some(handler) = SYSCALL_TABLE[num] {
-                // crate::ktrace!("(Syscall) Handler encontrado");
+                crate::ktrace!("(Syscall) Handler encontrado");
                 // Ative para depuração, desative quando puder
                 match handler(&args) {
                     Ok(val) => val as u64,
@@ -71,13 +71,13 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
             (-1i64) as u64 // ENOSYS
         };
 
-        // crate::ktrace!("(Syscall) Resultado=", result);
+        crate::ktrace!("(Syscall) Resultado=", result);
         // Ative para depuração, desative quando puder
 
         // Escrever resultado em RAX via volatile
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*ctx).rax), result);
 
-        // crate::ktrace!("(Syscall) SAINDO do dispatcher");
+        crate::ktrace!("(Syscall) SAINDO do dispatcher");
         // Ative para depuração, desative quando puder
     }
 }
