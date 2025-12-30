@@ -2,6 +2,7 @@
 ///
 /// Propósito: Definição dos Números de Chamada de Sistema (Syscall Numbers).
 /// Deve estar sincronizado com o user space (libc/syscall wrappers).
+/// TODO: Porque ta aqui?
 
 //! Números de Syscall
 
@@ -42,4 +43,16 @@ pub const SYS_UNLINK: usize = 87;
 pub const SYS_DEBUG_PRINT: usize = 1000;
 pub const SYS_THREAD_SPAWN: usize = 1001;
 pub const SYS_CHANNEL_CREATE: usize = 1002;
-// ...
+
+// IPC - Shared Memory
+pub const SYS_SHM_CREATE: usize = 200;
+pub const SYS_SHM_MAP: usize = 201;
+pub const SYS_SHM_UNMAP: usize = 202;
+
+// IPC - Message Passing
+pub const SYS_MSG_SEND: usize = 210;
+pub const SYS_MSG_RECV: usize = 211;
+
+// IPC - Ports
+pub const SYS_PORT_CREATE: usize = 220;
+pub const SYS_PORT_CONNECT: usize = 221;

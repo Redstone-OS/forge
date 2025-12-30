@@ -146,6 +146,21 @@ pub const SYS_FUTEX_WAIT: usize = 0x33;
 /// Retorno: número de threads acordadas ou erro
 pub const SYS_FUTEX_WAKE: usize = 0x34;
 
+/// Cria uma região de memória compartilhada.
+/// Args: (size: usize)
+/// Retorno: shm_id ou erro
+pub const SYS_SHM_CREATE: usize = 0x35;
+
+/// Mapeia uma região SHM no espaço do processo.
+/// Args: (shm_id: u64, suggested_addr: usize)
+/// Retorno: endereço mapeado ou erro
+pub const SYS_SHM_MAP: usize = 0x36;
+
+/// Conecta a uma porta nomeada.
+/// Args: (name_ptr, name_len)
+/// Retorno: port_id ou erro
+pub const SYS_PORT_CONNECT: usize = 0x37;
+
 // ============================================================================
 // GRÁFICOS / INPUT (0x40 - 0x4F)
 // ============================================================================

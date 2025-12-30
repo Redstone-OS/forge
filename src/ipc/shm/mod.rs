@@ -1,14 +1,7 @@
-//! IPC Shared Memory
+//! # Shared Memory (SHM)
 //!
-//! Memória compartilhada.
+//! Memória compartilhada zero-copy entre processos.
 
-#[derive(Debug)]
-pub struct SharedMemory {
-    // TODO: implementation
-}
+mod shm;
 
-impl SharedMemory {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+pub use shm::{SharedMemory, ShmError, ShmId, SHM_REGISTRY};

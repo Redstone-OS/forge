@@ -4,6 +4,9 @@
 //! Processos escrevem em Portas para as quais têm Capability WRITE.
 //! Processos leem de Portas para as quais têm Capability READ.
 
+mod registry;
+pub use registry::{PortId, PortRegistry, PORT_REGISTRY};
+
 use super::message::Message;
 use crate::sync::Mutex;
 use alloc::collections::VecDeque;
