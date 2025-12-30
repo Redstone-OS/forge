@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 //! # Syscall Dispatcher
 //!
-//! Table-based dispatcher para O(1) dispatch.
+//! Despachante baseado em tabela para despacho O(1).
+//! Os logs de tracer estão desativados por padrão para evitar poluição.
+//! Ative-os para depuração, desative quando puder.
 
 pub mod table;
 
@@ -19,8 +21,9 @@ pub use table::SYSCALL_TABLE;
 pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
     // Acesso via ponteiro bruto com volatile para evitar SSE
     unsafe {
-        crate::ktrace!("[SYSCALL] ENTRADA no dispatcher");
-        crate::ktrace!("[SYSCALL] ctx ptr=", ctx as u64);
+        // crate::ktrace!("(Syscall) ENTRADA no dispatcher");
+        // crate::ktrace!("(Syscall) ctx ptr=", ctx as u64);
+        // Ative para depuração, desative quando puder
 
         // Ler argumentos da syscall
         let num = core::ptr::read_volatile(core::ptr::addr_of!((*ctx).rax)) as usize;
@@ -31,9 +34,10 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
         let arg5 = core::ptr::read_volatile(core::ptr::addr_of!((*ctx).r8)) as usize;
         let arg6 = core::ptr::read_volatile(core::ptr::addr_of!((*ctx).r9)) as usize;
 
-        crate::ktrace!("[SYSCALL] num=", num as u64);
-        crate::ktrace!("[SYSCALL] arg1=", arg1 as u64);
-        crate::ktrace!("[SYSCALL] arg2=", arg2 as u64);
+        // crate::ktrace!("(Syscall) num=", num as u64);
+        // crate::ktrace!("(Syscall) arg1=", arg1 as u64);
+        // crate::ktrace!("(Syscall) arg2=", arg2 as u64);
+        // Ative para depuração, desative quando puder
 
         // Construir struct de argumentos
         let args = SyscallArgs {
@@ -49,11 +53,12 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
         // Dispatch via tabela
         let result: u64 = if num < table::TABLE_SIZE {
             if let Some(handler) = SYSCALL_TABLE[num] {
-                crate::ktrace!("[SYSCALL] Handler encontrado");
+                // crate::ktrace!("(Syscall) Handler encontrado");
+                // Ative para depuração, desative quando puder
                 match handler(&args) {
                     Ok(val) => val as u64,
                     Err(e) => {
-                        crate::ktrace!("[SYSCALL] Handler retornou erro");
+                        crate::kerror!("(Syscall) Handler retornou erro");
                         e.as_isize() as u64
                     }
                 }
@@ -62,16 +67,18 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
                 dispatch_hardcoded(num, arg1, arg2)
             }
         } else {
-            crate::ktrace!("[SYSCALL] num fora do range");
+            crate::ktrace!("(Syscall) num fora do range");
             (-1i64) as u64 // ENOSYS
         };
 
-        crate::ktrace!("[SYSCALL] Resultado=", result);
+        // crate::ktrace!("(Syscall) Resultado=", result);
+        // Ative para depuração, desative quando puder
 
         // Escrever resultado em RAX via volatile
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*ctx).rax), result);
 
-        crate::ktrace!("[SYSCALL] SAINDO do dispatcher");
+        // crate::ktrace!("(Syscall) SAINDO do dispatcher");
+        // Ative para depuração, desative quando puder
     }
 }
 
@@ -80,7 +87,7 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
 unsafe fn dispatch_hardcoded(num: usize, arg1: usize, arg2: usize) -> u64 {
     match num {
         0xF3 => {
-            crate::ktrace!("[SYSCALL] SYS_CONSOLE_WRITE (hardcoded)");
+            crate::ktrace!("(Syscall) SYS_CONSOLE_WRITE (hardcoded)");
             // SYS_CONSOLE_WRITE - escrever na serial diretamente
             if arg1 != 0 && arg2 != 0 {
                 for i in 0..arg2 {
@@ -102,7 +109,7 @@ unsafe fn dispatch_hardcoded(num: usize, arg1: usize, arg2: usize) -> u64 {
             0
         }
         _ => {
-            crate::ktrace!("[SYSCALL] syscall desconhecida!", num as u64);
+            crate::ktrace!("(Syscall) syscall desconhecida!", num as u64);
             (-1i64) as u64 // ENOSYS
         }
     }
