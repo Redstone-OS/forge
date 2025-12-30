@@ -45,15 +45,13 @@
 // SUB-MÓDULOS DE GERENCIAMENTO DE TAREFAS
 // =============================================================================
 
+/// Configurações globais do scheduler
+pub mod config;
+
 /// Definição da estrutura `Task` e controle de threads.
 /// Aqui residem as estruturas que representam um processo ou thread individual
 /// e seus metadados (TID, prioridade, pilhas).
 pub mod task;
-
-/// Definição do `CpuContext` (Contexto de Hardware).
-/// Gerencia o salvamento e restauração dos registradores da CPU durante
-/// as trocas de contexto.
-pub mod context;
 
 // Re-exportações para facilitar o uso interno e externo (Flattening)
 pub use task::{Task, TaskState, Tid};
@@ -64,10 +62,10 @@ pub use task::{Task, TaskState, Tid};
 
 /// Implementação dos algoritmos de agendamento e da `RunQueue`.
 /// Contém a lógica para `pick_next`, `enqueue` e o loop principal de decisão.
-pub mod scheduler;
+pub mod core;
 
 // Funções principais expostas para o kernel controlar o fluxo
-pub use scheduler::{schedule, yield_now};
+pub use core::{schedule, yield_now};
 
 // =============================================================================
 // CARREGAMENTO E EXECUÇÃO (EXECUTION)
@@ -95,9 +93,9 @@ pub mod signal;
 /// Estruturas de listas de espera (Wait Queues).
 /// Usadas para colocar tarefas para dormir enquanto aguardam recursos ou eventos,
 /// integrando-se com o scheduler para acordá-las posteriormente.
-pub mod wait;
+pub mod sync;
 
-pub use wait::WaitQueue;
+pub use sync::WaitQueue;
 
 // =============================================================================
 // VÍNCULO COM ASSEMBLY (ASSEMBLY LINKAGE)
@@ -106,7 +104,7 @@ pub use wait::WaitQueue;
 // Importa o código Assembly que realiza a "mágica" da troca de registradores.
 // O `global_asm!` insere o conteúdo do arquivo assembly diretamente na unidade
 // de compilação.
-core::arch::global_asm!(include_str!("../arch/x86_64/switch.s"));
+::core::arch::global_asm!(include_str!("../arch/x86_64/switch.s"));
 
 extern "C" {
     /// Função de baixo nível em Assembly que efetua a troca de contexto.
@@ -135,7 +133,7 @@ extern "C" {
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn user_entry_trampoline() {
-    core::arch::asm!(
+    ::core::arch::asm!(
         "mov ax, 0x23", // Carrega Seletor de Dados de Usuário (Index 4 | RPL 3)
         "mov ds, ax",   // Atualiza DS
         "mov es, ax",   // Atualiza ES
@@ -156,7 +154,7 @@ pub unsafe extern "C" fn user_entry_trampoline() {
 /// e interrupções, mas antes de habilitar a multitarefa preemptiva.
 pub fn init() {
     crate::kinfo!("(Sched) Inicializando scheduler...");
-    scheduler::init();
+    core::init();
     crate::kinfo!("(Sched) Scheduler inicializado");
 }
 

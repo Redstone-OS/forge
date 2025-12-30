@@ -34,7 +34,7 @@ pub fn enter_idle_loop() -> ! {
 
         // IMPORTANTE: Chamar o scheduler para verificar se há tasks prontas para rodar
         // Antes de fazer HLT, tentamos executar qualquer task pendente
-        crate::sched::scheduler::schedule();
+        crate::sched::core::schedule();
 
         // Caminho simples: C1 (HLT)
         // Isso coloca a CPU em pause até a próxima interrupção.

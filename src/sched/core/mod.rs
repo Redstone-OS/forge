@@ -1,6 +1,10 @@
 //! Scheduler principal
 
+pub mod cpu;
+pub mod policy;
 pub mod runqueue;
+
+pub use policy::SchedulingPolicy;
 
 use super::task::Task;
 use crate::arch::Cpu;
@@ -68,7 +72,7 @@ pub fn exit_current() -> ! {
         // Obter referência ao contexto antes de mover
         let next_ref = next.as_ref();
         let ctx_ptr = &{ core::pin::Pin::get_ref(next_ref) }.context
-            as *const crate::sched::context::CpuContext;
+            as *const crate::sched::task::context::CpuContext;
         let new_cr3 = { core::pin::Pin::get_ref(next_ref) }.cr3;
         let kernel_stack = { core::pin::Pin::get_ref(next_ref) }.kernel_stack.as_u64();
 
@@ -88,7 +92,7 @@ pub fn exit_current() -> ! {
             }
 
             // Pular para próxima task
-            super::context::jump_to_context(&*ctx_ptr);
+            crate::sched::task::context::jump_to_context(&*ctx_ptr);
         }
     } else {
         // Sem tasks, halt infinito
@@ -163,7 +167,7 @@ pub fn schedule() {
                 }
             }
 
-            super::context::switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
+            crate::sched::task::context::switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
         }
     } else {
         // Primeira task (boot) -> next
@@ -174,7 +178,7 @@ pub fn schedule() {
         // Precisamos do CR3 também
         let next_ref = next.as_ref();
         let ctx_ptr =
-            &{ Pin::get_ref(next_ref) }.context as *const crate::sched::context::CpuContext;
+            &{ Pin::get_ref(next_ref) }.context as *const crate::sched::task::context::CpuContext;
         let new_cr3 = { Pin::get_ref(next_ref) }.cr3;
         let kernel_stack = { Pin::get_ref(next_ref) }.kernel_stack.as_u64();
 
@@ -209,7 +213,7 @@ pub fn schedule() {
             crate::ktrace!("(Sched) POST CpuContext.rip=", *(cpu_context_ptr.offset(7)));
             crate::ktrace!("(Sched) POST CpuContext.rip=", (*ctx_ptr).rip);
 
-            super::context::jump_to_context(&*ctx_ptr);
+            crate::sched::task::context::jump_to_context(&*ctx_ptr);
         }
     }
 }

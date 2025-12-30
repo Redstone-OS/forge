@@ -1,7 +1,9 @@
 //! Task management module
 
+pub mod context;
+pub mod entity;
+pub mod lifecycle;
 pub mod state;
-pub mod thread;
 pub use crate::sys::Tid;
+pub use entity::Task;
 pub use state::TaskState;
-pub use thread::Task;

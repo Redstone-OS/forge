@@ -47,7 +47,7 @@ pub fn sys_exit(code: i32) -> ! {
 
     // Chamar exit_current do scheduler que remove o processo
     // e pula para o próximo sem reenfileirar
-    crate::sched::scheduler::exit_current()
+    crate::sched::core::exit_current()
 }
 
 /// Cria novo processo
@@ -88,7 +88,7 @@ pub fn sys_spawn(
     crate::kinfo!("(Syscall) sys_spawn:", path_ptr as u64);
 
     // Chamar função de spawn existente
-    match crate::sched::exec::spawn::spawn::spawn(path) {
+    match crate::sched::exec::spawn(path) {
         Ok(pid) => {
             crate::kinfo!("(Syscall) spawn OK, PID=", pid.as_u32() as u64);
             Ok(pid.as_u32() as usize)
@@ -97,16 +97,10 @@ pub fn sys_spawn(
             crate::kerror!("(Syscall) spawn falhou");
             // Converter ExecError para SysError
             match e {
-                crate::sched::exec::spawn::spawn::ExecError::NotFound => Err(SysError::NotFound),
-                crate::sched::exec::spawn::spawn::ExecError::InvalidFormat => {
-                    Err(SysError::InvalidArgument)
-                }
-                crate::sched::exec::spawn::spawn::ExecError::OutOfMemory => {
-                    Err(SysError::OutOfMemory)
-                }
-                crate::sched::exec::spawn::spawn::ExecError::PermissionDenied => {
-                    Err(SysError::PermissionDenied)
-                }
+                crate::sched::ExecError::NotFound => Err(SysError::NotFound),
+                crate::sched::ExecError::InvalidFormat => Err(SysError::InvalidArgument),
+                crate::sched::ExecError::OutOfMemory => Err(SysError::OutOfMemory),
+                crate::sched::ExecError::PermissionDenied => Err(SysError::PermissionDenied),
             }
         }
     }
@@ -134,7 +128,7 @@ pub fn sys_wait(pid: usize, timeout_ms: u64) -> SysResult<usize> {
 ///
 /// Sempre retorna 0.
 pub fn sys_yield() -> SysResult<usize> {
-    crate::sched::scheduler::yield_now();
+    crate::sched::core::yield_now();
     Ok(0)
 }
 

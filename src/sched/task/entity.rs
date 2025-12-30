@@ -1,6 +1,6 @@
 //! Thread Control Block
 
-use super::super::context::CpuContext;
+use super::context::CpuContext;
 use super::state::TaskState;
 use crate::mm::VirtAddr;
 use crate::sys::types::Tid;

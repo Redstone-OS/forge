@@ -1,3 +1,5 @@
+//! Context switching module
+
 //! Context switch
 //!
 //! Gerencia a troca de contexto entre tasks.

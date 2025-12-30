@@ -46,6 +46,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     };
 
     // 3. Criar task
+    // 3. Criar task
     crate::kinfo!("(Spawn) Creating task struct...");
     let mut task = crate::sched::task::Task::new(path);
     crate::kinfo!("(Spawn) Task created via Task::new");
@@ -115,7 +116,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
 
     // 3. Carregar ELF (agora mapeia na nova P4)
     crate::kinfo!("(Spawn) Chamando elf::load_binary...");
-    let entry_point = match crate::sched::exec::elf::load_binary(data) {
+    let entry_point = match crate::sched::exec::fmt::elf::load_binary(data) {
         Ok(addr) => {
             crate::kinfo!("(Spawn) elf::load_binary OK. Addr:", addr.as_u64());
             addr
@@ -209,7 +210,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         trapframe_base.offset(3).write_volatile(USER_STACK_TOP); // RSP
         trapframe_base.offset(4).write_volatile(USER_DATA_SEL); // SS
 
-        let trampoline = crate::sched::context::switch::iretq_restore as u64;
+        let trampoline = crate::sched::task::context::iretq_restore as u64;
         let context_rsp = trapframe_base as u64;
         task.context.rsp = context_rsp;
         task.context.rip = trampoline;
@@ -237,7 +238,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     // let pid = Pid::new(task.tid.as_u32()); // Already defined above
 
     // 7. Adicionar ao scheduler
-    crate::sched::scheduler::enqueue(Box::pin(task));
+    crate::sched::core::enqueue(Box::pin(task));
     crate::kinfo!("Process spawned from ELF! PID:", pid.as_u32() as u64);
 
     Ok(pid)
