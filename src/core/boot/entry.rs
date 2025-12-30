@@ -81,12 +81,20 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
 
     // 8. Inicialização do Userspace (Init Process)
+    // Primeiro inicializar drivers de input
+    crate::kinfo!("'Inicializando Drivers de Input'");
+    crate::drivers::input::init();
 
     crate::kinfo!("'Iniciando Processo Init'");
     crate::core::process::spawn_init();
 
     crate::kinfo!("'Inicialização do Kernel Concluída'");
 
-    // 9. Loop de Ociosidade (Idle Loop)
+    // 9. Habilitar Timer IRQ (APÓS scheduler estar pronto)
+    // O timer dispara e chama schedule(), então só habilitamos após spawn_init
+    crate::kinfo!("'Habilitando Timer Preemptivo'");
+    crate::arch::x86_64::interrupts::pic_enable_irq(0);
+
+    // 10. Loop de Ociosidade (Idle Loop)
     cpuidle::enter_idle_loop();
 }

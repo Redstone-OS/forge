@@ -124,19 +124,27 @@ extern "C" {
 /// Handler Rust do Timer (chamado pelo ASM)
 ///
 /// Este handler é responsável por:
-/// 1. Enviar EOI para o PIC.
-/// 2. Chamar o scheduler para possível troca de contexto.
+/// 1. Incrementar contador de ticks do sistema (jiffies).
+/// 2. Enviar EOI para o PIC.
+///
+/// NOTA: Preempção não implementada ainda.
+/// Para preempção real, precisamos modificar o assembly do timer handler
+/// para salvar contexto completo antes de fazer context switch.
+/// Atualmente o sistema usa cooperative multitasking via yield_now().
+
 #[no_mangle]
 pub extern "C" fn timer_handler_inner() {
-    // 1. Enviar EOI para o PIC (Master = 0x20)
+    // 1. Incrementar contador de jiffies (usado para sleep, timeouts, etc)
+    crate::core::time::jiffies::inc_jiffies();
+
+    // 2. Enviar EOI para o PIC (Master = 0x20)
     crate::arch::x86_64::ports::outb(0x20, 0x20);
 
-    // 2. Preempção: Forçar troca de contexto!
-    // Chamar schedule() vai salvar o resto do contexto (callee-saved) e trocar a stack.
-    // O schedule() só faz a troca se houver outra task pronta.
-    // Quando esta task for retomada, o schedule() retorna, voltamos para o ASM,
-    // restauramos scratch regs e retornamos da interrupção com iretq.
-    crate::sched::schedule();
+    // TODO: Implementar preempção no futuro
+    // Isso requer modificar o assembly do timer handler para:
+    // 1. Salvar TODOS os registradores (não apenas scratch)
+    // 2. Verificar se veio de userspace
+    // 3. Fazer context switch seguro
 }
 
 /// Inicializa e remapeia o PIC (Programmable Interrupt Controller) 8259
@@ -182,6 +190,39 @@ pub unsafe fn init_pics() {
     outb(pic2_data, 0xff);
 
     crate::kinfo!("(Arch) PICs remapped to 32-47 and masked.");
+}
+
+/// Habilita uma IRQ específica no PIC (desmascara)
+/// IRQ 0-7: PIC1 (master), IRQ 8-15: PIC2 (slave)
+pub fn pic_enable_irq(irq: u8) {
+    use crate::arch::x86_64::ports::{inb, outb};
+
+    if irq < 8 {
+        // Master PIC (porta de dados 0x21)
+        let mask = inb(0x21);
+        outb(0x21, mask & !(1 << irq));
+    } else {
+        // Slave PIC (porta de dados 0xA1)
+        // Também precisa habilitar IRQ2 no master (cascade)
+        let mask_slave = inb(0xA1);
+        outb(0xA1, mask_slave & !(1 << (irq - 8)));
+        // Garantir que IRQ2 (cascade) está habilitado no master
+        let mask_master = inb(0x21);
+        outb(0x21, mask_master & !(1 << 2));
+    }
+}
+
+/// Desabilita uma IRQ específica no PIC (mascara)
+pub fn pic_disable_irq(irq: u8) {
+    use crate::arch::x86_64::ports::{inb, outb};
+
+    if irq < 8 {
+        let mask = inb(0x21);
+        outb(0x21, mask | (1 << irq));
+    } else {
+        let mask = inb(0xA1);
+        outb(0xA1, mask | (1 << (irq - 8)));
+    }
 }
 
 // =============================================================================

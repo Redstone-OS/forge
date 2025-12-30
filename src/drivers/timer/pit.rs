@@ -20,5 +20,8 @@ pub fn init(frequency_hz: u32) {
     outb(PIT_CHANNEL0, (divisor & 0xFF) as u8);
     outb(PIT_CHANNEL0, ((divisor >> 8) & 0xFF) as u8);
 
+    // NOTA: IRQ0 é habilitado separadamente após o scheduler estar pronto
+    // NÃO habilitar aqui para evitar interrupções durante a inicialização
+
     crate::kinfo!("(PIT) Inicializado com freq=", frequency_hz as u64);
 }

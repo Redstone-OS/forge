@@ -77,6 +77,10 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
         // Escrever resultado em RAX via volatile
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*ctx).rax), result);
 
+        // NOTA: NÃO chamar maybe_reschedule() aqui!
+        // Context switch no meio do dispatcher corrompe o estado da task.
+        // Preempção deve acontecer apenas em pontos seguros (yield explícito).
+
         crate::ktrace!("(Syscall) SAINDO do dispatcher");
         // Ative para depuração, desative quando puder
     }

@@ -52,9 +52,8 @@ pub fn init() {
         inb(DATA_PORT);
     }
 
-    // Habilitar IRQ 1 no PIC/APIC é feito em interrupts.rs ou init_pics
-    // Mas precisamos garantir que flag de interrupção do teclado esteja ativa no controlador 0x64?
-    // O BIOS geralmente deixa ativo.
+    // Habilitar IRQ 1 no PIC
+    crate::arch::x86_64::interrupts::pic_enable_irq(1);
 
     crate::kinfo!("(Input) PS/2 Keyboard Initialized (Interrupt Mode)");
 }
@@ -64,6 +63,7 @@ pub fn handle_irq() {
     let status = inb(STATUS_PORT);
     if (status & 0x01) != 0 {
         let scancode = inb(DATA_PORT);
+        crate::ktrace!("(KBD) IRQ: scancode=", scancode as u64);
         KBD_BUFFER.lock().push(scancode);
     }
 }

@@ -13,18 +13,30 @@ pub fn ticks() -> u64 {
 }
 
 /// Retorna frequência do timer base em Hz
+///
+/// NOTA: Deve corresponder ao valor passado para pit::init()
 pub fn frequency() -> u64 {
-    1000 // Assumindo 1000Hz do PIT por padrão
+    100 // Corresponde ao pit::init(100) definido no boot
+        // TODO: Implementar usando TSC ou HPET real,
+        // ler frequencia de variavle global e fazer o pit setar a vareavel
 }
 
-/// Delay bloqueante em milissegundos
+/// Delay em milissegundos com cooperative multitasking
+///
+/// Ao invés de fazer busy-wait, cede a CPU via yield_now() permitindo
+/// que outros processos executem enquanto este espera.
 pub fn delay_ms(ms: u64) {
-    // Stub: loop simples ou usar PIT
-    // Idealmente:
+    if ms == 0 {
+        return;
+    }
+
     let start = ticks();
     let freq = frequency();
     let target_ticks = (ms * freq) / 1000;
+
     while ticks() - start < target_ticks {
-        core::hint::spin_loop();
+        // Ceder CPU para outros processos
+        // Isso permite cooperative multitasking enquanto espera
+        crate::sched::yield_now();
     }
 }
