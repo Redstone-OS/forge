@@ -31,9 +31,9 @@ pub mod port;
 /// Canais bidirecionais (1:1)
 pub mod channel;
 
+pub use channel::Channel;
 pub use message::Message;
 pub use port::{Port, PortHandle};
-pub use channel::Channel;
 
 // =============================================================================
 // STREAMING
@@ -61,6 +61,9 @@ pub use shm::SharedMemory;
 pub mod futex;
 
 pub use futex::Futex;
+
+/// Gerenciador Global de Portas (Temporário)
+pub mod manager;
 
 // =============================================================================
 // INITIALIZATION

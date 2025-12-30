@@ -8,7 +8,7 @@ use crate::syscall::error::{SysError, SysResult};
 // === WRAPPERS ===
 
 pub fn sys_create_port_wrapper(args: &SyscallArgs) -> SysResult<usize> {
-    sys_create_port(args.arg1)
+    sys_create_port(args.arg1, args.arg2, args.arg3)
 }
 
 pub fn sys_send_msg_wrapper(args: &SyscallArgs) -> SysResult<usize> {
@@ -27,24 +27,64 @@ pub fn sys_futex_wake_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_futex_wake(args.arg1, args.arg2)
 }
 
+pub fn sys_port_connect_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    sys_port_connect(args.arg1, args.arg2)
+}
+
 // === IMPLEMENTAÇÕES ===
 
-/// Cria uma porta de IPC
+/// Cria uma porta de IPC nomeada
 ///
 /// # Args
+/// - name_ptr: ponteiro para nome (UTF-8)
+/// - name_len: tamanho do nome
 /// - capacity: capacidade máxima de mensagens na fila
 ///
 /// # Returns
 /// Handle da porta ou erro
-pub fn sys_create_port(capacity: usize) -> SysResult<usize> {
-    // TODO: Validar capacity
-    // TODO: Criar Port no subsistema IPC
-    // TODO: Criar handle para o Port
-    // TODO: Retornar handle
+pub fn sys_create_port(name_ptr: usize, name_len: usize, capacity: usize) -> SysResult<usize> {
+    use alloc::string::String;
+    use alloc::vec::Vec;
 
-    let _ = capacity;
-    crate::kwarn!("(Syscall) sys_create_port não implementado");
-    Err(SysError::NotImplemented)
+    // Validar ponteiros (hack temporário: apenas check bounds básico)
+    if name_ptr == 0 || name_len > 256 {
+        return Err(SysError::InvalidArgument);
+    }
+
+    // Copiar nome do user stack/heap
+    let mut name_bytes = Vec::with_capacity(name_len);
+    unsafe {
+        let ptr = name_ptr as *const u8;
+        for i in 0..name_len {
+            name_bytes.push(*ptr.add(i));
+        }
+    }
+
+    let name = String::from_utf8(name_bytes).map_err(|_| SysError::InvalidArgument)?;
+
+    crate::ipc::manager::create_port(&name, capacity).map_err(|_| SysError::AlreadyExists)
+}
+
+/// Conecta a uma porta de IPC nomeada
+pub fn sys_port_connect(name_ptr: usize, name_len: usize) -> SysResult<usize> {
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    if name_ptr == 0 || name_len > 256 {
+        return Err(SysError::InvalidArgument);
+    }
+
+    let mut name_bytes = Vec::with_capacity(name_len);
+    unsafe {
+        let ptr = name_ptr as *const u8;
+        for i in 0..name_len {
+            name_bytes.push(*ptr.add(i));
+        }
+    }
+
+    let name = String::from_utf8(name_bytes).map_err(|_| SysError::InvalidArgument)?;
+
+    crate::ipc::manager::connect_port(&name).map_err(|_| SysError::NotFound)
 }
 
 /// Envia mensagem para uma porta
@@ -61,16 +101,22 @@ pub fn sys_send_msg(
     port_handle: u32,
     msg_ptr: usize,
     msg_len: usize,
-    flags: u32,
+    _flags: u32,
 ) -> SysResult<usize> {
-    // TODO: Validar handle (rights: WRITE)
-    // TODO: Validar ponteiro (copy_from_user)
-    // TODO: Enfileirar mensagem na porta
-    // TODO: Acordar receivers se houver
+    if msg_ptr == 0 {
+        return Err(SysError::BadAddress);
+    }
 
-    let _ = (port_handle, msg_ptr, msg_len, flags);
-    crate::kwarn!("(Syscall) sys_send_msg não implementado");
-    Err(SysError::NotImplemented)
+    use alloc::vec::Vec;
+    let mut data = Vec::with_capacity(msg_len);
+    unsafe {
+        let ptr = msg_ptr as *const u8;
+        for i in 0..msg_len {
+            data.push(*ptr.add(i));
+        }
+    }
+
+    crate::ipc::manager::send_msg(port_handle as usize, &data).map_err(|_| SysError::InvalidHandle)
 }
 
 /// Recebe mensagem de uma porta
@@ -87,16 +133,28 @@ pub fn sys_recv_msg(
     port_handle: u32,
     buf_ptr: usize,
     buf_len: usize,
-    timeout_ms: u64,
+    _timeout_ms: u64,
 ) -> SysResult<usize> {
-    // TODO: Validar handle (rights: READ)
-    // TODO: Validar buffer (copy_to_user depois)
-    // TODO: Se fila vazia e !NONBLOCK, bloquear
-    // TODO: Copiar mensagem para buffer do usuário
+    if buf_ptr == 0 {
+        return Err(SysError::BadAddress);
+    }
 
-    let _ = (port_handle, buf_ptr, buf_len, timeout_ms);
-    crate::kwarn!("(Syscall) sys_recv_msg não implementado");
-    Err(SysError::NotImplemented)
+    // Alocar buffer temporário no kernel (ineficiente, mas seguro sem copy_to_user ainda)
+    let mut kbuf = alloc::vec![0u8; buf_len];
+
+    match crate::ipc::manager::recv_msg(port_handle as usize, &mut kbuf) {
+        Ok(len) => {
+            // Copiar para user
+            unsafe {
+                let ptr = buf_ptr as *mut u8;
+                for i in 0..len {
+                    *ptr.add(i) = kbuf[i];
+                }
+            }
+            Ok(len)
+        }
+        Err(_) => Err(SysError::InvalidHandle),
+    }
 }
 
 /// Suspende a thread até que o valor mude (futex)

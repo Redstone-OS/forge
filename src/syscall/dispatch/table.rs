@@ -42,14 +42,14 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_CHECK_RIGHTS] = Some(super::super::handle::sys_check_rights_wrapper);
 
     // === IPC (0x30-0x3F) ===
-    table[SYS_CREATE_PORT] = Some(super::super::ipc::sys_create_port_wrapper);
-    table[SYS_SEND_MSG] = Some(super::super::ipc::sys_send_msg_wrapper);
-    table[SYS_RECV_MSG] = Some(super::super::ipc::sys_recv_msg_wrapper);
-    table[SYS_FUTEX_WAIT] = Some(super::super::ipc::sys_futex_wait_wrapper);
-    table[SYS_FUTEX_WAKE] = Some(super::super::ipc::sys_futex_wake_wrapper);
-    table[SYS_SHM_CREATE] = Some(super::super::ipc::sys_shm_create_wrapper);
-    table[SYS_SHM_MAP] = Some(super::super::ipc::sys_shm_map_wrapper);
-    table[SYS_PORT_CONNECT] = Some(super::super::ipc::sys_port_connect_wrapper);
+    table[SYS_CREATE_PORT] = Some(super::super::ipc::port::sys_create_port_wrapper);
+    table[SYS_SEND_MSG] = Some(super::super::ipc::port::sys_send_msg_wrapper);
+    table[SYS_RECV_MSG] = Some(super::super::ipc::port::sys_recv_msg_wrapper);
+    table[SYS_FUTEX_WAIT] = Some(super::super::ipc::port::sys_futex_wait_wrapper);
+    table[SYS_FUTEX_WAKE] = Some(super::super::ipc::port::sys_futex_wake_wrapper);
+    table[SYS_SHM_CREATE] = Some(super::super::ipc::shm::sys_shm_create_wrapper);
+    table[SYS_SHM_MAP] = Some(super::super::ipc::shm::sys_shm_map_wrapper);
+    table[SYS_PORT_CONNECT] = Some(super::super::ipc::port::sys_port_connect_wrapper);
 
     // === GRÁFICOS / INPUT (0x40-0x4F) ===
     table[SYS_FB_INFO] = Some(super::super::gfx::sys_fb_info_wrapper);
