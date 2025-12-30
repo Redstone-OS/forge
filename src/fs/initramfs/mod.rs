@@ -89,14 +89,21 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
     let guard = INITRAMFS_DATA.lock();
     let data = (*guard)?;
 
-    // Remover leading slash e ./ para comparar apenas via bytes
-    // No VFS normal isso seria tratado, mas aqui fazemos manual
-    let _search_bytes_orig = path.as_bytes();
-    // Normalização simplificada: ignorar ./ inicial ou / inicial se houver
-    // Mas como estamos hardcoded para system/core/init, vamos comparar manual
+    // Normalizar path: remover leading slashes
+    let path_bytes = path.as_bytes();
+    let mut start = 0;
+    while start < path_bytes.len() && (path_bytes[start] == b'/' || path_bytes[start] == b'.') {
+        start += 1;
+    }
+    let search_bytes = &path_bytes[start..];
 
-    // Hack de teste: ignorar path e procurar explicitamente o arquivo
-    let search_bytes = b"system/core/init";
+    // Log do path sendo buscado (primeiros 4 bytes para debug)
+    if search_bytes.len() >= 4 {
+        crate::ktrace!("(InitramFS) Search[0]:", search_bytes[0] as u64);
+        crate::ktrace!("(InitramFS) Search[1]:", search_bytes[1] as u64);
+        crate::ktrace!("(InitramFS) Search[2]:", search_bytes[2] as u64);
+        crate::ktrace!("(InitramFS) Search[3]:", search_bytes[3] as u64);
+    }
 
     crate::ktrace!("(InitramFS) Search Loop Start");
 
@@ -154,6 +161,13 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
         let is_file = type_flag == b'0' || type_flag == 0;
 
         if is_file && is_match {
+            // Log do arquivo encontrado
+            if normalized_bytes.len() >= 4 {
+                crate::ktrace!("(TAR) Match file[0]:", normalized_bytes[0] as u64);
+                crate::ktrace!("(TAR) Match file[1]:", normalized_bytes[1] as u64);
+                crate::ktrace!("(TAR) Match file[2]:", normalized_bytes[2] as u64);
+                crate::ktrace!("(TAR) Match file[3]:", normalized_bytes[3] as u64);
+            }
             crate::ktrace!("(TAR) Matched! Size:", size as u64);
 
             let file_start = offset + TAR_BLOCK_SIZE;

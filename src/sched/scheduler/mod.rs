@@ -47,6 +47,59 @@ pub fn yield_now() {
     Cpu::enable_interrupts();
 }
 
+/// Exit: termina processo atual e pula para próximo
+///
+/// Diferente de yield, NÃO coloca o processo atual de volta na fila.
+/// Nunca retorna.
+pub fn exit_current() -> ! {
+    Cpu::disable_interrupts();
+
+    // Remover processo atual do CURRENT (ele não vai para a fila de volta)
+    {
+        let mut current_guard = CURRENT.lock();
+        let _old_task = current_guard.take(); // Remove e descarta
+                                              // TODO: Limpar recursos do processo (páginas, etc)
+    }
+
+    // Pegar próxima task
+    if let Some(next) = pick_next() {
+        let mut current_guard = CURRENT.lock();
+
+        // Obter referência ao contexto antes de mover
+        let next_ref = next.as_ref();
+        let ctx_ptr = &{ core::pin::Pin::get_ref(next_ref) }.context
+            as *const crate::sched::context::CpuContext;
+        let new_cr3 = { core::pin::Pin::get_ref(next_ref) }.cr3;
+        let kernel_stack = { core::pin::Pin::get_ref(next_ref) }.kernel_stack.as_u64();
+
+        *current_guard = Some(next);
+        drop(current_guard);
+
+        unsafe {
+            // Configurar stack e GS
+            if kernel_stack != 0 {
+                crate::arch::x86_64::gdt::set_kernel_stack(kernel_stack);
+                crate::arch::x86_64::syscall::set_kernel_rsp(kernel_stack);
+            }
+
+            // Trocar CR3
+            if new_cr3 != 0 {
+                core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
+            }
+
+            // Pular para próxima task
+            super::context::jump_to_context(&*ctx_ptr);
+        }
+    } else {
+        // Sem tasks, halt infinito
+        loop {
+            Cpu::enable_interrupts();
+            Cpu::halt();
+            Cpu::disable_interrupts();
+        }
+    }
+}
+
 /// Função principal de escalonamento
 pub fn schedule() {
     // Pegar próxima task

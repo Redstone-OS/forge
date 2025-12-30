@@ -42,17 +42,12 @@ pub fn sys_thread_exit_wrapper(args: &SyscallArgs) -> SysResult<usize> {
 /// Encerra o processo atual
 ///
 /// Nunca retorna.
-pub fn sys_exit(code: i32) -> SysResult<usize> {
+pub fn sys_exit(code: i32) -> ! {
     crate::kinfo!("(Syscall) sys_exit code=", code as u64);
 
-    // TODO: Marcar processo como terminado
-    // TODO: Notificar processos esperando (wait)
-    // TODO: Limpar recursos
-
-    // Por agora: loop infinito cedendo CPU
-    loop {
-        let _ = sys_yield();
-    }
+    // Chamar exit_current do scheduler que remove o processo
+    // e pula para o próximo sem reenfileirar
+    crate::sched::scheduler::exit_current()
 }
 
 /// Cria novo processo
