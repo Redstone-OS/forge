@@ -1,14 +1,14 @@
 //! Fila de tasks prontas
 
-use alloc::collections::VecDeque;
-use alloc::boxed::Box;
-use core::pin::Pin;
-use crate::sync::Spinlock;
 use super::super::task::Task;
+use crate::sync::Spinlock;
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use core::pin::Pin;
 
-/// Fila de execução
+/// Fila de execução (FIFO simples por enquanto).
+/// TODO: Implementar Multi-level Feedback Queue ou Array de Prioridades.
 pub struct RunQueue {
-    /// Tasks prontas (FIFO simples por enquanto)
     queue: VecDeque<Pin<Box<Task>>>,
 }
 
@@ -18,22 +18,22 @@ impl RunQueue {
             queue: VecDeque::new(),
         }
     }
-    
+
     /// Adiciona task à fila
     pub fn push(&mut self, task: Pin<Box<Task>>) {
         self.queue.push_back(task);
     }
-    
-    /// Remove próxima task
+
+    /// Remove próxima task (FIFO)
     pub fn pop(&mut self) -> Option<Pin<Box<Task>>> {
         self.queue.pop_front()
     }
-    
+
     /// Número de tasks na fila
     pub fn len(&self) -> usize {
         self.queue.len()
     }
-    
+
     /// Verifica se está vazia
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()

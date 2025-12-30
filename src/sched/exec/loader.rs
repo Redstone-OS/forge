@@ -27,10 +27,11 @@ impl From<ExecError> for KernelError {
     }
 }
 
+// Use constantes do config
+use crate::sched::config::USER_STACK_SIZE;
+
 /// Topo da stack do userspace (final da metade inferior canônica)
 const USER_STACK_TOP: u64 = 0x7FFF_FFFF_F000;
-/// Tamanho da stack (32KB)
-const USER_STACK_SIZE: u64 = 8 * 4096;
 
 /// Cria novo processo a partir de executável
 pub fn spawn(path: &str) -> Result<Pid, ExecError> {
@@ -45,7 +46,6 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         }
     };
 
-    // 3. Criar task
     // 3. Criar task
     crate::kinfo!("(Spawn) Creating task struct...");
     let mut task = crate::sched::task::Task::new(path);
@@ -141,8 +141,8 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         crate::kinfo!("(Spawn) Locking PMM...");
         let mut pmm = FRAME_ALLOCATOR.lock();
         let flags = MapFlags::PRESENT | MapFlags::WRITABLE | MapFlags::USER;
-        let start_page = USER_STACK_TOP - USER_STACK_SIZE;
-        let pages = USER_STACK_SIZE / FRAME_SIZE;
+        let start_page = USER_STACK_TOP - USER_STACK_SIZE as u64;
+        let pages = USER_STACK_SIZE as u64 / FRAME_SIZE;
 
         for i in 0..pages {
             let vaddr = start_page + i * FRAME_SIZE;
@@ -201,17 +201,24 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         const USER_DATA_SEL: u64 = 0x1B; // Index 3, RPL 3
         const RFLAGS_IF: u64 = 0x202;
 
-        let trapframe_base = ptr.offset(-5); // kstack_top - 40
-        trapframe_base
-            .offset(0)
-            .write_volatile(entry_point.as_u64()); // RIP
-        trapframe_base.offset(1).write_volatile(USER_CODE_SEL); // CS
-        trapframe_base.offset(2).write_volatile(RFLAGS_IF); // RFLAGS
-        trapframe_base.offset(3).write_volatile(USER_STACK_TOP); // RSP
-        trapframe_base.offset(4).write_volatile(USER_DATA_SEL); // SS
+        use crate::arch::x86_64::interrupts::ExceptionStackFrame;
 
-        let trampoline = crate::sched::task::context::iretq_restore as u64;
-        let context_rsp = trapframe_base as u64;
+        // Calcular base do frame (topo - sizeof(ExceptionStackFrame))
+        // ExceptionStackFrame tem 5 u64s = 40 bytes.
+        let frame_ptr = (kstack_top - core::mem::size_of::<ExceptionStackFrame>() as u64)
+            as *mut ExceptionStackFrame;
+
+        // Escrever frame estruturado
+        (*frame_ptr).instruction_pointer = entry_point.as_u64();
+        (*frame_ptr).code_segment = USER_CODE_SEL;
+        (*frame_ptr).cpu_flags = RFLAGS_IF;
+        (*frame_ptr).stack_pointer = USER_STACK_TOP;
+        (*frame_ptr).stack_segment = USER_DATA_SEL;
+
+        // Alteração DEADLOCK FIX: Usar user_entry_stub em vez de ir direto para iretq_restore
+        let trampoline = crate::sched::core::entry::user_entry_stub as u64;
+        let context_rsp = frame_ptr as u64; // RSP aponta para o inicio do frame
+
         task.context.rsp = context_rsp;
         task.context.rip = trampoline;
 
@@ -220,7 +227,8 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         crate::ktrace!("(Spawn) Entry point escrito:", entry_point.as_u64());
 
         // Verificar leitura de volta do TrapFrame
-        let rip_check = core::ptr::read_volatile(trapframe_base.offset(0));
+        // frame_ptr é *mut ExceptionStackFrame. Instruction Pointer é o primeiro campo (offset 0).
+        let rip_check = core::ptr::read_volatile(&(*frame_ptr).instruction_pointer);
         crate::ktrace!("(Spawn) TrapFrame[RIP] lido:", rip_check);
         if rip_check == 0 {
             crate::kerror!("(Spawn) CRITICAL: TrapFrame RIP é ZERO após escrita!");

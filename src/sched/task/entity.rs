@@ -1,5 +1,6 @@
 //! Thread Control Block
 
+use super::accounting::Accounting;
 use super::context::CpuContext;
 use super::state::TaskState;
 use crate::mm::VirtAddr;
@@ -24,6 +25,21 @@ pub struct Task {
     pub cr3: u64,
     /// Prioridade (0 = maior)
     pub priority: u8,
+    /// Estatísticas de contabilidade
+    pub accounting: Accounting,
+
+    // --- Hierarquia ---
+    /// ID da tarefa pai (quem criou esta)
+    pub parent_id: Option<Tid>,
+    /// Código de saída (para waitpid)
+    pub exit_code: Option<i32>,
+
+    // --- Sinais ---
+    /// Sinais pendentes (bitmap 64-bit)
+    pub pending_signals: u64,
+    /// Sinais bloqueados (máscara)
+    pub blocked_signals: u64,
+
     /// Nome (debug)
     pub name: [u8; 32],
 }
@@ -80,6 +96,11 @@ impl Task {
             user_stack: VirtAddr::new(0),
             cr3: 0, // Será definido no spawn
             priority: 128,
+            accounting: Accounting::new(),
+            parent_id: None, // Define no spawn
+            exit_code: None,
+            pending_signals: 0,
+            blocked_signals: 0,
             name: name_buf,
         };
 

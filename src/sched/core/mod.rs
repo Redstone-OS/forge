@@ -13,6 +13,8 @@ use alloc::boxed::Box;
 use core::pin::Pin;
 use runqueue::RUNQUEUE;
 
+pub mod entry;
+
 /// Task atualmente executando (per-CPU no futuro)
 static CURRENT: Spinlock<Option<Pin<Box<Task>>>> = Spinlock::new(None);
 
@@ -61,8 +63,11 @@ pub fn exit_current() -> ! {
     // Remover processo atual do CURRENT (ele não vai para a fila de volta)
     {
         let mut current_guard = CURRENT.lock();
-        let _old_task = current_guard.take(); // Remove e descarta
-                                              // TODO: Limpar recursos do processo (páginas, etc)
+        // IMPORTANTE: Não podemos dropar a task ainda porque estamos usando sua stack!
+        // Devemos movê-la para a lista de zombies (ou similar) para que outra task limpe.
+        if let Some(old_task) = current_guard.take() {
+            crate::sched::task::lifecycle::add_zombie(old_task);
+        }
     }
 
     // Pegar próxima task
@@ -233,4 +238,12 @@ pub fn run() -> ! {
             Cpu::disable_interrupts();
         }
     }
+}
+
+/// Libera o lock do scheduler manualmente (usado por new tasks)
+/// # Safety
+/// Somente chamar no início de novas tasks.
+#[no_mangle]
+pub unsafe extern "C" fn release_scheduler_lock() {
+    CURRENT.force_unlock();
 }

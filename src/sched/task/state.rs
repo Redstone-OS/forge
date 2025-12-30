@@ -15,6 +15,8 @@ pub enum TaskState {
     Zombie,
     /// Morta, pode ser liberada
     Dead,
+    /// Parada por sinal (SIGSTOP/Debugger)
+    Stopped,
 }
 
 impl TaskState {

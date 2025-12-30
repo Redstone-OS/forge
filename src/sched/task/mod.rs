@@ -1,5 +1,6 @@
 //! Task management module
 
+pub mod accounting;
 pub mod context;
 pub mod entity;
 pub mod lifecycle;
