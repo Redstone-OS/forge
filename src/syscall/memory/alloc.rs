@@ -109,14 +109,16 @@ pub fn sys_alloc(size: usize, _flags: u32) -> SysResult<usize> {
 /// # Returns
 /// 0 ou erro
 pub fn sys_free(addr: usize, size: usize) -> SysResult<usize> {
-    // TODO: Validar que addr está no espaço do processo
-    // TODO: Validar que a região foi alocada via sys_alloc
-    // TODO: Desmapear páginas
-    // TODO: Liberar páginas físicas
+    // O bump allocator atual não suporta liberação de memória
+    // Isso é uma limitação conhecida - memória "vazada" será recuperada
+    // quando o processo terminar (suas páginas são liberadas)
+    //
+    // TODO: Implementar allocator real com free quando tivermos
+    // um gerenciador de memória virtual por processo
 
     let _ = (addr, size);
-    crate::kwarn!("(Syscall) sys_free não implementado");
-    Err(SysError::NotImplemented)
+    // Retornar sucesso silenciosamente para não quebrar aplicações
+    Ok(0)
 }
 
 /// Mapeia memória ou handle

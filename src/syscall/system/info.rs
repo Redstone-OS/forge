@@ -70,8 +70,8 @@ pub fn sys_debug(cmd: u32, arg_ptr: usize, arg_len: usize) -> SysResult<usize> {
 pub fn sys_reboot() -> SysResult<usize> {
     crate::kinfo!("(Syscall) sys_reboot: Reiniciando sistema...");
 
-    // Keyboard controller reset (PS/2)
     unsafe {
+        // Método 1: Keyboard controller reset (PS/2)
         // Aguardar controller pronto
         let mut timeout = 100000u32;
         while timeout > 0 {
@@ -87,11 +87,29 @@ pub fn sys_reboot() -> SysResult<usize> {
             timeout -= 1;
         }
 
-        // Enviar comando de reset (0xFE)
+        // Enviar comando de reset (0xFE) para o keyboard controller
         core::arch::asm!(
             "out 0x64, al",
             in("al") 0xFEu8,
             options(nostack, preserves_flags)
+        );
+
+        // Pequeno delay
+        for _ in 0..100000u32 {
+            core::arch::asm!("nop");
+        }
+
+        // Método 2: Triple Fault (fallback mais confiável)
+        // Carregar IDT inválida e causar uma exceção
+        crate::kinfo!("(Syscall) sys_reboot: Usando Triple Fault...");
+
+        // Criar uma IDT nula (inválida)
+        let null_idt: [u8; 6] = [0; 6]; // limit=0, base=0
+        core::arch::asm!(
+            "lidt [{}]",
+            "int3",  // Causar exceção com IDT inválida = Triple Fault
+            in(reg) &null_idt,
+            options(nostack)
         );
     }
 
@@ -105,17 +123,46 @@ pub fn sys_reboot() -> SysResult<usize> {
 pub fn sys_poweroff() -> SysResult<usize> {
     crate::kinfo!("(Syscall) sys_poweroff: Desligando sistema...");
 
-    // QEMU shutdown via port 0x604 (ACPI)
     unsafe {
+        // Método 1: QEMU ISA debug exit device (port 0x501)
+        // Este é configurável com -device isa-debug-exit
+        core::arch::asm!(
+            "out dx, al",
+            in("dx") 0x501u16,
+            in("al") 0x31u8,  // Exit code
+            options(nostack, preserves_flags)
+        );
+
+        // Método 2: QEMU shutdown via port 0x604 (ACPI PM1a_CNT)
         core::arch::asm!(
             "out dx, ax",
             in("dx") 0x604u16,
-            in("ax") 0x2000u16,
+            in("ax") 0x2000u16,  // SLP_TYP = 5 (S5 state) | SLP_EN = 1
+            options(nostack, preserves_flags)
+        );
+
+        // Método 3: Bochs/QEMU shutdown string via port 0x8900
+        let shutdown_str: &[u8; 8] = b"Shutdown";
+        for byte in shutdown_str {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x8900u16,
+                in("al") *byte,
+                options(nostack, preserves_flags)
+            );
+        }
+
+        // Método 4: VirtualBox ACPI shutdown
+        core::arch::asm!(
+            "out dx, ax",
+            in("dx") 0x4004u16,
+            in("ax") 0x3400u16,
             options(nostack, preserves_flags)
         );
     }
 
-    // Fallback: halt
+    // Fallback: halt infinito
+    crate::kinfo!("(Syscall) sys_poweroff: Halt...");
     loop {
         unsafe { core::arch::asm!("cli; hlt") };
     }
