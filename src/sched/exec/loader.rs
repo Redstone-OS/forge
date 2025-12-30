@@ -226,8 +226,12 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         // context.rsp aponta para a área reservada (8 bytes acima do TrapFrame)
         // Após switch: push rax decrementa RSP, ret consome o valor, deixando RSP na reserva
         // O user_entry_stub então ajusta para o TrapFrame.
+        // FIX: Subtrair 8 bytes para apontar para o início da reserva (slot do endereço de retorno).
+        // Isso permite que 'mov [rsp], rax' escreva no slot reservado (válido) em vez do topo (OOB).
+        // Após 'ret', o RSP será incrementado de volta para o topo (início da reserva + 8).
         let context_rsp =
-            frame_ptr as u64 + core::mem::size_of::<ExceptionStackFrame>() as u64 + SWITCH_RESERVE;
+            frame_ptr as u64 + core::mem::size_of::<ExceptionStackFrame>() as u64 + SWITCH_RESERVE
+                - 8;
 
         task.context.rsp = context_rsp;
         task.context.rip = trampoline;

@@ -123,8 +123,12 @@ context_switch_asm:
     mov rsp, [rsi + 0x30]
 
     // Push RIP and ret to it
+    // FIX: Usar 'mov [rsp], rax; ret' em vez de 'push rax; ret'
+    // 'push rax' decrementa RSP, 'ret' incrementa de volta para o valor original (apontando para old ret addr).
+    // Isso deixa o endereço de retorno original na stack (vazamento de 8 bytes).
+    // Ao sobrescrever [rsp] e dar ret, consumimos o slot corretamente.
     mov rax, [rsi + 0x38]
-    push rax
+    mov [rsp], rax
     ret
 
 .global jump_to_context_asm
@@ -140,6 +144,11 @@ jump_to_context_asm:
     
     // Switch Stack
     mov rsp, [rdi + 0x30]
+
+    // Simular o comportamento do 'ret' do context_switch (consumir slot de retorno)
+    // O context_switch faz 'mov [rsp], rax; ret' que incrementa RSP em 8.
+    // O jump_to_context_asm não faz ret, então precisamos ajustar manualmente.
+    add rsp, 8
 
     // Jump to RIP directly (avoid push which writes to memory)
     mov rax, [rdi + 0x38]
