@@ -92,8 +92,8 @@ pub fn sys_sleep(ms: u64) -> SysResult<usize> {
         return Ok(0);
     }
 
-    // Usar delay do timer
-    crate::drivers::timer::delay_ms(ms);
+    // Usar o scheduler para colocar a task em estado dormente
+    crate::sched::core::sleep_current(ms);
 
     Ok(0)
 }

@@ -45,6 +45,8 @@ pub struct Task {
     pub name: [u8; 32],
     /// Tabela de handles
     pub handle_table: HandleTable,
+    /// Momento de acordar (jiffies) se estiver dormindo
+    pub wake_at: Option<u64>,
 }
 
 impl Task {
@@ -106,6 +108,7 @@ impl Task {
             blocked_signals: 0,
             name: name_buf,
             handle_table: HandleTable::new(),
+            wake_at: None,
         };
 
         crate::ktrace!("(Task) struct construída, retornando...");

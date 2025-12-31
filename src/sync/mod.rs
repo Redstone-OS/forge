@@ -14,4 +14,4 @@ pub use atomic::{AtomicCell, AtomicCounter, AtomicFlag};
 pub use mutex::Mutex;
 pub use rwlock::RwLock;
 pub use semaphore::Semaphore;
-pub use spinlock::Spinlock;
+pub use spinlock::{Spinlock, SpinlockGuard};

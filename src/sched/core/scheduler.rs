@@ -51,6 +51,43 @@ pub fn yield_now() {
     Cpu::enable_interrupts();
 }
 
+/// Sleep: coloca a task atual em estado dormente por N milissegundos
+pub fn sleep_current(ms: u64) {
+    if ms == 0 {
+        yield_now();
+        return;
+    }
+
+    Cpu::disable_interrupts();
+
+    // 1. Pegar a task atual (take de CURRENT)
+    let task = {
+        let mut current_guard = CURRENT.lock();
+        current_guard.take()
+    };
+
+    if let Some(mut task) = task {
+        // 2. Calcular jiffies de despertar
+        let now = crate::core::time::jiffies::get_jiffies();
+        let ticks = crate::core::time::jiffies::millis_to_jiffies(ms);
+        task.wake_at = Some(now + ticks);
+
+        // 3. Mudar estado para Blocked
+        task.state = TaskState::Blocked;
+
+        crate::kdebug!("(Sched) Task PID: dormindo por", ms);
+
+        // 4. Adicionar à SleepQueue
+        super::sleep_queue::add_task(task);
+
+        // 5. Chamar schedule() para rodar a próxima
+        // Nota: as interrupções continuam desabilitadas até o switch terminar
+        schedule();
+    }
+
+    Cpu::enable_interrupts();
+}
+
 /// Libera o lock do scheduler manualmente (usado por new tasks)
 /// # Safety
 /// Somente chamar no início de novas tasks.
@@ -110,78 +147,95 @@ pub fn exit_current() -> ! {
 
 /// Função principal de escalonamento
 pub fn schedule() {
-    let next = match pick_next() {
+    let mut next = match pick_next() {
         Some(t) => t,
+        // Se não houver tasks, precisamos ver se ainda temos o CURRENT rodando.
+        // Se CURRENT for None (ex: dormindo) e RunQueue vazia, caímos no idle loop via run().
         None => return,
     };
 
     let mut current_guard = CURRENT.lock();
-    if let Some(ref mut _current) = *current_guard {
-        // Switch de A -> B
-        let old_task = current_guard.take().unwrap();
 
-        let mut old_task_pin = old_task;
+    // 1. Decidir o que fazer com a task ANTIGA
+    if let Some(mut old_task) = current_guard.take() {
+        // Se a task antiga estava Running, ela volta pra fila (preempção cooperativa)
+        if old_task.state == TaskState::Running {
+            unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
 
-        // Marcar task antiga como Ready (vai voltar pra fila)
-        unsafe { Pin::get_unchecked_mut(old_task_pin.as_mut()) }.state = TaskState::Ready;
+            // Salvar contexto e trocar
+            let old_ctx_ptr = unsafe {
+                Pin::get_unchecked_mut(old_task.as_mut()) as *mut Task
+                    as *mut crate::sched::task::context::CpuContext
+            };
 
-        // SAFETY: Temos ownership exclusivo via lock
-        let old_ctx_ptr =
-            &mut unsafe { Pin::get_unchecked_mut(old_task_pin.as_mut()) }.context as *mut _;
+            // Devolver para a fila
+            RUNQUEUE.lock().push(old_task);
 
-        // Marcar nova task como Running
-        let mut next_mut = next;
-        unsafe { Pin::get_unchecked_mut(next_mut.as_mut()) }.state = TaskState::Running;
-        let new_ctx_ptr = &{ Pin::get_ref(next_mut.as_ref()) }.context as *const _;
-
-        let new_cr3 = { Pin::get_ref(next_mut.as_ref()) }.cr3;
-
-        // Devolve old task pra fila
-        RUNQUEUE.lock().push(old_task_pin);
-
-        // Seta nova task
-        *current_guard = Some(next_mut);
-
-        unsafe {
-            if let Some(current_task) = current_guard.as_ref() {
-                let stack_top = current_task.as_ref().kernel_stack.as_u64();
-                if stack_top != 0 {
-                    crate::arch::x86_64::gdt::set_kernel_stack(stack_top);
-                    crate::arch::x86_64::syscall::set_kernel_rsp(stack_top);
-                }
-            }
-            if new_cr3 != 0 {
-                core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
-            }
-            crate::sched::task::context::switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
+            // Preparar a nova task
+            prepare_and_switch_to(&mut next, Some(old_ctx_ptr), current_guard);
+        } else {
+            // Se a task antiga JÁ NÃO ESTAVA Running (ex: morreu ou foi colocada em outra fila),
+            // apenas trocamos para a próxima sem salvar contexto.
+            prepare_and_switch_to(&mut next, None, current_guard);
         }
     } else {
-        // Startup/Idle -> B (Primeira task)
-        crate::ktrace!("(Sched) Primeira task, usando jump_to_context");
+        // Sem task antiga (ex: a anterior dormiu e limpou o CURRENT)
+        prepare_and_switch_to(&mut next, None, current_guard);
+    }
+}
 
-        // Marcar nova task como Running primeiro
-        let mut next_mut = next;
-        unsafe { Pin::get_unchecked_mut(next_mut.as_mut()) }.state = TaskState::Running;
+/// Prepara registradores, pilha e CR3 e efetua a troca de contexto
+fn prepare_and_switch_to(
+    next: &mut Pin<Box<Task>>,
+    old_ctx: Option<*mut crate::sched::task::context::CpuContext>,
+    mut current_guard: crate::sync::SpinlockGuard<Option<Pin<Box<Task>>>>,
+) {
+    // 1. Marcar nova task como Running
+    unsafe { Pin::get_unchecked_mut(next.as_mut()) }.state = TaskState::Running;
 
-        // Agora extrair ponteiros
-        let next_ref = next_mut.as_ref();
-        let ctx_ptr =
-            &{ Pin::get_ref(next_ref) }.context as *const crate::sched::task::context::CpuContext;
-        let new_cr3 = { Pin::get_ref(next_ref) }.cr3;
-        let kernel_stack = { Pin::get_ref(next_ref) }.kernel_stack.as_u64();
+    // 2. Extrair dados necessários
+    let next_ref = next.as_ref();
+    let next_task = Pin::get_ref(next_ref);
+    let new_ctx_ptr = &next_task.context as *const _;
+    let new_cr3 = next_task.cr3;
+    let stack_top = next_task.kernel_stack.as_u64();
+    let is_new = next_task.state == TaskState::Created;
 
-        *current_guard = Some(next_mut);
-        drop(current_guard);
+    // 3. Atualizar CURRENT
+    // Precisamos fazer o take() do Box para colocar no guard
+    // SAFETY: Temos o ownership via parâmetro mut
+    let next_box = unsafe { core::ptr::read(next as *mut _ as *const Pin<Box<Task>>) };
+    *current_guard = Some(next_box);
+    drop(current_guard); // Soltar lock antes da "mágica"
 
-        unsafe {
-            if kernel_stack != 0 {
-                crate::arch::x86_64::gdt::set_kernel_stack(kernel_stack);
-                crate::arch::x86_64::syscall::set_kernel_rsp(kernel_stack);
+    // 4. Efetuar a troca de hardware
+    unsafe {
+        // Configurar stack do kernel para interrupções/syscalls
+        if stack_top != 0 {
+            crate::arch::x86_64::gdt::set_kernel_stack(stack_top);
+            crate::arch::x86_64::syscall::set_kernel_rsp(stack_top);
+        }
+
+        // Trocar espaço de endereçamento (CR3)
+        if new_cr3 != 0 {
+            core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
+        }
+
+        // Escolher método de restauração
+        if let Some(old_ctx_ptr) = old_ctx {
+            // Troca clássica: salva e restaura
+            crate::sched::task::context::switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
+        } else {
+            // Troca de "salto": apenas restaura
+            // Se é Created (RIP = trampolim), usamos o jump_to_context que limpa stack
+            // Se já rodou (RIP = meio do código), usamos o switch com um dummy old
+            if is_new {
+                crate::sched::task::context::jump_to_context(&*new_ctx_ptr);
+            } else {
+                // Truque: usamos um CpuContext temporário no stack para o switch ignorar o "salvamento"
+                let mut dummy = crate::sched::task::context::CpuContext::new();
+                crate::sched::task::context::switch(&mut dummy, &*new_ctx_ptr);
             }
-            if new_cr3 != 0 {
-                core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
-            }
-            crate::sched::task::context::jump_to_context(&*ctx_ptr);
         }
     }
 }

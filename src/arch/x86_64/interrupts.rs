@@ -137,7 +137,10 @@ pub extern "C" fn timer_handler_inner() {
     // 1. Incrementar contador de jiffies (usado para sleep, timeouts, etc)
     crate::core::time::jiffies::inc_jiffies();
 
-    // 2. Enviar EOI para o PIC (Master = 0x20)
+    // 2. Verificar se há tasks para acordar na SleepQueue
+    crate::sched::core::sleep_queue::check_sleep_queue();
+
+    // 3. Enviar EOI para o PIC (Master = 0x20)
     crate::arch::x86_64::ports::outb(0x20, 0x20);
 
     // TODO: Implementar preempção no futuro

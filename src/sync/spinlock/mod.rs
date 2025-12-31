@@ -1,4 +1,4 @@
 //! Spinlock implementation
 
 pub mod spinlock;
-pub use spinlock::Spinlock;
+pub use spinlock::{Spinlock, SpinlockGuard};
