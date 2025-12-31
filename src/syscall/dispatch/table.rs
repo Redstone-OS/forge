@@ -50,6 +50,7 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_SHM_CREATE] = Some(super::super::ipc::shm::sys_shm_create_wrapper);
     table[SYS_SHM_MAP] = Some(super::super::ipc::shm::sys_shm_map_wrapper);
     table[SYS_PORT_CONNECT] = Some(super::super::ipc::port::sys_port_connect_wrapper);
+    table[SYS_SHM_GET_SIZE] = Some(super::super::ipc::shm::sys_shm_get_size_wrapper);
 
     // === DISPLAY (0x40-0x4F) ===
     table[SYS_FB_INFO] = Some(super::super::display::sys_display_info_wrapper);

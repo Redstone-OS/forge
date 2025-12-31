@@ -405,9 +405,17 @@ pub fn map_page_with_pmm(
             pml4e = pdpt_phys | table_flags;
             set_table_entry(pml4_phys, pml4_idx, pml4e);
         } else {
-            // Se já existe, precisamos garantir que as flags permitam acesso de usuário se necessário
+            // Se já existe, atualizar flags (USER e WRITABLE)
+            let mut changed = false;
             if flags.contains(MapFlags::USER) && (pml4e & FLAG_USER == 0) {
                 pml4e |= FLAG_USER;
+                changed = true;
+            }
+            if flags.contains(MapFlags::WRITABLE) && (pml4e & FLAG_WRITABLE == 0) {
+                pml4e |= FLAG_WRITABLE;
+                changed = true;
+            }
+            if changed {
                 set_table_entry(pml4_phys, pml4_idx, pml4e);
             }
             pdpt_phys = pml4e & PAGE_MASK;
@@ -424,8 +432,17 @@ pub fn map_page_with_pmm(
             pdpte = pd_phys | table_flags;
             set_table_entry(pdpt_phys, pdpt_idx, pdpte);
         } else {
+            // Se já existe, atualizar flags (USER e WRITABLE)
+            let mut changed = false;
             if flags.contains(MapFlags::USER) && (pdpte & FLAG_USER == 0) {
                 pdpte |= FLAG_USER;
+                changed = true;
+            }
+            if flags.contains(MapFlags::WRITABLE) && (pdpte & FLAG_WRITABLE == 0) {
+                pdpte |= FLAG_WRITABLE;
+                changed = true;
+            }
+            if changed {
                 set_table_entry(pdpt_phys, pdpt_idx, pdpte);
             }
             pd_phys = pdpte & PAGE_MASK;
@@ -442,8 +459,17 @@ pub fn map_page_with_pmm(
             pde = pt_phys | table_flags;
             set_table_entry(pd_phys, pd_idx, pde);
         } else {
+            // Se já existe, atualizar flags (USER e WRITABLE)
+            let mut changed = false;
             if flags.contains(MapFlags::USER) && (pde & FLAG_USER == 0) {
                 pde |= FLAG_USER;
+                changed = true;
+            }
+            if flags.contains(MapFlags::WRITABLE) && (pde & FLAG_WRITABLE == 0) {
+                pde |= FLAG_WRITABLE;
+                changed = true;
+            }
+            if changed {
                 set_table_entry(pd_phys, pd_idx, pde);
             }
             pt_phys = pde & PAGE_MASK;

@@ -26,5 +26,13 @@ pub struct PageTable {
 
 /// Inicializa o subsistema VMM
 pub fn init(_boot_info: &crate::core::boot::handoff::BootInfo) {
-    // TODO: Implementar init real (trocar para page table do kernel, etc)
+    // Captura o CR3 do Bootloader (Kernel P4 com Identity Map)
+    // Isso é crucial para que possamos temporariamente trocar para este CR3
+    // quando precisarmos modificar Page Tables de processos que não têm Identity Map.
+    let cr3 = super::mapper::read_cr3();
+    KERNEL_CR3.store(cr3, core::sync::atomic::Ordering::SeqCst);
+    crate::kinfo!("(VMM) Kernel CR3 saved: ", cr3);
 }
+
+/// CR3 do Kernel (Bootloader)
+pub static KERNEL_CR3: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);

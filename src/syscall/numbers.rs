@@ -161,6 +161,11 @@ pub const SYS_SHM_MAP: usize = 0x36;
 /// Retorno: port_id ou erro
 pub const SYS_PORT_CONNECT: usize = 0x37;
 
+/// Obtém o tamanho de uma região SHM.
+/// Args: (shm_id: u64)
+/// Retorno: tamanho em bytes ou erro
+pub const SYS_SHM_GET_SIZE: usize = 0x38;
+
 // ============================================================================
 // GRÁFICOS / INPUT (0x40 - 0x4F)
 // ============================================================================

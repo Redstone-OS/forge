@@ -379,6 +379,18 @@ impl BitmapFrameAllocator {
                 break;
             }
 
+            // CRÍTICO: Pular frames na faixa 4MB-6MB (0x400000 - 0x600000)
+            // Essa faixa é usada para mapear o Binário do usuário na tabela de páginas.
+            // Como removemos o Identity Map dessa faixa no User P4, o Kernel (rodando
+            // com User P4) não consegue acessar fisicamente frames que caiam aqui.
+            // Se alocarmos uma tabela de página aqui, o Kernel escreverá no Binário do
+            // usuário em vez da tabela!
+            let phys_addr = frame * PAGE_SIZE;
+            if phys_addr >= 0x400000 && phys_addr < 0x600000 {
+                frame += 1;
+                continue;
+            }
+
             // Marcar como livre (0)
             self.mark_frame(frame, false);
             self.stats.inc_free();
