@@ -79,6 +79,21 @@ pub fn sys_fb_info(out_ptr: *mut FramebufferInfo) -> SysResult<usize> {
 ///
 /// Retorna: bytes escritos ou erro
 pub fn sys_fb_write(offset: usize, data_ptr: *const u8, len: usize) -> SysResult<usize> {
+    // DEBUG: Log para verificar se está sendo chamado
+    static mut FIRST_CALL: bool = true;
+    static mut CALL_COUNT: u64 = 0;
+
+    unsafe {
+        CALL_COUNT += 1;
+        if FIRST_CALL {
+            FIRST_CALL = false;
+            crate::kinfo!("(FB_WRITE) Primeira chamada!");
+            crate::ktrace!("(FB_WRITE) offset:", offset as u64);
+            crate::ktrace!("(FB_WRITE) len:", len as u64);
+            crate::ktrace!("(FB_WRITE) data_ptr:", data_ptr as u64);
+        }
+    }
+
     // Validar ponteiro
     if data_ptr.is_null() {
         return Err(SysError::BadAddress);
@@ -87,11 +102,25 @@ pub fn sys_fb_write(offset: usize, data_ptr: *const u8, len: usize) -> SysResult
     // Obter info do framebuffer
     let info = fb::get_info().ok_or(SysError::NotFound)?;
 
+    // DEBUG: Log do endereço do framebuffer na primeira chamada
+    unsafe {
+        static mut FB_ADDR_LOGGED: bool = false;
+        if !FB_ADDR_LOGGED {
+            FB_ADDR_LOGGED = true;
+            crate::ktrace!("(FB_WRITE) fb_addr:", info.addr.as_u64());
+
+            // Verificar primeiro pixel do userspace
+            let first_pixel = *(data_ptr as *const u32);
+            crate::ktrace!("(FB_WRITE) first_pixel:", first_pixel as u64);
+        }
+    }
+
     // Calcular tamanho máximo do framebuffer
     let fb_size = (info.height as usize) * (info.stride as usize);
 
     // Validar bounds
     if offset >= fb_size || offset + len > fb_size {
+        crate::kerror!("(FB_WRITE) Bounds check falhou!");
         return Err(SysError::InvalidArgument);
     }
 
