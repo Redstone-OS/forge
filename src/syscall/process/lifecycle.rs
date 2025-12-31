@@ -25,6 +25,10 @@ pub fn sys_yield_wrapper(_args: &SyscallArgs) -> SysResult<usize> {
     sys_yield()
 }
 
+pub fn sys_getpid_wrapper(_args: &SyscallArgs) -> SysResult<usize> {
+    sys_getpid()
+}
+
 pub fn sys_gettid_wrapper(_args: &SyscallArgs) -> SysResult<usize> {
     sys_gettid()
 }
@@ -132,10 +136,24 @@ pub fn sys_yield() -> SysResult<usize> {
     Ok(0)
 }
 
+/// Obtém o PID do processo atual
+pub fn sys_getpid() -> SysResult<usize> {
+    let task_guard = crate::sched::core::CURRENT.lock();
+    if let Some(task) = task_guard.as_ref() {
+        Ok(task.tid.as_u32() as usize)
+    } else {
+        Err(SysError::Interrupted)
+    }
+}
+
 /// Obtém o TID da thread atual
 pub fn sys_gettid() -> SysResult<usize> {
-    // TODO: Retornar TID real do scheduler
-    Ok(0)
+    let task_guard = crate::sched::core::CURRENT.lock();
+    if let Some(task) = task_guard.as_ref() {
+        Ok(task.tid.as_u32() as usize)
+    } else {
+        Err(SysError::Interrupted)
+    }
 }
 
 /// Cria uma nova thread no processo atual

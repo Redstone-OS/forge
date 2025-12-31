@@ -7,22 +7,11 @@ use crate::syscall::error::{SysError, SysResult};
 
 // === WRAPPERS ===
 
-pub fn sys_getpid_wrapper(_args: &SyscallArgs) -> SysResult<usize> {
-    sys_getpid()
-}
-
 pub fn sys_gettaskinfo_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_gettaskinfo(args.arg1, args.arg2)
 }
 
 // === IMPLEMENTAÇÕES ===
-
-/// Obtém PID do processo atual
-pub fn sys_getpid() -> SysResult<usize> {
-    // TODO: Obter current_task do scheduler
-    // Por enquanto retorna 1 (init)
-    Ok(1)
-}
 
 /// Obtém informações sobre uma task
 ///

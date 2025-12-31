@@ -34,10 +34,22 @@ pub fn sys_handle_dup(handle: u32, new_rights: u32) -> SysResult<usize> {
 }
 
 /// Fecha um handle
-pub fn sys_handle_close(handle: u32) -> SysResult<usize> {
-    // TODO: Implementar
-    let _ = handle;
-    Err(SysError::NotImplemented)
+pub fn sys_handle_close(handle_val: u32) -> SysResult<usize> {
+    let handle = Handle::new((handle_val & 0xFFFF) as u16, (handle_val >> 16) as u16);
+
+    let mut task_guard = crate::sched::core::CURRENT.lock();
+    if let Some(task) = task_guard.as_mut() {
+        if task.handle_table.close(handle) {
+            Ok(0)
+        } else {
+            // Se falhou, pode ser que o handle não exista ou generation errada.
+            // Para evitar spam de erro se for apenas um double close inofensivo:
+            // Ok(0)
+            Err(SysError::InvalidHandle)
+        }
+    } else {
+        Err(SysError::Interrupted)
+    }
 }
 
 /// Verifica se handle tem rights específicos

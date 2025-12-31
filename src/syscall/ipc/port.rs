@@ -62,7 +62,27 @@ pub fn sys_create_port(name_ptr: usize, name_len: usize, capacity: usize) -> Sys
 
     let name = String::from_utf8(name_bytes).map_err(|_| SysError::InvalidArgument)?;
 
-    crate::ipc::manager::create_port(&name, capacity).map_err(|_| SysError::AlreadyExists)
+    let global_id =
+        crate::ipc::manager::create_port(&name, capacity).map_err(|_| SysError::AlreadyExists)?;
+
+    // Registrar na handle table do processo atual
+    let mut task_guard = crate::sched::core::CURRENT.lock();
+    if let Some(task) = task_guard.as_mut() {
+        let handle = task
+            .handle_table
+            .alloc(
+                crate::syscall::HandleType::Port,
+                global_id,
+                crate::syscall::HandleRights::READ
+                    .union(crate::syscall::HandleRights::WRITE)
+                    .union(crate::syscall::HandleRights::CLOSE),
+            )
+            .ok_or(SysError::LimitReached)?;
+
+        Ok(handle.as_u32() as usize)
+    } else {
+        Err(SysError::Interrupted)
+    }
 }
 
 /// Conecta a uma porta de IPC nomeada
@@ -84,7 +104,26 @@ pub fn sys_port_connect(name_ptr: usize, name_len: usize) -> SysResult<usize> {
 
     let name = String::from_utf8(name_bytes).map_err(|_| SysError::InvalidArgument)?;
 
-    crate::ipc::manager::connect_port(&name).map_err(|_| SysError::NotFound)
+    let global_id = crate::ipc::manager::connect_port(&name).map_err(|_| SysError::NotFound)?;
+
+    // Registrar na handle table do processo atual
+    let mut task_guard = crate::sched::core::CURRENT.lock();
+    if let Some(task) = task_guard.as_mut() {
+        let handle = task
+            .handle_table
+            .alloc(
+                crate::syscall::HandleType::Port,
+                global_id,
+                crate::syscall::HandleRights::READ
+                    .union(crate::syscall::HandleRights::WRITE)
+                    .union(crate::syscall::HandleRights::CLOSE),
+            )
+            .ok_or(SysError::LimitReached)?;
+
+        Ok(handle.as_u32() as usize)
+    } else {
+        Err(SysError::Interrupted)
+    }
 }
 
 /// Envia mensagem para uma porta
@@ -116,7 +155,24 @@ pub fn sys_send_msg(
         }
     }
 
-    crate::ipc::manager::send_msg(port_handle as usize, &data).map_err(|_| SysError::InvalidHandle)
+    // Traduzir handle para global_id
+    let global_id = {
+        let task_guard = crate::sched::core::CURRENT.lock();
+        let task = task_guard.as_ref().ok_or(SysError::Interrupted)?;
+        let handle =
+            crate::syscall::Handle::new((port_handle & 0xFFFF) as u16, (port_handle >> 16) as u16);
+        let entry = task
+            .handle_table
+            .get(handle)
+            .ok_or(SysError::InvalidHandle)?;
+
+        if entry.htype != crate::syscall::HandleType::Port {
+            return Err(SysError::InvalidArgument);
+        }
+        entry.object
+    };
+
+    crate::ipc::manager::send_msg(global_id, &data).map_err(|_| SysError::InvalidHandle)
 }
 
 /// Recebe mensagem de uma porta
@@ -142,7 +198,24 @@ pub fn sys_recv_msg(
     // Alocar buffer temporário no kernel (ineficiente, mas seguro sem copy_to_user ainda)
     let mut kbuf = alloc::vec![0u8; buf_len];
 
-    match crate::ipc::manager::recv_msg(port_handle as usize, &mut kbuf) {
+    // Traduzir handle para global_id
+    let global_id = {
+        let task_guard = crate::sched::core::CURRENT.lock();
+        let task = task_guard.as_ref().ok_or(SysError::Interrupted)?;
+        let handle =
+            crate::syscall::Handle::new((port_handle & 0xFFFF) as u16, (port_handle >> 16) as u16);
+        let entry = task
+            .handle_table
+            .get(handle)
+            .ok_or(SysError::InvalidHandle)?;
+
+        if entry.htype != crate::syscall::HandleType::Port {
+            return Err(SysError::InvalidArgument);
+        }
+        entry.object
+    };
+
+    match crate::ipc::manager::recv_msg(global_id, &mut kbuf) {
         Ok(len) => {
             // Copiar para user
             unsafe {

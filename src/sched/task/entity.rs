@@ -5,6 +5,7 @@ use super::context::CpuContext;
 use super::state::TaskState;
 use crate::mm::VirtAddr;
 use crate::sys::types::Tid;
+use crate::syscall::handle::table::HandleTable;
 
 /// Task ID counter
 static NEXT_TID: crate::sync::AtomicCounter = crate::sync::AtomicCounter::new(1);
@@ -42,6 +43,8 @@ pub struct Task {
 
     /// Nome (debug)
     pub name: [u8; 32],
+    /// Tabela de handles
+    pub handle_table: HandleTable,
 }
 
 impl Task {
@@ -102,6 +105,7 @@ impl Task {
             pending_signals: 0,
             blocked_signals: 0,
             name: name_buf,
+            handle_table: HandleTable::new(),
         };
 
         crate::ktrace!("(Task) struct construída, retornando...");

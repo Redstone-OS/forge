@@ -16,10 +16,6 @@ pub fn sys_shm_map_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_shm_map(args.arg1 as u64, args.arg2)
 }
 
-pub fn sys_port_connect_wrapper(args: &SyscallArgs) -> SysResult<usize> {
-    sys_port_connect(args.arg1, args.arg2)
-}
-
 // === IMPLEMENTAÇÕES ===
 
 /// Cria uma região de memória compartilhada
@@ -75,35 +71,5 @@ pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
         }
     } else {
         Err(SysError::InvalidHandle)
-    }
-}
-
-/// Conecta a uma porta nomeada
-///
-/// # Args
-/// - name_ptr: ponteiro para nome da porta
-/// - name_len: tamanho do nome
-///
-/// # Returns
-/// port_id
-pub fn sys_port_connect(name_ptr: usize, name_len: usize) -> SysResult<usize> {
-    if name_ptr == 0 || name_len == 0 || name_len > 256 {
-        return Err(SysError::InvalidArgument);
-    }
-
-    // Ler nome do userspace
-    let name_bytes = unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len) };
-
-    let name = match core::str::from_utf8(name_bytes) {
-        Ok(s) => s,
-        Err(_) => return Err(SysError::InvalidArgument),
-    };
-
-    let registry = crate::ipc::port::PORT_REGISTRY.lock();
-    if let Some(port_id) = registry.lookup(name) {
-        crate::kdebug!("(Syscall) sys_port_connect: found port=", port_id.as_u64());
-        Ok(port_id.as_u64() as usize)
-    } else {
-        Err(SysError::NotFound)
     }
 }

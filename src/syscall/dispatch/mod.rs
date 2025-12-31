@@ -58,8 +58,13 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
                 match handler(&args) {
                     Ok(val) => val as u64,
                     Err(e) => {
-                        crate::kerror!("(Syscall) Handler retornou erro! num=", num as u64);
-                        crate::kerror!("(Syscall) Codigo do erro=", e.as_isize() as u64);
+                        if e == SysError::NotFound || e == SysError::InvalidHandle {
+                            crate::kdebug!("(Syscall) Op falhou (esperado): num=", num as u64);
+                            crate::kdebug!("(Syscall) Codigo do erro=", e.as_isize() as u64);
+                        } else {
+                            crate::kerror!("(Syscall) Handler retornou erro! num=", num as u64);
+                            crate::kerror!("(Syscall) Codigo do erro=", e.as_isize() as u64);
+                        }
                         e.as_isize() as u64
                     }
                 }

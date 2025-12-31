@@ -49,7 +49,7 @@ pub enum HandleType {
 /// Entrada na handle table
 pub struct HandleEntry {
     pub htype: HandleType,
-    pub object: *mut (),
+    pub object: usize,
     pub rights: HandleRights,
     pub refcount: AtomicU32,
     pub generation: u16,
@@ -60,7 +60,7 @@ impl HandleEntry {
     pub const fn empty() -> Self {
         Self {
             htype: HandleType::File,
-            object: core::ptr::null_mut(),
+            object: 0,
             rights: HandleRights::empty(),
             refcount: AtomicU32::new(0),
             generation: 0,
@@ -103,7 +103,7 @@ impl HandleTable {
     pub fn alloc(
         &mut self,
         htype: HandleType,
-        object: *mut (),
+        object: usize,
         rights: HandleRights,
     ) -> Option<Handle> {
         // Encontrar slot livre
@@ -152,7 +152,7 @@ impl HandleTable {
         if let Some(entry) = self.get_mut(handle) {
             if entry.release() {
                 entry.in_use = false;
-                entry.object = core::ptr::null_mut();
+                entry.object = 0;
                 return true;
             }
         }
