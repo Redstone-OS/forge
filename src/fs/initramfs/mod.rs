@@ -162,12 +162,7 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
 
         if is_file && is_match {
             // Log do arquivo encontrado
-            if normalized_bytes.len() >= 4 {
-                crate::ktrace!("(TAR) Match file[0]:", normalized_bytes[0] as u64);
-                crate::ktrace!("(TAR) Match file[1]:", normalized_bytes[1] as u64);
-                crate::ktrace!("(TAR) Match file[2]:", normalized_bytes[2] as u64);
-                crate::ktrace!("(TAR) Match file[3]:", normalized_bytes[3] as u64);
-            }
+
             crate::ktrace!("(TAR) Matched! Size:", size as u64);
 
             let file_start = offset + TAR_BLOCK_SIZE;

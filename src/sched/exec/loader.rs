@@ -177,10 +177,6 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
         let b1 = core::ptr::read_volatile(entry_ptr.add(1));
         let b2 = core::ptr::read_volatile(entry_ptr.add(2));
         let b3 = core::ptr::read_volatile(entry_ptr.add(3));
-        crate::ktrace!("(Spawn) Code Bytes:", b0 as u64);
-        crate::ktrace!("(Spawn) Code Bytes:", b1 as u64);
-        crate::ktrace!("(Spawn) Code Bytes:", b2 as u64);
-        crate::ktrace!("(Spawn) Code Bytes:", b3 as u64);
 
         if b0 == 0 && b1 == 0 && b2 == 0 && b3 == 0 {
             crate::kerror!("(Spawn) CRITICAL: Entry point code is all ZEROS!");

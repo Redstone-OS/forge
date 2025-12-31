@@ -6,6 +6,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 struct Port {
+    #[allow(dead_code)]
     name: String,
     queue: Spinlock<VecDeque<Vec<u8>>>,
     capacity: usize,
@@ -14,6 +15,7 @@ struct Port {
 static PORT_REGISTRY: Spinlock<Option<BTreeMap<String, Arc<Port>>>> = Spinlock::new(None);
 static PORT_HANDLES: Spinlock<Vec<Arc<Port>>> = Spinlock::new(Vec::new());
 
+#[allow(dead_code)]
 fn scan_handles(port: &Arc<Port>) -> Option<usize> {
     let handles = PORT_HANDLES.lock();
     for (i, p) in handles.iter().enumerate() {

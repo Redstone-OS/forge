@@ -48,20 +48,6 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
         let phdr = unsafe { &*(data.as_ptr().add(offset) as *const Elf64_Phdr) };
 
         if phdr.p_type == PT_LOAD {
-            crate::ktrace!("(ELF) ----------------------------------------");
-            crate::ktrace!("(ELF) LOAD Segment:", phdr.p_vaddr);
-            crate::ktrace!("(ELF) MemSize:", phdr.p_memsz);
-            crate::ktrace!("(ELF) FileSize:", phdr.p_filesz);
-            crate::ktrace!("(ELF) p_flags:", phdr.p_flags as u64);
-
-            // Decodificar flags
-            let is_r = (phdr.p_flags & PF_R) != 0;
-            let is_w = (phdr.p_flags & PF_W) != 0;
-            let is_x = (phdr.p_flags & PF_X) != 0;
-            crate::ktrace!("(ELF) R:", if is_r { 1u64 } else { 0u64 });
-            crate::ktrace!("(ELF) W:", if is_w { 1u64 } else { 0u64 });
-            crate::ktrace!("(ELF) X:", if is_x { 1u64 } else { 0u64 });
-
             // Flags de mapeamento
             let mut flags = MapFlags::PRESENT | MapFlags::USER;
             if phdr.p_flags & PF_W != 0 {
@@ -87,12 +73,8 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
             }
 
             let pages = (end_page - start_page) / FRAME_SIZE;
-            crate::ktrace!("(ELF) Pages needed:", pages);
-            crate::ktrace!("(ELF) start_page:", start_page);
-            crate::ktrace!("(ELF) end_page:", end_page);
 
             let mut pmm = FRAME_ALLOCATOR.lock();
-            // crate::ktrace!("(ELF) PMM locked");
 
             for page_idx in 0..pages {
                 let vaddr = start_page + page_idx * FRAME_SIZE;
