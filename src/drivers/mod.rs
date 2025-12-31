@@ -4,13 +4,13 @@
 
 pub mod base;
 pub mod block;
+pub mod display;
 pub mod input;
 pub mod irq;
 pub mod net;
 pub mod pci;
 pub mod serial;
 pub mod timer;
-pub mod video; // Legacy
 
 pub use base::{Device, DeviceType, Driver, DriverError};
 

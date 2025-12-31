@@ -83,8 +83,8 @@ pub mod system;
 /// Syscalls de tempo
 pub mod time;
 
-/// Syscalls de gráficos e input
-pub mod gfx;
+/// Syscalls de display
+pub mod display;
 
 // =============================================================================
 // RE-EXPORTS

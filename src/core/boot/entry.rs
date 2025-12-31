@@ -37,7 +37,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 2.5. Inicialização de Vídeo (Framebuffer)
     // Inicializamos cedo para ter saída visual se o serial falhar ou para mostrar logo
-    crate::drivers::video::init(boot_info.framebuffer);
+    crate::drivers::display::init(boot_info.framebuffer);
 
     // 3. Inicialização de Memória (PMM, VMM, Heap)
     crate::kinfo!("'Inicializando Memória'");

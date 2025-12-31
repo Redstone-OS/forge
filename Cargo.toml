@@ -17,7 +17,11 @@ harness = false
 test = false
 bench = false
 
+# =========================================================
+# Apenas dependências internas
+# =========================================================
 [dependencies]
+gfx_types = { path = "../libs/gfx_types" }
 
 [features]
 default = []

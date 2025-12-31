@@ -51,12 +51,13 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_SHM_MAP] = Some(super::super::ipc::shm::sys_shm_map_wrapper);
     table[SYS_PORT_CONNECT] = Some(super::super::ipc::port::sys_port_connect_wrapper);
 
-    // === GRÁFICOS / INPUT (0x40-0x4F) ===
-    table[SYS_FB_INFO] = Some(super::super::gfx::sys_fb_info_wrapper);
-    table[SYS_FB_WRITE] = Some(super::super::gfx::sys_fb_write_wrapper);
-    table[SYS_FB_CLEAR] = Some(super::super::gfx::sys_fb_clear_wrapper);
-    table[SYS_MOUSE_READ] = Some(super::super::gfx::sys_mouse_read_wrapper);
-    table[SYS_KEYBOARD_READ] = Some(super::super::gfx::sys_keyboard_read_wrapper);
+    // === DISPLAY (0x40-0x4F) ===
+    table[SYS_FB_INFO] = Some(super::super::display::sys_display_info_wrapper);
+    table[SYS_FB_WRITE] = Some(super::super::display::sys_display_commit_wrapper);
+    table[SYS_FB_CLEAR] = Some(super::super::display::sys_display_clear_wrapper);
+    // Input syscalls
+    table[SYS_MOUSE_READ] = Some(super::super::display::sys_mouse_read_wrapper);
+    table[SYS_KEYBOARD_READ] = Some(super::super::display::sys_keyboard_read_wrapper);
 
     // === TEMPO (0x50-0x5F) ===
     table[SYS_CLOCK_GET] = Some(super::super::time::sys_clock_get_wrapper);

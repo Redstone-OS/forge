@@ -5,3 +5,10 @@ version = 3
 [[package]]
 name = "forge"
 version = "0.1.0"
+dependencies = [
+ "gfx_types",
+]
+
+[[package]]
+name = "gfx_types"
+version = "0.1.0"
