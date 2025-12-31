@@ -45,6 +45,14 @@ pub fn check_sleep_queue() {
         }
         i += 1;
     }
+
+    // TRACE: verificar se a fila ainda tem itens
+    if sleep_queue.len() > 0 {
+        crate::ktrace!(
+            "(Sleep) Queue checked. Items left:",
+            sleep_queue.len() as u64
+        );
+    }
 }
 
 pub fn add_task(task: Pin<Box<Task>>) {

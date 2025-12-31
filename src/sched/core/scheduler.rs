@@ -36,12 +36,22 @@ pub fn current() -> Option<*const Task> {
 
 /// Adiciona task à fila de execução
 pub fn enqueue(task: Pin<Box<Task>>) {
+    if task.tid.as_u32() == 0 {
+        crate::kerror!("(Sched) ERRO: Tentativa de colocar PID 0 na RunQueue! Ignorando...");
+        return;
+    }
+    crate::ktrace!("(Sched) enqueue PID:", task.tid.as_u32() as u64);
     RUNQUEUE.lock().push(task);
 }
 
 /// Seleciona próxima task para executar
 pub fn pick_next() -> Option<Pin<Box<Task>>> {
-    RUNQUEUE.lock().pop()
+    let mut rq = RUNQUEUE.lock();
+    let res = rq.pop();
+    if let Some(ref t) = res {
+        crate::ktrace!("(Sched) pick_next: selecionado PID:", t.tid.as_u32() as u64);
+    }
+    res
 }
 
 /// Yield: cede CPU voluntariamente
@@ -187,10 +197,16 @@ pub fn schedule() {
             crate::kinfo!("(Sched) Nenhuma task disponível. Entrando em modo Idle.");
             drop(current_guard);
 
+            let mut idle_count = 0u64;
             loop {
                 Cpu::enable_interrupts();
                 Cpu::halt();
                 Cpu::disable_interrupts();
+
+                idle_count += 1;
+                if idle_count % 100 == 0 {
+                    crate::ktrace!("(Sched) Idler pulsação:", idle_count);
+                }
 
                 if let Some(next) = pick_next() {
                     crate::kinfo!("(Sched) Task acordou! Retomando escalonamento.");
@@ -339,6 +355,7 @@ pub fn dump_tasks() {
     if let Some(guard) = CURRENT.try_lock() {
         if let Some(ref task) = *guard {
             crate::ktrace!("  - Running TID:", task.tid.as_u32() as u64);
+            crate::ktrace!("    State:", task.state as u32 as u64);
         } else {
             crate::ktrace!("  - CURRENT: None");
         }
@@ -347,30 +364,33 @@ pub fn dump_tasks() {
     }
 
     // 2. Ready Tasks
-    {
-        let rq = RUNQUEUE.lock();
+    if let Some(rq) = RUNQUEUE.try_lock() {
         crate::ktrace!("  - READY Tasks count:", rq.queue.len() as u64);
         for task in &rq.queue {
             crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
         }
+    } else {
+        crate::ktrace!("  - RUNQUEUE: [Locked]");
     }
 
     // 3. Sleeping Tasks
-    {
-        let sq = super::sleep_queue::SLEEP_QUEUE.lock();
+    if let Some(sq) = super::sleep_queue::SLEEP_QUEUE.try_lock() {
         crate::ktrace!("  - SLEEPING Tasks count:", sq.len() as u64);
         for task in sq.iter() {
             crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
         }
+    } else {
+        crate::ktrace!("  - SLEEP_QUEUE: [Locked]");
     }
 
     // 4. Zombie Tasks
-    {
-        let zombies = crate::sched::task::lifecycle::ZOMBIES.lock();
+    if let Some(zombies) = crate::sched::task::lifecycle::ZOMBIES.try_lock() {
         crate::ktrace!("  - ZOMBIE Tasks count:", zombies.len() as u64);
         for task in zombies.iter() {
             crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
         }
+    } else {
+        crate::ktrace!("  - ZOMBIES: [Locked]");
     }
 
     crate::ktrace!("--- [TRACE] FIM DO DUMP ---");
