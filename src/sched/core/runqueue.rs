@@ -11,7 +11,7 @@ use core::pin::Pin;
 /// Armazena as tarefas que estão no estado `Ready` e aguardam tempo de CPU.
 /// Atualmente implementa uma política FIFO (Round Robin simples).
 pub struct RunQueue {
-    queue: VecDeque<Pin<Box<Task>>>,
+    pub(crate) queue: VecDeque<Pin<Box<Task>>>,
 }
 
 impl RunQueue {

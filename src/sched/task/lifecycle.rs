@@ -9,7 +9,7 @@ use alloc::collections::VecDeque;
 use core::pin::Pin;
 
 /// Fila de tarefas mortas aguardando cleanup (reaper)
-static ZOMBIES: Spinlock<VecDeque<Pin<Box<Task>>>> = Spinlock::new(VecDeque::new());
+pub(crate) static ZOMBIES: Spinlock<VecDeque<Pin<Box<Task>>>> = Spinlock::new(VecDeque::new());
 
 /// Adiciona tarefa à lista de zombies
 pub fn add_zombie(task: Pin<Box<Task>>) {

@@ -60,30 +60,23 @@ pub fn sleep_current(ms: u64) {
 
     Cpu::disable_interrupts();
 
-    // 1. Pegar a task atual (take de CURRENT)
-    let task = {
+    // 1. Marcar a task atual como Sleeping e definir tempo
+    {
         let mut current_guard = CURRENT.lock();
-        current_guard.take()
-    };
+        if let Some(ref mut task) = *current_guard {
+            let now = crate::core::time::jiffies::get_jiffies();
+            let ticks = crate::core::time::jiffies::millis_to_jiffies(ms);
 
-    if let Some(mut task) = task {
-        // 2. Calcular jiffies de despertar
-        let now = crate::core::time::jiffies::get_jiffies();
-        let ticks = crate::core::time::jiffies::millis_to_jiffies(ms);
-        task.wake_at = Some(now + ticks);
+            unsafe { Pin::get_unchecked_mut(task.as_mut()) }.wake_at = Some(now + ticks);
+            unsafe { Pin::get_unchecked_mut(task.as_mut()) }.state = TaskState::Sleeping;
 
-        // 3. Mudar estado para Blocked
-        task.state = TaskState::Blocked;
-
-        crate::kdebug!("(Sched) Task PID: dormindo por", ms);
-
-        // 4. Adicionar à SleepQueue
-        super::sleep_queue::add_task(task);
-
-        // 5. Chamar schedule() para rodar a próxima
-        // Nota: as interrupções continuam desabilitadas até o switch terminar
-        schedule();
+            crate::kdebug!("(Sched) Task Sleeping...");
+        }
     }
+
+    // 2. Chama o schedule.
+    // Como a task está Sleeping, o schedule vai salvar o contexto e movê-la para a SleepQueue.
+    schedule();
 
     Cpu::enable_interrupts();
 }
@@ -147,65 +140,141 @@ pub fn exit_current() -> ! {
 
 /// Função principal de escalonamento
 pub fn schedule() {
-    let mut next = match pick_next() {
-        Some(t) => t,
-        // Se não houver tasks, precisamos ver se ainda temos o CURRENT rodando.
-        // Se CURRENT for None (ex: dormindo) e RunQueue vazia, caímos no idle loop via run().
-        None => return,
-    };
+    let mut next_opt = pick_next();
+
+    // TODO: Investigar por que tarefas com PID 0 (TID 0) estão entrando na RunQueue.
+    // Solução paliativa: Ignora qualquer tarefa com PID 0 para evitar o crash de contexto nulo.
+    while let Some(ref task) = next_opt {
+        if task.tid.as_u32() == 0 {
+            crate::kerror!(
+                "(Sched) AVISO: Detectada task com PID 0 inválida na RunQueue! Pulando..."
+            );
+
+            dump_tasks();
+
+            next_opt = pick_next();
+        } else {
+            break;
+        }
+    }
 
     let mut current_guard = CURRENT.lock();
 
-    // 1. Decidir o que fazer com a task ANTIGA
-    if let Some(mut old_task) = current_guard.take() {
-        // Se a task antiga estava Running, ela volta pra fila (preempção cooperativa)
-        if old_task.state == TaskState::Running {
-            unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
+    // CASO A: Não há nenhuma task pronta na RunQueue
+    if next_opt.is_none() {
+        if let Some(mut old_task) = current_guard.take() {
+            if old_task.state == TaskState::Running {
+                // Task atual pode continuar rodando (ex: yield voluntário sem concorrência)
+                *current_guard = Some(old_task);
+                return;
+            }
 
-            // Salvar contexto e trocar
-            let old_ctx_ptr = unsafe {
-                Pin::get_unchecked_mut(old_task.as_mut()) as *mut Task
-                    as *mut crate::sched::task::context::CpuContext
-            };
+            // Task atual suspensa (Sleeping ou Blocked).
+            // Precisamos salvar seu contexto e movê-la para a fila correta.
+            let state = old_task.state;
+            let old_ctx_ptr =
+                unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
 
-            // Devolver para a fila
-            RUNQUEUE.lock().push(old_task);
+            if state == TaskState::Sleeping {
+                crate::ktrace!(
+                    "(Sched) Task colocada em SLEEP_QUEUE. PID:",
+                    old_task.tid.as_u32() as u64
+                );
+                super::sleep_queue::add_task(old_task);
+            }
 
-            // Preparar a nova task
-            prepare_and_switch_to(&mut next, Some(old_ctx_ptr), current_guard);
+            // Agora o sistema está realmente sem tarefas prontas.
+            crate::kinfo!("(Sched) Nenhuma task disponível. Entrando em modo Idle.");
+            drop(current_guard);
+
+            loop {
+                Cpu::enable_interrupts();
+                Cpu::halt();
+                Cpu::disable_interrupts();
+
+                if let Some(next) = pick_next() {
+                    crate::kinfo!("(Sched) Task acordou! Retomando escalonamento.");
+                    let g = CURRENT.lock();
+                    // Usamos old_ctx_ptr para salvar o estado da task que iniciou o sleep
+                    prepare_and_switch_to(next, Some(old_ctx_ptr), g);
+                    return; // Jump
+                }
+            }
         } else {
-            // Se a task antiga JÁ NÃO ESTAVA Running (ex: morreu ou foi colocada em outra fila),
-            // apenas trocamos para a próxima sem salvar contexto.
-            prepare_and_switch_to(&mut next, None, current_guard);
+            // Sistema totalmente ocioso
+            crate::kinfo!("(Sched) Sistema ocioso. Aguardando interrupções...");
+            drop(current_guard);
+            loop {
+                Cpu::enable_interrupts();
+                Cpu::halt();
+                Cpu::disable_interrupts();
+                if let Some(next) = pick_next() {
+                    let g = CURRENT.lock();
+                    prepare_and_switch_to(next, None, g);
+                    return;
+                }
+            }
+        }
+    }
+
+    // CASO B: Há uma próxima task para rodar (next_opt é Some)
+    let next = next_opt.unwrap();
+    if let Some(mut old_task) = current_guard.take() {
+        let state = old_task.state;
+
+        if state == TaskState::Running || state == TaskState::Sleeping {
+            let old_ctx_ptr =
+                unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
+
+            if state == TaskState::Running {
+                unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
+                RUNQUEUE.lock().push(old_task);
+            } else {
+                crate::ktrace!(
+                    "(Sched) Task colocada em SLEEP_QUEUE. PID:",
+                    old_task.tid.as_u32() as u64
+                );
+                super::sleep_queue::add_task(old_task);
+            }
+
+            prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard);
+        } else {
+            prepare_and_switch_to(next, None, current_guard);
         }
     } else {
-        // Sem task antiga (ex: a anterior dormiu e limpou o CURRENT)
-        prepare_and_switch_to(&mut next, None, current_guard);
+        // Sem task antiga
+        prepare_and_switch_to(next, None, current_guard);
     }
 }
 
 /// Prepara registradores, pilha e CR3 e efetua a troca de contexto
 fn prepare_and_switch_to(
-    next: &mut Pin<Box<Task>>,
+    mut next: Pin<Box<Task>>,
     old_ctx: Option<*mut crate::sched::task::context::CpuContext>,
     mut current_guard: crate::sync::SpinlockGuard<Option<Pin<Box<Task>>>>,
 ) {
     // 1. Marcar nova task como Running
-    unsafe { Pin::get_unchecked_mut(next.as_mut()) }.state = TaskState::Running;
+    unsafe { core::pin::Pin::get_unchecked_mut(next.as_mut()) }.state = TaskState::Running;
 
     // 2. Extrair dados necessários
-    let next_ref = next.as_ref();
-    let next_task = Pin::get_ref(next_ref);
-    let new_ctx_ptr = &next_task.context as *const _;
-    let new_cr3 = next_task.cr3;
-    let stack_top = next_task.kernel_stack.as_u64();
-    let is_new = next_task.state == TaskState::Created;
+    let new_ctx_ptr = &next.context as *const _;
+    let new_cr3 = next.cr3;
+    let stack_top = next.kernel_stack.as_u64();
+    let is_new = next.state == TaskState::Created;
 
-    // 3. Atualizar CURRENT
-    // Precisamos fazer o take() do Box para colocar no guard
-    // SAFETY: Temos o ownership via parâmetro mut
-    let next_box = unsafe { core::ptr::read(next as *mut _ as *const Pin<Box<Task>>) };
-    *current_guard = Some(next_box);
+    // [DEBUG - REMOVER DEPOIS] Logar valores do contexto que será carregado para detectar corrupção
+    crate::ktrace!(
+        "(Sched) Carregando Contexto de PID:",
+        next.tid.as_u32() as u64
+    );
+    crate::ktrace!("  RIP:", next.context.rip);
+    crate::ktrace!("  RSP:", next.context.rsp);
+    crate::ktrace!("  RBX:", next.context.rbx);
+    crate::ktrace!("  RBP:", next.context.rbp);
+    crate::ktrace!("  CR3:", new_cr3);
+
+    // 3. Atualizar CURRENT (Dando ownership do Box para o Spinlock)
+    *current_guard = Some(next);
     drop(current_guard); // Soltar lock antes da "mágica"
 
     // 4. Efetuar a troca de hardware
@@ -220,6 +289,9 @@ fn prepare_and_switch_to(
         if new_cr3 != 0 {
             core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
         }
+
+        // [DEBUG - REMOVER DEPOIS] Log de depuração logo antes do salto final
+        crate::kdebug!("(Sched) Efetuando switch/jump final...");
 
         // Escolher método de restauração
         if let Some(old_ctx_ptr) = old_ctx {
@@ -257,4 +329,49 @@ pub fn run() -> ! {
             Cpu::disable_interrupts();
         }
     }
+}
+
+/// Imprime o estado de todas as tarefas conhecidas no sistema
+pub fn dump_tasks() {
+    crate::ktrace!("--- [TRACE] GERENCIADOR DE TAREFAS: LISTA COMPLETA ---");
+
+    // 1. Task Atual (Running)
+    if let Some(guard) = CURRENT.try_lock() {
+        if let Some(ref task) = *guard {
+            crate::ktrace!("  - Running TID:", task.tid.as_u32() as u64);
+        } else {
+            crate::ktrace!("  - CURRENT: None");
+        }
+    } else {
+        crate::ktrace!("  - CURRENT: [Locked]");
+    }
+
+    // 2. Ready Tasks
+    {
+        let rq = RUNQUEUE.lock();
+        crate::ktrace!("  - READY Tasks count:", rq.queue.len() as u64);
+        for task in &rq.queue {
+            crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
+        }
+    }
+
+    // 3. Sleeping Tasks
+    {
+        let sq = super::sleep_queue::SLEEP_QUEUE.lock();
+        crate::ktrace!("  - SLEEPING Tasks count:", sq.len() as u64);
+        for task in sq.iter() {
+            crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
+        }
+    }
+
+    // 4. Zombie Tasks
+    {
+        let zombies = crate::sched::task::lifecycle::ZOMBIES.lock();
+        crate::ktrace!("  - ZOMBIE Tasks count:", zombies.len() as u64);
+        for task in zombies.iter() {
+            crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
+        }
+    }
+
+    crate::ktrace!("--- [TRACE] FIM DO DUMP ---");
 }

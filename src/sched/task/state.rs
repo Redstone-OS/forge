@@ -11,6 +11,8 @@ pub enum TaskState {
     Running,
     /// Bloqueada esperando algo
     Blocked,
+    /// Dormindo por um tempo determinado
+    Sleeping,
     /// Terminada, esperando cleanup
     Zombie,
     /// Morta, pode ser liberada

@@ -47,7 +47,6 @@ pub fn check_sleep_queue() {
     }
 }
 
-/// Adiciona uma task à fila de sleep
 pub fn add_task(task: Pin<Box<Task>>) {
     SLEEP_QUEUE.lock().push_back(task);
 }
