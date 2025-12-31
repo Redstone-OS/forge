@@ -57,7 +57,8 @@ pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
         suggested_addr as u64
     } else {
         // Endereço padrão baseado no ID
-        0x1000_0000 + (shm_id * 0x100000)
+        // MUDANÇA: USAR 0x4000_0000 para evitar conflito com o HEAP (que começa em 0x1000_0000)
+        0x4000_0000 + (shm_id * 0x100000)
     };
 
     let registry = SHM_REGISTRY.lock();
