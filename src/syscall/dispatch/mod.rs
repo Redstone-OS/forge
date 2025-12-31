@@ -34,7 +34,7 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
         let arg5 = core::ptr::read_volatile(core::ptr::addr_of!((*ctx).r8)) as usize;
         let arg6 = core::ptr::read_volatile(core::ptr::addr_of!((*ctx).r9)) as usize;
 
-        // crate::ktrace!("(Syscall) num=", num as u64);
+        crate::ktrace!("(Syscall) num=", num as u64);
         // crate::ktrace!("(Syscall) arg1=", arg1 as u64);
         // crate::ktrace!("(Syscall) arg2=", arg2 as u64);
         // NOTA: ktrace desativado para evitar overhead em loops rápidos
