@@ -9,7 +9,6 @@
 /// - Recebe `BootInfo` do bootloader.
 /// - Nunca retorna (loop infinito ou shutdown).
 use super::handoff::BootInfo;
-use crate::core::power::cpuidle;
 
 /// Ponto de entrada do Kernel Rust.
 /// O Bootloader configura a stack e salta para cá.
@@ -19,7 +18,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Configurar Log Serial para que possamos ver o que está acontecendo.
     // (Serial driver geralmente não precisa de heap)
     crate::drivers::serial::init();
-    crate::kinfo!("--- 'Iniciando Forge Kernel' ---");
+    crate::kinfo!("'--- Iniciando Forge Kernel ---'");
 
     // Validação da ABI do Bootloader
     if boot_info.magic != crate::core::boot::handoff::BOOT_INFO_MAGIC {
@@ -86,6 +85,11 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Inicializando Drivers de Input'");
     crate::drivers::input::init();
 
+    // 8.5. Inicializar Idle Task ANTES de qualquer processo
+    // A idle task fica em CURRENT e será swapped quando o init process começar
+    crate::kinfo!("'Inicializando Idle Task'");
+    crate::sched::core::idle::init_idle_task();
+
     crate::kinfo!("'Iniciando Processo Init'");
     crate::core::process::spawn_init();
 
@@ -96,6 +100,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Habilitando Timer Preemptivo'");
     crate::arch::x86_64::interrupts::pic_enable_irq(0);
 
-    // 10. Loop de Ociosidade (Idle Loop)
-    cpuidle::enter_idle_loop();
+    // 10. Entrar no loop do scheduler
+    // A idle task já está em CURRENT, então schedule() vai trocar para o init
+    crate::sched::core::scheduler::run();
 }

@@ -39,7 +39,7 @@ pub mod switch;
 
 // Re-exportações de tipos e funções essenciais para simplificar o uso pelo resto do kernel.
 pub use debug::dump_tasks;
-pub use idle::{enter_idle_loop, system_idle_loop};
+pub use idle::{init_idle_task, is_idle_current};
 pub use policy::SchedulingPolicy;
 pub use scheduler::{
     current, enqueue, exit_current, init, pick_next, release_scheduler_lock, run, schedule,

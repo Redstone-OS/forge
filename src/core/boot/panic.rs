@@ -18,7 +18,7 @@ fn panic(info: &PanicInfo) -> ! {
     crate::arch::Cpu::disable_interrupts();
 
     crate::kerror!("*****************************************************");
-    crate::kerror!("*                   PANICO DO KERNEL                    *");
+    crate::kerror!("*                   PANICO DO KERNEL                *");
     crate::kerror!("*****************************************************");
 
     if let Some(location) = info.location() {

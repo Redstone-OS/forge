@@ -63,12 +63,11 @@ impl WaitQueue {
                 crate::sched::core::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard);
             }
         } else {
-            // Se não houver próxima, o sistema entra em Idle
-            // O enter_idle_loop vai salvar o contexto em old_ctx_ptr e aguardar.
+            // Se não houver próxima task, retornamos para o scheduler
+            // que vai voltar para a idle task automaticamente
             drop(current_guard);
-            unsafe {
-                crate::sched::core::enter_idle_loop(Some(old_ctx_ptr));
-            }
+            // A idle task vai continuar rodando e eventualmente re-escalonar
+            // quando esta task for acordada via wake_one()
         }
 
         crate::arch::Cpu::enable_interrupts();
