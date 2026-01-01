@@ -47,10 +47,9 @@ impl SharedMemory {
             if let Some(frame_addr) = pmm.allocate_frame() {
                 // Zerar o frame
                 unsafe {
-                    let ptr = frame_addr.as_u64() as *mut u8;
-                    for i in 0..FRAME_SIZE as usize {
-                        ptr.add(i).write_volatile(0);
-                    }
+                    // CORREÇÃO: Usar HHDM para acessar memória física
+                    let virt_addr = crate::mm::addr::phys_to_virt::<u8>(frame_addr.as_u64());
+                    core::ptr::write_bytes(virt_addr, 0, FRAME_SIZE as usize);
                 }
                 frames.push(frame_addr);
             } else {

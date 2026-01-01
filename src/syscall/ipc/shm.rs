@@ -38,6 +38,7 @@ pub fn sys_shm_create(size: usize) -> SysResult<usize> {
     let mut registry = SHM_REGISTRY.lock();
     match registry.create(size) {
         Ok(id) => {
+            crate::kdebug!("(Syscall) sys_shm_create: size=", size as u64);
             crate::kdebug!("(Syscall) sys_shm_create: id=", id.as_u64());
             Ok(id.as_u64() as usize)
         }
@@ -55,6 +56,7 @@ pub fn sys_shm_create(size: usize) -> SysResult<usize> {
 /// Endereço onde foi mapeado
 pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
     let id = ShmId(shm_id);
+    crate::ktrace!("(Syscall) sys_shm_map: id=", shm_id);
 
     // Base address for SHM mappings (24GB)
     // Movido para 24GB (0x6_0000_0000) e implementado lógica de limpeza de Huge Pages.
@@ -77,10 +79,12 @@ pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
         unsafe {
             nuke_huge_page_if_exists(base_addr);
         }
+        crate::ktrace!("(Syscall) sys_shm_map: addr=", base_addr);
 
         // 1. Mapear
         match shm.map(base_addr) {
             Ok(_) => {
+                crate::ktrace!("(Syscall) sys_shm_map: mapping OK. Registering VMA...");
                 // 2. Registrar VMA para que o Page Fault handler saiba que esta região é legítima
                 let aspace_arc = {
                     let guard = crate::sched::core::CURRENT.lock();
@@ -102,6 +106,7 @@ pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
                         MemoryIntent::SharedMemory,
                     );
                 }
+                crate::ktrace!("(Syscall) sys_shm_map: VMA registered.");
 
                 // Flush TLB
                 unsafe {
@@ -159,7 +164,7 @@ unsafe fn nuke_huge_page_if_exists(vaddr: u64) {
     }
 
     if (pdpte & 0x80) != 0 {
-        crate::kdebug!("(SHM) WARN: Found 1GB Huge Page at PDPT. Nuking...");
+        crate::kwarn!("(SHM) WARN: Found 1GB Huge Page at PDPT. Nuking...");
         core::ptr::write_volatile(pdpt_ptr.add(pdpt_idx) as *mut u64, 0);
         core::arch::asm!("invlpg [{}]", in(reg) vaddr);
         return;
