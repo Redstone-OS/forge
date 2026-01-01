@@ -34,7 +34,7 @@ use crate::sched::config::USER_STACK_SIZE;
 const USER_STACK_TOP: u64 = 0x7FFF_FFFF_F000;
 
 /// Cria novo processo a partir de executável
-pub fn spawn(path: &str) -> Result<Pid, ExecError> {
+pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pid, ExecError> {
     crate::kinfo!("(Spawn) Spawning:", path.as_ptr() as u64);
 
     // 1. Carregar arquivo do Initramfs (via lookup direto temporário)
@@ -49,6 +49,7 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     // 3. Criar task
     crate::kinfo!("(Spawn) Creating task struct...");
     let mut task = crate::sched::task::Task::new(path);
+    task.parent_id = parent_id;
     crate::kinfo!("(Spawn) Task created via Task::new");
 
     // === PROCESS ISOLATION SETUP ===

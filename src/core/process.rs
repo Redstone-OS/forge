@@ -7,7 +7,7 @@ pub fn spawn_init() {
     let init_path = "/system/services/supervisor";
 
     // Caminho para a função spawn via sched -> exec -> spawn (mod) -> spawn (file) -> spawn (func)
-    match crate::sched::exec::spawn(init_path) {
+    match crate::sched::exec::spawn(init_path, None) {
         Ok(pid) => {
             // Access public field .0 since Pid is tuple struct
             crate::kinfo!("Init process spawned. PID:", pid.0 as u64);

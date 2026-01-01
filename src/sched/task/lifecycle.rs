@@ -55,6 +55,22 @@ pub fn cleanup(_tid: Tid) {
     }
 }
 
+/// Procura um zumbi pelo TID, remove-o da lista e retorna seu código de saída.
+pub fn find_and_collect_zombie(_tid: Tid) -> Option<i32> {
+    let mut zombies = ZOMBIES.lock();
+    if let Some(pos) = zombies.iter().position(|t| t.tid == _tid) {
+        let task = zombies.remove(pos).unwrap();
+        let code = task.exit_code.unwrap_or(-1);
+        crate::kinfo!(
+            "(Lifecycle) Collected zombie PID:",
+            task.tid.as_u32() as u64
+        );
+        Some(code)
+    } else {
+        None
+    }
+}
+
 /// Limpa todos os zumbis pendentes (útil para idle task chamar)
 pub fn cleanup_all() {
     let mut zombies = ZOMBIES.lock();

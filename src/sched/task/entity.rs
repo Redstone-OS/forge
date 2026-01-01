@@ -47,6 +47,10 @@ pub struct Task {
     pub handle_table: HandleTable,
     /// Momento de acordar (jiffies) se estiver dormindo
     pub wake_at: Option<u64>,
+    /// Base da heap do usuário
+    pub heap_start: u64,
+    /// Próximo endereço livre da heap
+    pub heap_next: u64,
 }
 
 impl Task {
@@ -77,6 +81,8 @@ impl Task {
             name: name_buf,
             handle_table: HandleTable::new(),
             wake_at: None,
+            heap_start: 0x10000000,
+            heap_next: 0x10000000,
         }
     }
 

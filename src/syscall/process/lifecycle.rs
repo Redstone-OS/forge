@@ -89,10 +89,14 @@ pub fn sys_spawn(
         }
     };
 
-    crate::kinfo!("(Syscall) sys_spawn:", path_ptr as u64);
+    // Obter PID do chamador para definir como pai
+    let current_tid = {
+        let guard = crate::sched::core::CURRENT.lock();
+        guard.as_ref().map(|t| t.tid)
+    };
 
     // Chamar função de spawn existente
-    match crate::sched::exec::spawn(path) {
+    match crate::sched::exec::spawn(path, current_tid) {
         Ok(pid) => {
             crate::kinfo!("(Syscall) spawn OK, PID=", pid.as_u32() as u64);
             Ok(pid.as_u32() as usize)
@@ -113,19 +117,28 @@ pub fn sys_spawn(
 /// Espera processo filho terminar
 ///
 /// # Args
-/// - pid: PID do processo (0 = qualquer filho)
-/// - timeout_ms: timeout em ms (0 = bloqueante infinito)
+/// - pid: PID do processo (0 = qualquer filho - NOT YET SUPPORTED)
+/// - timeout_ms: timeout em ms (0 = bloqueante infinito - NOT YET SUPPORTED)
 ///
 /// # Returns
 /// Exit code do processo ou erro
-pub fn sys_wait(pid: usize, timeout_ms: u64) -> SysResult<usize> {
-    // TODO: Validar que pid é filho do processo atual
-    // TODO: Se processo já terminou, retornar exit code
-    // TODO: Se não, bloquear até terminar ou timeout
+pub fn sys_wait(pid: usize, _timeout_ms: u64) -> SysResult<usize> {
+    if pid == 0 {
+        crate::kwarn!("(Syscall) sys_wait(0) não implementado (any child)");
+        return Err(SysError::NotImplemented);
+    }
 
-    let _ = (pid, timeout_ms);
-    crate::kwarn!("(Syscall) sys_wait não implementado");
-    Err(SysError::NotImplemented)
+    let tid = crate::sys::types::Tid::new(pid as u32);
+
+    // Tenta coletar o zumbi
+    if let Some(code) = crate::sched::task::lifecycle::find_and_collect_zombie(tid) {
+        Ok(code as usize)
+    } else {
+        // Se não for zumbi, pode estar rodando ou não existir
+        // TODO: Verificar se processo existe. Se existir, deveria bloquear.
+        // Por enquanto, Supervisor usa timeout e poll, então retornamos NotFound se não for zumbi.
+        Err(SysError::NotFound)
+    }
 }
 
 /// Cede o restante do quantum

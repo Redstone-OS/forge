@@ -38,14 +38,7 @@ pub fn sys_mprotect_wrapper(args: &SyscallArgs) -> SysResult<usize> {
 /// # Returns
 /// Endereço da memória alocada ou erro
 pub fn sys_alloc(size: usize, _flags: u32) -> SysResult<usize> {
-    use core::sync::atomic::{AtomicUsize, Ordering};
-
-    // Região de heap do userspace: 0x10000000 - 0x20000000 (256 MB)
-    const USER_HEAP_START: usize = 0x10000000;
-    const USER_HEAP_END: usize = 0x20000000;
-
-    // Bump allocator simples (global por enquanto - deveria ser per-process)
-    static USER_HEAP_NEXT: AtomicUsize = AtomicUsize::new(USER_HEAP_START);
+    const USER_HEAP_MAX: u64 = 0x20000000;
 
     if size == 0 {
         return Err(SysError::InvalidArgument);
@@ -54,13 +47,19 @@ pub fn sys_alloc(size: usize, _flags: u32) -> SysResult<usize> {
     // Alinhar tamanho a 4KB (página)
     let aligned_size = (size + 0xFFF) & !0xFFF;
 
-    // Tentar alocar espaço
-    let alloc_addr = USER_HEAP_NEXT.fetch_add(aligned_size, Ordering::SeqCst);
+    // Obter task atual para acessar seu contador de heap
+    let mut current_task = crate::sched::core::CURRENT.lock();
+    let task = current_task.as_mut().ok_or(SysError::Interrupted)?;
 
-    if alloc_addr + aligned_size > USER_HEAP_END {
-        crate::kerror!("(Syscall) sys_alloc: OOM! addr=", alloc_addr as u64);
+    let alloc_addr = task.heap_next;
+
+    if alloc_addr + aligned_size as u64 > USER_HEAP_MAX {
+        crate::kerror!("(Syscall) sys_alloc: OOM (Virtual)! addr=", alloc_addr);
         return Err(SysError::OutOfMemory);
     }
+
+    // Atualizar contador da task
+    task.heap_next += aligned_size as u64;
 
     // Obter lock do PMM para alocar frames
     let mut pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
@@ -72,7 +71,7 @@ pub fn sys_alloc(size: usize, _flags: u32) -> SysResult<usize> {
         | crate::mm::vmm::MapFlags::USER;
 
     for i in 0..pages {
-        let vaddr = alloc_addr + (i * 4096);
+        let vaddr = alloc_addr + (i * 4096) as u64;
 
         // Alocar frame físico
         let frame = match pmm.allocate_frame() {
@@ -84,10 +83,8 @@ pub fn sys_alloc(size: usize, _flags: u32) -> SysResult<usize> {
         };
 
         // Mapear no espaço de usuário atual
-        if let Err(_) =
-            crate::mm::vmm::map_page_with_pmm(vaddr as u64, frame.addr(), flags, &mut *pmm)
-        {
-            crate::kerror!("(Syscall) sys_alloc: map failed at", vaddr as u64);
+        if let Err(_) = crate::mm::vmm::map_page_with_pmm(vaddr, frame.addr(), flags, &mut *pmm) {
+            crate::kerror!("(Syscall) sys_alloc: map failed at", vaddr);
             return Err(SysError::OutOfMemory);
         }
 
@@ -97,7 +94,10 @@ pub fn sys_alloc(size: usize, _flags: u32) -> SysResult<usize> {
         }
     }
 
-    Ok(alloc_addr)
+    // Importante: liberar o lock do CURRENT antes de retornar,
+    // embora no Rust o Scoped Lock faça isso automaticamente.
+
+    Ok(alloc_addr as usize)
 }
 
 /// Libera memória alocada

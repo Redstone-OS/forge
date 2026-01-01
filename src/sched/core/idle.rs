@@ -27,6 +27,8 @@ pub unsafe fn enter_idle_loop(old_ctx: Option<*mut CpuContext>) -> ! {
         // Verifica se há alguma task na runqueue agora
         if let Some(next) = pick_next() {
             crate::kinfo!("(Sched) Task acordou! Retomando escalonamento.");
+            crate::kinfo!("(Sched) Verificando estado das tasks...");
+            super::debug::dump_tasks();
 
             // Re-adquire o lock necessário para o switch
             let g = CURRENT.lock();

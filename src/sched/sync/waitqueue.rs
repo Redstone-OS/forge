@@ -32,27 +32,43 @@ impl WaitQueue {
     pub fn wait(&self) {
         crate::arch::Cpu::disable_interrupts();
 
-        // 1. Pegar a task atual (takeownership do CURRENT)
-        // Precisamos do lock do scheduler para fazer isso atomicamente em relação a interrupts
-        let task = {
+        // 1. Pegar a task atual para bloquear
+        let (task, old_ctx_ptr) = {
             let mut current_guard = CURRENT.lock();
-            current_guard.take() // Remove de CURRENT
+            if let Some(mut task) = current_guard.take() {
+                // Marcar como bloqueada
+                unsafe { Pin::get_unchecked_mut(task.as_mut()) }.state = TaskState::Blocked;
+
+                // Obter ponteiro do contexto para o switch
+                let ctx_ptr =
+                    unsafe { &mut Pin::get_unchecked_mut(task.as_mut()).context as *mut _ };
+
+                // Devolve a task e o ponteiro
+                (task, ctx_ptr)
+            } else {
+                crate::kerror!("(WaitQueue) wait called without current task!");
+                crate::arch::Cpu::enable_interrupts();
+                return;
+            }
         };
 
-        if let Some(mut task) = task {
-            // 2. Mudar estado para Blocked
-            task.state = TaskState::Blocked;
+        // 2. Adicionar à fila de espera (agora detemos a ownership da task)
+        self.waiters.lock().push_back(task);
 
-            // 3. Adicionar à fila de espera
-            self.waiters.lock().push_back(task);
-
-            // 4. Chamar schedule() para rodar a próxima
-            // Como CURRENT está None (take), o schedule() vai pegar a próxima do RunQueue.
-            // O lock do CURRENT já foi solto.
-            crate::sched::core::schedule();
+        // 3. Escolher a próxima task e trocar de contexto
+        // IMPORTANTE: precisamos pegar o lock do CURRENT de volta para o prepare_and_switch_to
+        let current_guard = CURRENT.lock();
+        if let Some(next) = crate::sched::core::pick_next() {
+            unsafe {
+                crate::sched::core::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard);
+            }
         } else {
-            // Se wait() for chamado sem task rodando (ex: boot), panic ou ignorar.
-            crate::kerror!("(WaitQueue) wait called without current task!");
+            // Se não houver próxima, o sistema entra em Idle
+            // O enter_idle_loop vai salvar o contexto em old_ctx_ptr e aguardar.
+            drop(current_guard);
+            unsafe {
+                crate::sched::core::enter_idle_loop(Some(old_ctx_ptr));
+            }
         }
 
         crate::arch::Cpu::enable_interrupts();

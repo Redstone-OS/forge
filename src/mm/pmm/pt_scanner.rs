@@ -24,7 +24,7 @@ use crate::mm::pmm::BitmapFrameAllocator;
 use core::arch::asm;
 
 /// Número máximo de page tables a escanear (proteção contra loops infinitos)
-const MAX_TABLES_TO_SCAN: usize = 1024;
+const MAX_TABLES_TO_SCAN: usize = 16384;
 
 /// Estatísticas de escaneamento por nível
 pub struct ScanStats {
@@ -32,6 +32,7 @@ pub struct ScanStats {
     pub pdpt_frames: usize,
     pub pd_frames: usize,
     pub pt_frames: usize,
+    pub data_frames: usize,
     pub already_marked: usize,
 }
 
@@ -42,12 +43,13 @@ impl ScanStats {
             pdpt_frames: 0,
             pd_frames: 0,
             pt_frames: 0,
+            data_frames: 0,
             already_marked: 0,
         }
     }
 
     pub fn total(&self) -> usize {
-        self.pml4_frames + self.pdpt_frames + self.pd_frames + self.pt_frames
+        self.pml4_frames + self.pdpt_frames + self.pd_frames + self.pt_frames + self.data_frames
     }
 }
 
@@ -172,22 +174,21 @@ unsafe fn scan_pdpt(pmm: &mut BitmapFrameAllocator, pdpt_phys: u64) {
         let entry = *pdpt.add(i);
 
         if entry & PAGE_PRESENT != 0 {
-            // Se for huge page (1GB), não tem PD abaixo
+            let phys = entry & PAGE_MASK;
+            // Se for huge page (1GB), apenas pular - proteção feita pelo init_free_regions
             if entry & PAGE_HUGE != 0 {
                 i += 1;
                 continue;
             }
 
-            let pd_phys = entry & PAGE_MASK;
-
-            if mark_frame(pmm, pd_phys, "PD") {
+            if mark_frame(pmm, phys, "PD") {
                 SCAN_STATS.pd_frames += 1;
             } else {
                 SCAN_STATS.already_marked += 1;
             }
 
             // Scan PD
-            scan_pd(pmm, pd_phys);
+            scan_pd(pmm, phys);
 
             if SCAN_STATS.total() >= MAX_TABLES_TO_SCAN {
                 return;
@@ -205,25 +206,43 @@ unsafe fn scan_pd(pmm: &mut BitmapFrameAllocator, pd_phys: u64) {
         let entry = *pd.add(i);
 
         if entry & PAGE_PRESENT != 0 {
-            // Se for huge page (2MB), não tem PT abaixo
+            let phys = entry & PAGE_MASK;
+            // Se for huge page (2MB), apenas pular - proteção feita pelo init_free_regions
             if entry & PAGE_HUGE != 0 {
                 i += 1;
                 continue;
             }
 
-            let pt_phys = entry & PAGE_MASK;
-
-            if mark_frame(pmm, pt_phys, "PT") {
+            if mark_frame(pmm, phys, "PT") {
                 SCAN_STATS.pt_frames += 1;
             } else {
                 SCAN_STATS.already_marked += 1;
             }
 
-            // Não precisamos escanear dentro da PT,
-            // pois as PTEs apontam para frames de dados, não page tables
+            // Scan PT
+            scan_pt(pmm, phys);
 
             if SCAN_STATS.total() >= MAX_TABLES_TO_SCAN {
                 return;
+            }
+        }
+        i += 1;
+    }
+}
+
+unsafe fn scan_pt(pmm: &mut BitmapFrameAllocator, pt_phys: u64) {
+    let pt: *const u64 = phys_to_virt::<u64>(pt_phys);
+
+    let mut i: usize = 0;
+    while i < 512 {
+        let entry = *pt.add(i);
+
+        if entry & PAGE_PRESENT != 0 {
+            let data_phys = entry & PAGE_MASK;
+            if mark_frame(pmm, data_phys, "DATA_4K") {
+                SCAN_STATS.data_frames += 1;
+            } else {
+                SCAN_STATS.already_marked += 1;
             }
         }
         i += 1;
@@ -243,6 +262,7 @@ pub fn get_stats() -> ScanStats {
             pdpt_frames: SCAN_STATS.pdpt_frames,
             pd_frames: SCAN_STATS.pd_frames,
             pt_frames: SCAN_STATS.pt_frames,
+            data_frames: SCAN_STATS.data_frames,
             already_marked: SCAN_STATS.already_marked,
         }
     }

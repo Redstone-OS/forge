@@ -46,12 +46,17 @@ pub fn check_sleep_queue() {
         i += 1;
     }
 
-    // TRACE: verificar se a fila ainda tem itens
-    if sleep_queue.len() > 0 {
-        crate::ktrace!(
-            "(Sleep) Queue checked. Items left:",
-            sleep_queue.len() as u64
-        );
+    // DEBUG: Monitorar estado da fila de sleep
+    if !sleep_queue.is_empty() {
+        for t in sleep_queue.iter() {
+            if t.tid.as_u32() == 1 {
+                crate::ktrace!(
+                    "(Sleep) Task 1 (Supervisor) in queue. Wake at:",
+                    t.wake_at.unwrap_or(0)
+                );
+                crate::ktrace!("(Sleep) Current jiffies:", now);
+            }
+        }
     }
 }
 

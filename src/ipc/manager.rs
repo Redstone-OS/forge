@@ -10,6 +10,8 @@ struct Port {
     name: String,
     queue: Spinlock<VecDeque<Vec<u8>>>,
     capacity: usize,
+    wait_read: crate::sched::sync::waitqueue::WaitQueue,
+    wait_write: crate::sched::sync::waitqueue::WaitQueue,
 }
 
 static PORT_REGISTRY: Spinlock<Option<BTreeMap<String, Arc<Port>>>> = Spinlock::new(None);
@@ -54,6 +56,8 @@ pub fn create_port(name: &str, capacity: usize) -> Result<usize, ()> {
         name: String::from(name),
         queue: Spinlock::new(VecDeque::with_capacity(capacity)),
         capacity,
+        wait_read: crate::sched::sync::waitqueue::WaitQueue::new(),
+        wait_write: crate::sched::sync::waitqueue::WaitQueue::new(),
     });
 
     registry.insert(String::from(name), port.clone());

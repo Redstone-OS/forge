@@ -318,6 +318,14 @@ impl BitmapFrameAllocator {
     ) {
         let bitmap_end_phys = bitmap_start_phys.as_u64() + bitmap_size_bytes;
 
+        // Região do Kernel
+        let kernel_start = boot_info.kernel_phys_addr;
+        let kernel_end = kernel_start + boot_info.kernel_size;
+
+        // Região do Initramfs
+        let initrd_start = boot_info.initramfs_addr;
+        let initrd_end = initrd_start + boot_info.initramfs_size;
+
         let regions = unsafe {
             core::slice::from_raw_parts(
                 boot_info.memory_map_addr as *const MemoryMapEntry,
@@ -326,7 +334,6 @@ impl BitmapFrameAllocator {
         };
 
         for region in regions {
-            // Só liberamos regiões marcadas como Usable
             if region.typ == MemoryType::Usable {
                 let mut start = region.base;
                 let mut end = region.base + region.len;
@@ -339,18 +346,27 @@ impl BitmapFrameAllocator {
                     continue;
                 }
 
-                // Excluir a região onde o próprio bitmap está!
-                if start < bitmap_end_phys && end > bitmap_start_phys.as_u64() {
-                    // Caso 1: Região engole o bitmap completamente
-                    if start < bitmap_start_phys.as_u64() {
-                        self.free_region(start, bitmap_start_phys.as_u64());
+                // Subtrair o bitmap e outras faixas críticas
+                let mut curr = start;
+                while curr < end {
+                    // Pular se estiver no Bitmap
+                    if curr < bitmap_end_phys && (curr + PAGE_SIZE) > bitmap_start_phys.as_u64() {
+                        curr += PAGE_SIZE;
+                        continue;
                     }
-                    if end > bitmap_end_phys {
-                        self.free_region(bitmap_end_phys, end);
+                    // Pular se estiver no Kernel
+                    if curr < kernel_end && (curr + PAGE_SIZE) > kernel_start {
+                        curr += PAGE_SIZE;
+                        continue;
                     }
-                } else {
-                    // Caso 2: Sem overlap, liberar tudo
-                    self.free_region(start, end);
+                    // Pular se estiver no Initrd
+                    if curr < initrd_end && (curr + PAGE_SIZE) > initrd_start {
+                        curr += PAGE_SIZE;
+                        continue;
+                    }
+
+                    self.free_region(curr, curr + PAGE_SIZE);
+                    curr += PAGE_SIZE;
                 }
             }
         }
