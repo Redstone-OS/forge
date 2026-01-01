@@ -55,7 +55,14 @@ pub fn timer_tick() {
     }
 }
 
-/// Retorna ponteiro para a task atual (unsafe se dereferenciado sem lock, uteil para IDs)
+/// Retorna ponteiro para a task atual (unsafe se dereferenciado sem lock, útil para IDs)
+///
+/// # TODO (SMP Safety)
+/// Este ponteiro é retornado após o lock ser liberado, o que significa que a task
+/// pode ser movida ou dealocada por outro core antes de ser usada. Para SMP, considerar:
+/// - Retornar `Arc<Task>` ou referência com lifetime
+/// - Usar RCU (Read-Copy-Update) para leituras seguras
+/// - Manter lock enquanto ponteiro estiver em uso
 pub fn current() -> Option<*const Task> {
     CURRENT
         .lock()
@@ -305,6 +312,14 @@ pub extern "C" fn schedule() {
 }
 
 /// Loop principal do scheduler
+///
+/// # TODO (SMP Safety)
+/// Este loop assume que após schedule() retornar, é seguro fazer halt().
+/// Em SMP, outro core pode modificar RUNQUEUE entre a verificação e o halt().
+/// Considerar:
+/// - Usar mecanismos de IPI (Inter-Processor Interrupt) para acordar cores
+/// - Verificar CURRENT antes de halt() para garantir consistência
+/// - Usar spinloop com backoff ao invés de halt() direto
 pub fn run() -> ! {
     Cpu::disable_interrupts();
     loop {

@@ -16,6 +16,19 @@ use core::pin::Pin;
 ///  
 /// # Safety
 /// Deve ser chamada com interrupções desabilitadas.
+///
+/// # TODO (SMP Safety - Memory Lifetime)
+/// O parâmetro `old_ctx` é um ponteiro para o CpuContext dentro de uma Task.
+/// A Task é movida para RunQueue/SleepQueue ANTES de chamar esta função.
+/// Riscos a considerar para SMP:
+/// - Outro core pode acessar/modificar a Task enquanto o switch está em progresso
+/// - O ponteiro old_ctx deve permanecer válido durante toda a operação de switch
+/// - Pin<Box<Task>> ajuda a garantir que a Task não será movida, mas não protege
+///   contra dealocação por outro core
+/// Mitigações possíveis:
+/// - Garantir exclusão mútua via lock durante todo o switch
+/// - Usar Arc<Task> com RwLock interno
+/// - Implementar mecanismo de "handoff" atômico entre cores
 pub unsafe fn prepare_and_switch_to(
     mut next: Pin<Box<Task>>,
     old_ctx: Option<*mut CpuContext>,
