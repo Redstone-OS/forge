@@ -51,68 +51,33 @@ pub struct Task {
 
 impl Task {
     /// Cria nova task diretamente no heap
-    ///
-    /// Evita cópia de struct grande através do stack
-    #[inline(never)]
     pub fn new(name: &str) -> Self {
-        crate::ktrace!("(Task) new entrada");
+        // Criar TID
+        let tid = Tid::new(NEXT_TID.inc() as u32);
 
-        // Criar TID primeiro
-        let tid_val = NEXT_TID.inc() as u32;
-        crate::ktrace!("(Task) tid_val=", tid_val as u64);
-        let tid = Tid::new(tid_val);
-
-        // Buffer de nome zerado
+        // Preparar buffer de nome
         let mut name_buf = [0u8; 32];
+        let bytes = name.as_bytes();
+        let len = bytes.len().min(31);
+        name_buf[..len].copy_from_slice(&bytes[..len]);
 
-        // Copiar bytes do nome manualmente usando ponteiros raw
-        let name_bytes = name.as_bytes();
-        let len = if name_bytes.len() < 31 {
-            name_bytes.len()
-        } else {
-            31
-        };
-
-        crate::ktrace!("(Task) copiando nome, len=", len as u64);
-
-        // Cópia ultra segura byte a byte via ponteiro
-        let src = name_bytes.as_ptr();
-        let dst = name_buf.as_mut_ptr();
-        let mut i = 0usize;
-        while i < len {
-            unsafe {
-                // Ler byte da fonte
-                let byte = core::ptr::read_volatile(src.add(i));
-                // Escrever byte no destino
-                core::ptr::write_volatile(dst.add(i), byte);
-            }
-            i = i.wrapping_add(1);
-        }
-
-        crate::ktrace!("(Task) nome copiado OK");
-        crate::ktrace!("(Task) construindo struct...");
-
-        // Construir struct manualmente
-        let task = Self {
+        Self {
             tid,
             state: TaskState::Created,
             context: CpuContext::new(),
             kernel_stack: VirtAddr::new(0),
             user_stack: VirtAddr::new(0),
-            cr3: 0, // Será definido no spawn
-            priority: 128,
+            cr3: 0,
+            priority: super::super::config::PRIORITY_DEFAULT,
             accounting: Accounting::new(),
-            parent_id: None, // Define no spawn
+            parent_id: None,
             exit_code: None,
             pending_signals: 0,
             blocked_signals: 0,
             name: name_buf,
             handle_table: HandleTable::new(),
             wake_at: None,
-        };
-
-        crate::ktrace!("(Task) struct construída, retornando...");
-        task
+        }
     }
 
     /// Marca como pronta
@@ -123,5 +88,24 @@ impl Task {
     /// Marca como bloqueada
     pub fn set_blocked(&mut self) {
         self.state = TaskState::Blocked;
+    }
+
+    /// Aplica o estado de hardware da task (GDT, CR3) na CPU atual.
+    ///
+    /// # Safety
+    /// Deve ser chamado com interrupções desabilitadas e lock do scheduler.
+    pub unsafe fn apply_hardware_state(&self) {
+        let kernel_stack = self.kernel_stack.as_u64();
+
+        // 1. Configurar stack do kernel para interrupções/syscalls
+        if kernel_stack != 0 {
+            crate::arch::x86_64::gdt::set_kernel_stack(kernel_stack);
+            crate::arch::x86_64::syscall::set_kernel_rsp(kernel_stack);
+        }
+
+        // 2. Trocar espaço de endereçamento (CR3)
+        if self.cr3 != 0 {
+            crate::arch::Cpu::write_cr3(self.cr3);
+        }
     }
 }

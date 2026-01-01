@@ -11,10 +11,7 @@ pub enum SchedulingPolicy {
     Deadline,
 }
 
-pub const PRIORITY_MIN: u8 = 0;
-pub const PRIORITY_DEFAULT: u8 = 128;
-pub const PRIORITY_MAX: u8 = 255;
-pub const PRIORITY_IDLE: u8 = 255;
+// use crate::sched::config::{PRIORITY_DEFAULT, PRIORITY_MAX, PRIORITY_MIN};
 
 impl Default for SchedulingPolicy {
     fn default() -> Self {

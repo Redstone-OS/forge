@@ -66,18 +66,19 @@ pub fn spawn(path: &str) -> Result<Pid, ExecError> {
     // Isso garante que o TrapFrame seja visível em ambos os CR3s
     let pid = Pid::new(task.tid.as_u32());
     const KERNEL_STACK_BASE: u64 = 0xFFFF_9100_0000_0000;
-    const KERNEL_STACK_SIZE: u64 = 8192; // 2 pages
+    // Usa o tamanho definido em config.rs
+    let kstack_size = crate::sched::config::KERNEL_STACK_SIZE as u64;
 
     let pid_u64 = pid.as_u32() as u64;
-    let kstack_start = KERNEL_STACK_BASE + (pid_u64 * KERNEL_STACK_SIZE);
-    let kstack_top = kstack_start + KERNEL_STACK_SIZE;
+    let kstack_start = KERNEL_STACK_BASE + (pid_u64 * kstack_size);
+    let kstack_top = kstack_start + kstack_size;
 
     // Alocar frames e mapear em AMBOS os P4s (kernel e processo)
     {
         crate::kinfo!("(Spawn) Allocating KStack frames for PID:", pid_u64);
         let mut pmm = FRAME_ALLOCATOR.lock();
         let flags = MapFlags::PRESENT | MapFlags::WRITABLE; // Kernel acessa
-        let pages = KERNEL_STACK_SIZE / FRAME_SIZE;
+        let pages = kstack_size / FRAME_SIZE;
 
         for i in 0..pages {
             let vaddr = kstack_start + i * FRAME_SIZE;

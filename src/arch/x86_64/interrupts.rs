@@ -1,14 +1,15 @@
-/// Arquivo: x86_64/interrupts.rs
-///
-/// Propósito: Definição e registro de Handlers de Interrupção.
-/// Configura a IDT com handlers para exceções da CPU (Divide Error, Page Fault, GPF, etc.)
-/// e mapeia IRQs de hardware.
-///
-/// Detalhes de Implementação:
-/// - Inicializa a IDT global.
-/// - Define stubs/handlers para as exceções críticas.
-/// - Implementa `init_idt`.
-// Handlers de interrupção e inicialização da IDT
+//! # Subsistema de Interrupções e Exceções (x86_64)
+//!
+//! Este módulo gerencia a comunicação entre o hardware e o kernel através da
+//! Tabela de Descritores de Interrupções (IDT). Ele é responsável por capturar
+//! eventos críticos da CPU, gerenciar interrupções de dispositivos (IRQs) e
+//! servir como o ponto de entrada principal para o agendamento preemptivo.
+//!
+//! ## Arquitetura:
+//! - **Exceções (0-31):** Tratamento de erros síncronos (Page Faults, GPF, etc).
+//! - **IRQs (32-47):** Interrupções externas remapeadas via PIC/APIC.
+//! - **Preempção:** O Timer (IRQ 0) é o gatilho que permite ao kernel retomar o
+//!   controle da CPU em intervalos regulares.
 use crate::arch::x86_64::idt::IDT;
 
 /// Stack Frame pushed by CPU on exception
@@ -22,6 +23,16 @@ pub struct ExceptionStackFrame {
     pub stack_segment: u64,
 }
 
+// Declaração dos wrappers definidos no global_asm!
+extern "C" {
+    fn divide_error_wrapper();
+    fn invalid_opcode_wrapper();
+    fn page_fault_wrapper();
+    fn general_protection_wrapper();
+    fn double_fault_wrapper();
+    fn breakpoint_wrapper();
+}
+
 /// Inicializa a Tabela de Descritores de Interrupção (IDT).
 /// Deve ser chamado no boot antes de habilitar interrupções.
 pub fn init_idt() {
@@ -29,16 +40,16 @@ pub fn init_idt() {
 
     // Debug: Print handler address
     crate::kinfo!(
-        "(IDT) Divide Error Handler Addr:",
-        divide_error_handler as u64
+        "(IDT) Divide Error Wrapper Addr:",
+        divide_error_wrapper as u64
     );
 
-    idt.set_handler(0, divide_error_handler as u64);
-    idt.set_handler(3, breakpoint_handler as u64);
-    idt.set_handler(6, invalid_opcode_handler as u64);
-    idt.set_handler(8, double_fault_handler as u64);
-    idt.set_handler(13, general_protection_handler as u64);
-    idt.set_handler(14, page_fault_handler as u64);
+    idt.set_handler(0, divide_error_wrapper as u64);
+    idt.set_handler(3, breakpoint_wrapper as u64);
+    idt.set_handler(6, invalid_opcode_wrapper as u64);
+    idt.set_handler(8, double_fault_wrapper as u64);
+    idt.set_handler(13, general_protection_wrapper as u64);
+    idt.set_handler(14, page_fault_wrapper as u64);
 
     // Remapear IRQs (PIC) -> 32..47
     // Timer (IRQ 0) -> 32
@@ -106,19 +117,53 @@ timer_handler:
     // 1. Salvar contexto volátil (scratch)
     PUSH_SCRATCH_REGS
 
-    // 2. Chamar handler Rust (manda EOI e talvez schedule)
+    // 2. Chamar handler Rust (manda EOI e atualiza jiffies)
     call timer_handler_inner
 
-    // 3. Restaurar contexto volátil
+    // 3. Ponto de Preempção (Preemption Point)
+    // Somente preemptamos se estávamos voltando para User Mode (Ring 3).
+    // Preemptar o Kernel (Ring 0) requer cuidado extremo com reentrância e locks.
+    // O Code Segment (CS) está em [rsp + 80] (9 regs salvos + RIP)
+    mov rax, [rsp + 80]
+    and rax, 3
+    cmp rax, 3
+    jne .skip_preemption
+
+    // Verificar se a CPU sinalizou que precisamos de agendamento
+    // Alinhamento manual de stack (16-bytes) para chamadas Rust.
+    // Preservamos o r12 (callee-saved) pois vamos usá-lo como âncora para o RSP.
+    push r12
+    mov r12, rsp
+    and rsp, -16
+    
+    call should_reschedule
+    test al, al
+    jz .restore_rsp
+
+    // Se chegamos aqui, o quantum acabou!
+    // Limpamos a flag e chamamos o orquestrador.
+    call clear_need_resched
+    call schedule
+
+.restore_rsp:
+    mov rsp, r12
+    pop r12
+
+.skip_preemption:
+    // 4. Restaurar contexto volátil
     POP_SCRATCH_REGS
 
-    // 4. Retornar da interrupção
+    // 5. Retornar da interrupção (restaura CS, RIP, RFLAGS, RSP, SS)
     iretq
 "#
 );
 
+#[allow(dead_code)]
 extern "C" {
     fn timer_handler();
+    fn should_reschedule() -> bool;
+    fn clear_need_resched();
+    fn schedule();
 }
 
 /// Handler Rust do Timer (chamado pelo ASM)
@@ -126,28 +171,19 @@ extern "C" {
 /// Este handler é responsável por:
 /// 1. Incrementar contador de ticks do sistema (jiffies).
 /// 2. Enviar EOI para o PIC.
-///
-/// NOTA: Preempção não implementada ainda.
-/// Para preempção real, precisamos modificar o assembly do timer handler
-/// para salvar contexto completo antes de fazer context switch.
-/// Atualmente o sistema usa cooperative multitasking via yield_now().
-
 #[no_mangle]
 pub extern "C" fn timer_handler_inner() {
     // 1. Incrementar contador de jiffies (usado para sleep, timeouts, etc)
     crate::core::time::jiffies::inc_jiffies();
 
-    // 2. Verificar se há tasks para acordar na SleepQueue
+    // 2. Notificar o scheduler sobre a passagem de tempo (Time-Slicing)
+    crate::sched::core::scheduler::timer_tick();
+
+    // 3. Verificar se há tasks para acordar na SleepQueue
     crate::sched::core::sleep_queue::check_sleep_queue();
 
-    // 3. Enviar EOI para o PIC (Master = 0x20)
+    // 4. Enviar EOI para o PIC (Master = 0x20)
     crate::arch::x86_64::ports::outb(0x20, 0x20);
-
-    // TODO: Implementar preempção no futuro
-    // Isso requer modificar o assembly do timer handler para:
-    // 1. Salvar TODOS os registradores (não apenas scratch)
-    // 2. Verificar se veio de userspace
-    // 3. Fazer context switch seguro
 }
 
 /// Inicializa e remapeia o PIC (Programmable Interrupt Controller) 8259
@@ -229,118 +265,42 @@ pub fn pic_disable_irq(irq: u8) {
 }
 
 // =============================================================================
-// EXCEPTION HANDLERS
+// HANDLERS DE EXCEÇÕES
 // =============================================================================
 
-extern "x86-interrupt" fn divide_error_handler(stack_frame: ExceptionStackFrame) {
-    crate::kerror!("EXCEPTION: DIVIDE ERROR (#DE)");
-    crate::kerror!("RIP: {:x}", stack_frame.instruction_pointer);
-    crate::kerror!("RSP: {:x}", stack_frame.stack_pointer);
-    loop {
-        crate::arch::Cpu::halt();
-    }
-}
-
-extern "x86-interrupt" fn breakpoint_handler(stack_frame: ExceptionStackFrame) {
-    crate::kinfo!(
-        "EXCEPTION: BREAKPOINT at {:x}",
-        stack_frame.instruction_pointer
-    );
-}
-
-extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: ExceptionStackFrame) {
-    crate::kerror!("EXCEPTION: INVALID OPCODE (#UD)");
-    crate::kerror!("RIP: {:x}", stack_frame.instruction_pointer);
-    loop {
-        crate::arch::Cpu::halt();
-    }
-}
-
-extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: ExceptionStackFrame,
-    _error_code: u64,
-) -> ! {
-    crate::kerror!("EXCEPTION: DOUBLE FAULT (#DF)");
-    crate::kerror!("RIP: {:x}", stack_frame.instruction_pointer);
-    panic!("DOUBLE FAULT");
-}
-
-extern "x86-interrupt" fn general_protection_handler(
-    stack_frame: ExceptionStackFrame,
-    error_code: u64,
+/// Trata falhas de CPU decidindo se deve matar o processo ou dar Panic no kernel.
+fn handle_fault(
+    name: &str,
+    stack_frame: &ExceptionStackFrame,
+    error_code: Option<u64>,
+    extra_info: Option<u64>,
 ) {
-    crate::kerror!("EXCEPTION: GENERAL PROTECTION FAULT (#GP)");
-    crate::kerror!("RIP:", stack_frame.instruction_pointer);
-    crate::kerror!("Error Code:", error_code);
-    loop {
-        crate::arch::Cpu::halt();
+    let is_user = (stack_frame.code_segment & 3) == 3;
+
+    if is_user {
+        crate::kerror!("!!! FALHA EM PROCESSO DE USUÁRIO !!!");
+        crate::kerror!("Exceção:", name);
+        crate::kerror!("RIP:", stack_frame.instruction_pointer);
+        crate::kerror!("CS:", stack_frame.code_segment);
+        if let Some(err) = error_code {
+            crate::kerror!("Error Code:", err);
+        }
+        if let Some(info) = extra_info {
+            crate::kerror!("Extra Info (ex: CR2):", info);
+        }
+        crate::kerror!("Ação: Encerrando processo infrator.");
+
+        // Encerra a task atual e pula para a próxima via scheduler
+        crate::sched::core::scheduler::exit_current(-1);
+    } else {
+        crate::kerror!("!!! KERNEL PANIC !!!");
+        crate::kerror!("Exceção crítica no modo kernel:", name);
+        crate::kerror!("RIP:", stack_frame.instruction_pointer);
+        if let Some(err) = error_code {
+            crate::kerror!("Error Code:", err);
+        }
+        panic!("Falha Crítica no Kernel!");
     }
 }
 
-extern "x86-interrupt" fn page_fault_handler(stack_frame: ExceptionStackFrame, error_code: u64) {
-    let cr2: u64;
-    let cr3: u64;
-    unsafe {
-        core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
-        core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
-    }
-
-    crate::kerror!("========================================");
-    crate::kerror!("EXCEPTION: PAGE FAULT (#PF)");
-    crate::kerror!("========================================");
-    crate::kerror!("CR2 (Faulting Addr):", cr2);
-    crate::kerror!("CR3 (Page Table):", cr3);
-    crate::kerror!("Error Code:", error_code);
-    crate::kerror!("RIP:", stack_frame.instruction_pointer);
-    crate::kerror!("CS:", stack_frame.code_segment);
-    crate::kerror!("RFLAGS:", stack_frame.cpu_flags);
-    crate::kerror!("RSP:", stack_frame.stack_pointer);
-    crate::kerror!("SS:", stack_frame.stack_segment);
-
-    // Decodificar error code:
-    // Bit 0 (P): 0 = página não presente, 1 = proteção violada
-    // Bit 1 (W): 0 = leitura, 1 = escrita
-    // Bit 2 (U): 0 = kernel, 1 = user mode
-    // Bit 3 (R): 1 = reserved bit violation
-    // Bit 4 (I): 1 = instruction fetch
-    let p = (error_code & 1) != 0;
-    let w = (error_code & 2) != 0;
-    let u = (error_code & 4) != 0;
-    let r = (error_code & 8) != 0;
-    let i = (error_code & 16) != 0;
-
-    crate::kerror!("----------------------------------------");
-    crate::kerror!("[PF] Error Code Decode:");
-    crate::kerror!("[PF] P(present):", if p { 1u64 } else { 0u64 });
-    crate::kerror!("[PF] W(write):", if w { 1u64 } else { 0u64 });
-    crate::kerror!("[PF] U(user):", if u { 1u64 } else { 0u64 });
-    crate::kerror!("[PF] R(rsvd):", if r { 1u64 } else { 0u64 });
-    crate::kerror!("[PF] I(instr):", if i { 1u64 } else { 0u64 });
-
-    // Interpretação humana
-    if p {
-        crate::kerror!("[PF] Causa: Violação de PROTEÇÃO (página presente mas acesso negado)");
-    } else {
-        crate::kerror!("[PF] Causa: Página NÃO MAPEADA");
-    }
-
-    if u {
-        crate::kerror!("[PF] Contexto: USER MODE tentou acessar");
-    } else {
-        crate::kerror!("[PF] Contexto: KERNEL MODE tentou acessar");
-    }
-
-    if w {
-        crate::kerror!("[PF] Operação: ESCRITA");
-    } else if i {
-        crate::kerror!("[PF] Operação: INSTRUCTION FETCH");
-    } else {
-        crate::kerror!("[PF] Operação: LEITURA");
-    }
-
-    crate::kerror!("========================================");
-
-    loop {
-        crate::arch::Cpu::halt();
-    }
-}
+// (Handlers antigos removidos)

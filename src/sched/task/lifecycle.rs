@@ -28,7 +28,7 @@ pub fn exit(code: i32) -> ! {
 
     // Solução ideal: exit_current recebe o código.
     // Mas por enquanto, apenas chamamos o scheduler.
-    crate::sched::core::exit_current();
+    crate::sched::core::exit_current(code);
 }
 
 /// Limpa recursos de uma task morta

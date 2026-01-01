@@ -34,7 +34,7 @@ extern crate alloc;
 // =============================================================================
 
 /// Stack size (inclui guard page de 4KB)
-pub const KERNEL_STACK_SIZE: usize = 64 * 1024; // 64 KB release
+pub const KERNEL_STACK_SIZE: usize = forge::sched::config::KERNEL_STACK_SIZE;
 
 /// Guard page size
 pub const GUARD_PAGE_SIZE: usize = 4096;

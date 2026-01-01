@@ -24,6 +24,9 @@ pub struct Accounting {
 
     /// Número de trocas de contexto involuntárias (ex: preempção por quantum expirado)
     pub involuntary_switches: u64,
+
+    /// Quantum restante para esta task nesta fatia de tempo (em ticks)
+    pub quantum_left: u64,
 }
 
 impl Accounting {
@@ -35,6 +38,14 @@ impl Accounting {
     /// Registra o início da execução (chamado quando a task ganha a CPU)
     pub fn start_exec(&mut self, now: u64) {
         self.last_start_time = now;
+        self.reset_quantum();
+    }
+
+    /// Reinicia o quantum da task
+    pub fn reset_quantum(&mut self) {
+        // TODO: No futuro, o quantum deve ser calculado com base na prioridade da task.
+        // Tasks com maior prioridade deveriam receber fatias de tempo maiores.
+        self.quantum_left = crate::sched::config::DEFAULT_QUANTUM;
     }
 
     /// Registra o fim da execução (chamado quando a task perde a CPU)

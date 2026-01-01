@@ -1,6 +1,17 @@
-//! Lógica central do Scheduler
+//! # Orquestrador de Agendamento (High-Level Scheduler)
 //!
-//! Contém o loop principal, troca de contexto e gerenciamento de estado global.
+//! Este arquivo contém a lógica de decisão e gerenciamento de alto nível do agendador.
+//! Ele coordena a transição entre estados de tarefas (Running, Sleeping, Ready) e
+//! decide quem será o próximo a ocupar a CPU.
+//!
+//! ## Mecanismos de Execução:
+//! - **Cooperativo:** Tarefas cedem voluntariamente via `yield_now()` ou `sleep_current()`.
+//! - **Preemptivo:** O sistema retoma o controle via interrupções de hardware (Timer)
+//!   quando o quantum da tarefa expira.
+//!
+//! ## Sincronização:
+//! O agendador utiliza um modelo de "Ownership Global" via o Spinlock `CURRENT`.
+//! Somente o núcleo que detém o lock da tarefa pode realizar a troca de contexto segura.
 
 use crate::arch::Cpu;
 use crate::sched::task::Task;
@@ -11,19 +22,36 @@ use core::pin::Pin;
 
 use super::runqueue::RUNQUEUE;
 
-/// Task atualmente executando
-/// TODO: Tornar per-cpu quando tivermos suporte a SMP
+/// Task atualmente em execução neste núcleo.
+/// TODO: Em SMP, este deve ser um campo interno da estrutura `Cpu` ou acessado via GS-base.
 pub static CURRENT: Spinlock<Option<Pin<Box<Task>>>> = Spinlock::new(None);
 
-// NOTA: Preempção diferida (NEED_RESCHED) removida temporariamente.
-// Para preempção real, precisamos modificar o assembly do timer handler
-// para salvar contexto completo antes de verificar a flag.
-// Atualmente usamos cooperative multitasking via yield_now().
-
-/// Inicializa o scheduler
+/// Inicializa o subsistema de agendamento.
 pub fn init() {
-    crate::kinfo!("(Sched) Inicializando scheduler...");
-    crate::kinfo!("(Sched) Scheduler inicializado. Idle loop integrado.");
+    crate::kinfo!("[SCHED] Sistema de agendamento pronto.");
+}
+
+/// Chamado a cada tick do relógio de hardware para gerenciar o tempo de CPU.
+///
+/// Realiza a contabilização do quantum da tarefa atual e sinaliza se uma
+/// preempção é necessária.
+pub fn timer_tick() {
+    // Tentamos o lock. Em interrupções não podemos travar (deadlock) se o kernel já tem o lock.
+    if let Some(mut current_guard) = CURRENT.try_lock() {
+        if let Some(ref mut task) = *current_guard {
+            // Só decrementamos quantum de quem está rodando
+            if task.state == TaskState::Running {
+                if task.accounting.quantum_left > 0 {
+                    task.accounting.quantum_left -= 1;
+                }
+
+                // Se o tempo acabou, sinaliza a CPU que precisamos de schedule()
+                if task.accounting.quantum_left == 0 {
+                    super::cpu::set_need_resched();
+                }
+            }
+        }
+    }
 }
 
 /// Retorna ponteiro para a task atual (unsafe se dereferenciado sem lock, uteil para IDs)
@@ -100,68 +128,49 @@ pub unsafe extern "C" fn release_scheduler_lock() {
 }
 
 /// Exit: termina processo atual e pula para próximo
-pub fn exit_current() -> ! {
+pub fn exit_current(code: i32) -> ! {
     Cpu::disable_interrupts();
 
     // 1. Remover processo atual do CURRENT
     {
         let mut current_guard = CURRENT.lock();
-        if let Some(old_task) = current_guard.take() {
+        if let Some(mut old_task) = current_guard.take() {
+            // Define o código de saída
+            unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.exit_code = Some(code);
+
             // Move para lista de zumbis para limpeza posterior
             crate::sched::task::lifecycle::add_zombie(old_task);
         }
     }
 
     // 2. Schedule next
-    if let Some(mut next) = pick_next() {
-        let mut current_guard = CURRENT.lock();
-
-        // Marcar nova task como Running
-        unsafe { Pin::get_unchecked_mut(next.as_mut()) }.state = TaskState::Running;
-
-        let next_ref = next.as_ref();
-        let ctx_ptr = &{ core::pin::Pin::get_ref(next_ref) }.context
-            as *const crate::sched::task::context::CpuContext;
-        let new_cr3 = { core::pin::Pin::get_ref(next_ref) }.cr3;
-        let kernel_stack = { core::pin::Pin::get_ref(next_ref) }.kernel_stack.as_u64();
-
-        *current_guard = Some(next);
-        drop(current_guard);
-
+    if let Some(next) = pick_next() {
+        let current_guard = CURRENT.lock();
         unsafe {
-            if kernel_stack != 0 {
-                crate::arch::x86_64::gdt::set_kernel_stack(kernel_stack);
-                crate::arch::x86_64::syscall::set_kernel_rsp(kernel_stack);
-            }
-            if new_cr3 != 0 {
-                core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
-            }
-            crate::sched::task::context::jump_to_context(&*ctx_ptr);
+            super::switch::prepare_and_switch_to(next, None, current_guard);
         }
+        // Se chegarmos aqui, algo catastrófico aconteceu, pois a tarefa atual morreu
+        // e não deveria mais estar em execução.
+        panic!("exit_current: retornou de prepare_and_switch_to!");
     } else {
-        // Sem tasks, halt
-        loop {
-            Cpu::enable_interrupts();
-            Cpu::halt();
-            Cpu::disable_interrupts();
-        }
+        // Se a RunQueue está vazia, o sistema entra em modo ocioso (Idle)
+        // aguardando novas interrupções que possam acordar processos em sleep.
+        unsafe { super::idle::system_idle_loop() };
     }
 }
 
 /// Função principal de escalonamento
-pub fn schedule() {
+#[no_mangle]
+pub extern "C" fn schedule() {
     let mut next_opt = pick_next();
 
-    // TODO: Investigar por que tarefas com PID 0 (TID 0) estão entrando na RunQueue.
-    // Solução paliativa: Ignora qualquer tarefa com PID 0 para evitar o crash de contexto nulo.
+    // Filtro de segurança contra tasks corrompidas (PID 0)
     while let Some(ref task) = next_opt {
         if task.tid.as_u32() == 0 {
             crate::kerror!(
                 "(Sched) AVISO: Detectada task com PID 0 inválida na RunQueue! Pulando..."
             );
-
-            dump_tasks();
-
+            super::debug::dump_tasks();
             next_opt = pick_next();
         } else {
             break;
@@ -180,218 +189,54 @@ pub fn schedule() {
             }
 
             // Task atual suspensa (Sleeping ou Blocked).
-            // Precisamos salvar seu contexto e movê-la para a fila correta.
-            let state = old_task.state;
             let old_ctx_ptr =
                 unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
-
-            if state == TaskState::Sleeping {
-                crate::ktrace!(
-                    "(Sched) Task colocada em SLEEP_QUEUE. PID:",
-                    old_task.tid.as_u32() as u64
-                );
+            if old_task.state == TaskState::Sleeping {
                 super::sleep_queue::add_task(old_task);
             }
 
-            // Agora o sistema está realmente sem tarefas prontas.
-            crate::kinfo!("(Sched) Nenhuma task disponível. Entrando em modo Idle.");
+            // Entra no loop de idle (não retorna)
             drop(current_guard);
-
-            let mut idle_count = 0u64;
-            loop {
-                Cpu::enable_interrupts();
-                Cpu::halt();
-                Cpu::disable_interrupts();
-
-                idle_count += 1;
-                if idle_count % 100 == 0 {
-                    crate::ktrace!("(Sched) Idler pulsação:", idle_count);
-                }
-
-                if let Some(next) = pick_next() {
-                    crate::kinfo!("(Sched) Task acordou! Retomando escalonamento.");
-                    let g = CURRENT.lock();
-                    // Usamos old_ctx_ptr para salvar o estado da task que iniciou o sleep
-                    prepare_and_switch_to(next, Some(old_ctx_ptr), g);
-                    return; // Jump
-                }
-            }
+            unsafe { super::idle::enter_idle_loop(Some(old_ctx_ptr)) };
         } else {
-            // Sistema totalmente ocioso
-            crate::kinfo!("(Sched) Sistema ocioso. Aguardando interrupções...");
+            // Sistema totalmente ocioso (não retorna)
             drop(current_guard);
-            loop {
-                Cpu::enable_interrupts();
-                Cpu::halt();
-                Cpu::disable_interrupts();
-                if let Some(next) = pick_next() {
-                    let g = CURRENT.lock();
-                    prepare_and_switch_to(next, None, g);
-                    return;
-                }
-            }
+            unsafe { super::idle::system_idle_loop() };
         }
     }
 
-    // CASO B: Há uma próxima task para rodar (next_opt é Some)
+    // CASO B: Há uma próxima task para rodar
     let next = next_opt.unwrap();
     if let Some(mut old_task) = current_guard.take() {
         let state = old_task.state;
-
         if state == TaskState::Running || state == TaskState::Sleeping {
             let old_ctx_ptr =
                 unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
-
             if state == TaskState::Running {
                 unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
                 RUNQUEUE.lock().push(old_task);
             } else {
-                crate::ktrace!(
-                    "(Sched) Task colocada em SLEEP_QUEUE. PID:",
-                    old_task.tid.as_u32() as u64
-                );
                 super::sleep_queue::add_task(old_task);
             }
-
-            prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard);
+            unsafe { super::switch::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard) };
         } else {
-            prepare_and_switch_to(next, None, current_guard);
+            unsafe { super::switch::prepare_and_switch_to(next, None, current_guard) };
         }
     } else {
-        // Sem task antiga
-        prepare_and_switch_to(next, None, current_guard);
-    }
-}
-
-/// Prepara registradores, pilha e CR3 e efetua a troca de contexto
-fn prepare_and_switch_to(
-    mut next: Pin<Box<Task>>,
-    old_ctx: Option<*mut crate::sched::task::context::CpuContext>,
-    mut current_guard: crate::sync::SpinlockGuard<Option<Pin<Box<Task>>>>,
-) {
-    // 1. Marcar nova task como Running
-    unsafe { core::pin::Pin::get_unchecked_mut(next.as_mut()) }.state = TaskState::Running;
-
-    // 2. Extrair dados necessários
-    let new_ctx_ptr = &next.context as *const _;
-    let new_cr3 = next.cr3;
-    let stack_top = next.kernel_stack.as_u64();
-    let is_new = next.state == TaskState::Created;
-
-    // [DEBUG - REMOVER DEPOIS] Logar valores do contexto que será carregado para detectar corrupção
-    crate::ktrace!(
-        "(Sched) Carregando Contexto de PID:",
-        next.tid.as_u32() as u64
-    );
-    crate::ktrace!("  RIP:", next.context.rip);
-    crate::ktrace!("  RSP:", next.context.rsp);
-    crate::ktrace!("  RBX:", next.context.rbx);
-    crate::ktrace!("  RBP:", next.context.rbp);
-    crate::ktrace!("  CR3:", new_cr3);
-
-    // 3. Atualizar CURRENT (Dando ownership do Box para o Spinlock)
-    *current_guard = Some(next);
-    drop(current_guard); // Soltar lock antes da "mágica"
-
-    // 4. Efetuar a troca de hardware
-    unsafe {
-        // Configurar stack do kernel para interrupções/syscalls
-        if stack_top != 0 {
-            crate::arch::x86_64::gdt::set_kernel_stack(stack_top);
-            crate::arch::x86_64::syscall::set_kernel_rsp(stack_top);
-        }
-
-        // Trocar espaço de endereçamento (CR3)
-        if new_cr3 != 0 {
-            core::arch::asm!("mov cr3, {}", in(reg) new_cr3);
-        }
-
-        // [DEBUG - REMOVER DEPOIS] Log de depuração logo antes do salto final
-        crate::kdebug!("(Sched) Efetuando switch/jump final...");
-
-        // Escolher método de restauração
-        if let Some(old_ctx_ptr) = old_ctx {
-            // Troca clássica: salva e restaura
-            crate::sched::task::context::switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
-        } else {
-            // Troca de "salto": apenas restaura
-            // Se é Created (RIP = trampolim), usamos o jump_to_context que limpa stack
-            // Se já rodou (RIP = meio do código), usamos o switch com um dummy old
-            if is_new {
-                crate::sched::task::context::jump_to_context(&*new_ctx_ptr);
-            } else {
-                // Truque: usamos um CpuContext temporário no stack para o switch ignorar o "salvamento"
-                let mut dummy = crate::sched::task::context::CpuContext::new();
-                crate::sched::task::context::switch(&mut dummy, &*new_ctx_ptr);
-            }
-        }
+        unsafe { super::switch::prepare_and_switch_to(next, None, current_guard) };
     }
 }
 
 /// Loop principal do scheduler
-///
-/// Fica em loop chamando schedule() e entrando em halt quando não há tasks.
-/// No idle, também limpa tasks zombies.
 pub fn run() -> ! {
     Cpu::disable_interrupts();
     loop {
         schedule();
         if RUNQUEUE.lock().is_empty() {
-            // Aproveita idle time para limpar zombies
             crate::sched::task::lifecycle::cleanup_all();
-
             Cpu::enable_interrupts();
             Cpu::halt();
             Cpu::disable_interrupts();
         }
     }
-}
-
-/// Imprime o estado de todas as tarefas conhecidas no sistema
-pub fn dump_tasks() {
-    crate::ktrace!("--- [TRACE] GERENCIADOR DE TAREFAS: LISTA COMPLETA ---");
-
-    // 1. Task Atual (Running)
-    if let Some(guard) = CURRENT.try_lock() {
-        if let Some(ref task) = *guard {
-            crate::ktrace!("  - Running TID:", task.tid.as_u32() as u64);
-            crate::ktrace!("    State:", task.state as u32 as u64);
-        } else {
-            crate::ktrace!("  - CURRENT: None");
-        }
-    } else {
-        crate::ktrace!("  - CURRENT: [Locked]");
-    }
-
-    // 2. Ready Tasks
-    if let Some(rq) = RUNQUEUE.try_lock() {
-        crate::ktrace!("  - READY Tasks count:", rq.queue.len() as u64);
-        for task in &rq.queue {
-            crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
-        }
-    } else {
-        crate::ktrace!("  - RUNQUEUE: [Locked]");
-    }
-
-    // 3. Sleeping Tasks
-    if let Some(sq) = super::sleep_queue::SLEEP_QUEUE.try_lock() {
-        crate::ktrace!("  - SLEEPING Tasks count:", sq.len() as u64);
-        for task in sq.iter() {
-            crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
-        }
-    } else {
-        crate::ktrace!("  - SLEEP_QUEUE: [Locked]");
-    }
-
-    // 4. Zombie Tasks
-    if let Some(zombies) = crate::sched::task::lifecycle::ZOMBIES.try_lock() {
-        crate::ktrace!("  - ZOMBIE Tasks count:", zombies.len() as u64);
-        for task in zombies.iter() {
-            crate::ktrace!("    -> TID:", task.tid.as_u32() as u64);
-        }
-    } else {
-        crate::ktrace!("  - ZOMBIES: [Locked]");
-    }
-
-    crate::ktrace!("--- [TRACE] FIM DO DUMP ---");
 }

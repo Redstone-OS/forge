@@ -51,7 +51,7 @@ pub fn sys_exit(code: i32) -> ! {
 
     // Chamar exit_current do scheduler que remove o processo
     // e pula para o próximo sem reenfileirar
-    crate::sched::core::exit_current()
+    crate::sched::core::exit_current(code)
 }
 
 /// Cria novo processo
