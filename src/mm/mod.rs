@@ -89,6 +89,40 @@ pub mod cache;
 pub mod accounting;
 
 // =============================================================================
+// NEW MEMORY SUBSYSTEM MODULES
+// =============================================================================
+
+/// Higher Half Direct Map
+pub mod hhdm;
+
+/// Early Boot Allocator
+pub mod early;
+
+/// Page Fault Handler
+pub mod fault;
+
+/// Page Frame Manager (ownership-based)
+pub mod pfm;
+
+/// Address Space Manager
+pub mod aspace;
+
+/// Page Reclaim subsystem
+pub mod reclaim;
+
+/// Swap subsystem
+pub mod swap;
+
+/// Memory tracepoints
+pub mod trace;
+
+/// Memory statistics
+pub mod stats;
+
+/// Debug utilities
+pub mod debug;
+
+// =============================================================================
 // INITIALIZATION
 // =============================================================================
 

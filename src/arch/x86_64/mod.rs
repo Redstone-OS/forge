@@ -11,6 +11,8 @@ pub mod syscall;
 pub mod acpi;
 pub mod apic;
 pub mod iommu;
+pub mod smp;
+pub mod vmm;
 
 pub use cpu::Cpu;
 

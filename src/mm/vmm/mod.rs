@@ -2,6 +2,7 @@
 //!
 //! Gerencia tabelas de páginas e endereçamento virtual.
 
+pub mod huge;
 pub mod mapper;
 pub mod tlb;
 pub mod vmm;
