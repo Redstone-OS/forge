@@ -14,6 +14,7 @@
 //! Somente o núcleo que detém o lock da tarefa pode realizar a troca de contexto segura.
 
 use crate::arch::Cpu;
+use crate::sched::task::context::CpuContext;
 use crate::sched::task::Task;
 use crate::sched::task::TaskState;
 use crate::sync::Spinlock;
@@ -165,14 +166,17 @@ pub fn exit_current(code: i32) -> ! {
 }
 
 /// Função principal de escalonamento
+///
+/// Usa a idle task (armazenada em IDLE_TASK) como fallback permanente.
+/// Quando não há tasks prontas, fazemos switch para a idle task.
 #[no_mangle]
 pub extern "C" fn schedule() {
     let mut next_opt = pick_next();
 
-    // Filtro de segurança contra tasks corrompidas (PID 0 não deve estar na RunQueue)
+    // Filtro de segurança: PID 0 (idle) nunca deve estar na RunQueue
     while let Some(ref task) = next_opt {
         if task.tid.as_u32() == 0 {
-            crate::kerror!("(Sched) BUG: Idle task (PID 0) encontrada na RunQueue! Removendo.");
+            crate::kerror!("(Sched) BUG: Idle task encontrada na RunQueue! Removendo.");
             next_opt = pick_next();
         } else {
             break;
@@ -181,51 +185,64 @@ pub extern "C" fn schedule() {
 
     let mut current_guard = CURRENT.lock();
 
-    // CASO A: Não há nenhuma task pronta na RunQueue
+    // CASO A: Não há próxima task na RunQueue
     if next_opt.is_none() {
-        if let Some(ref old_task) = *current_guard {
-            // Se a task atual pode continuar rodando, deixa ela
-            if old_task.state == TaskState::Running {
-                // Idle task ou qualquer task Running pode continuar
+        if let Some(ref task) = *current_guard {
+            // Se a task atual está Running, ela continua
+            if task.state == TaskState::Running {
+                return;
+            }
+        }
+
+        // Task atual não está Running (Sleeping/Blocked) ou CURRENT está vazio
+        // Precisamos fazer switch para a idle task
+        if let Some(mut old_task) = current_guard.take() {
+            let old_pid = old_task.tid.as_u32();
+
+            // Se a "task antiga" é a própria idle, algo está errado
+            if old_pid == 0 {
+                crate::kerror!("(Sched) BUG: Idle task em CURRENT com estado não-Running!");
+                // Força Running e coloca de volta
+                unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Running;
+                *current_guard = Some(old_task);
                 return;
             }
 
-            // Task atual suspensa (Sleeping ou Blocked) - precisamos tirar de CURRENT
-            // mas só podemos fazer isso se tivermos para onde ir (idle task)
-            let is_idle = old_task.tid.as_u32() == 0;
-
-            if is_idle {
-                // Idle task em estado não-Running sem próxima task é um bug
-                crate::kerror!("(Sched) BUG: Idle task não está Running mas não há próxima task!");
-                // Força Running e continua
-                unsafe {
-                    let task_ptr = current_guard.as_mut().unwrap();
-                    Pin::get_unchecked_mut(task_ptr.as_mut()).state = TaskState::Running;
-                }
-                return;
-            }
-
-            // Task normal suspensa - precisamos fazer switch para algum lugar
-            // Mas não temos idle task disponível ainda, então re-enfileira e retorna
-            // NOTA: Isso só deveria acontecer antes da idle task ser inicializada
-            let mut old_task = current_guard.take().unwrap();
+            // Salvar task atual no lugar apropriado
+            let old_ctx_ptr = unsafe {
+                &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut CpuContext
+            };
 
             if old_task.state == TaskState::Sleeping {
                 super::sleep_queue::add_task(old_task);
+            } else if old_task.state == TaskState::Blocked {
+                // Blocked vai para a WaitQueue (já deve estar lá)
+                // Re-enfileira como fallback
+                crate::kwarn!("(Sched) Task Blocked sem próxima: re-enfileirando");
+                unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
+                RUNQUEUE.lock().push(old_task);
             } else {
-                // Blocked ou outro estado - re-enfileira com aviso
-                crate::kwarn!("(Sched) Task não-Running sem próxima: movendo para RunQueue");
+                // Estado inesperado - re-enfileira
+                crate::kwarn!("(Sched) Task com estado inesperado:", old_task.state as u64);
                 unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
                 RUNQUEUE.lock().push(old_task);
             }
 
-            // Sem CURRENT e sem próxima task - situação crítica
-            drop(current_guard);
-            crate::kerror!("(Sched) CURRENT vazio e sem próxima task! Sistema pode travar.");
-            return;
+            // Switch para a idle task (fallback permanente)
+            drop(current_guard); // Libera lock antes do switch
+
+            if super::idle::is_initialized() {
+                crate::ktrace!("(Sched) Retornando para idle task");
+                unsafe { super::idle::switch_to_idle(old_ctx_ptr) };
+                // Retorna aqui quando a task for re-escalonada
+                return;
+            } else {
+                crate::kerror!("(Sched) Idle task não inicializada! Sistema pode travar.");
+                return;
+            }
         }
-        // Nenhuma task em CURRENT e nenhuma na RunQueue
-        // Isso é esperado logo após init, antes da idle task ser criada
+
+        // CURRENT vazio e sem próxima - só acontece na inicialização
         return;
     }
 
@@ -242,45 +259,46 @@ pub extern "C" fn schedule() {
 
         // Obtém ponteiro para contexto da task antiga
         let old_ctx_ptr =
-            unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
+            unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut CpuContext };
 
         // Gerencia a task antiga baseado em seu estado
         if state == TaskState::Running {
             if is_old_idle {
-                // Idle task cedendo CPU - guarda na CURRENT temporariamente
-                // Vai ser substituída pelo prepare_and_switch_to
-                // Não colocamos idle na RunQueue!
+                // Idle task cedendo CPU - NÃO colocamos na RunQueue
+                // Ela fica apenas na IDLE_TASK esperando
+                // O contexto dela será salvo em old_ctx_ptr mas a task
+                // não sai do IDLE_TASK
             } else {
+                // Task normal: marca Ready e coloca na RunQueue
                 unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
                 RUNQUEUE.lock().push(old_task);
             }
         } else if state == TaskState::Sleeping {
             super::sleep_queue::add_task(old_task);
         } else if state == TaskState::Blocked {
-            // Task Blocked deveria ter sido removida de CURRENT por WaitQueue
             crate::kerror!("(Sched) Task Blocked em CURRENT! PID:", old_pid as u64);
             unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
             RUNQUEUE.lock().push(old_task);
         } else {
-            // Estado inesperado
-            crate::kerror!("(Sched) Estado inesperado em CURRENT! PID:", old_pid as u64);
-            crate::kerror!("(Sched) Estado:", state as u64);
+            crate::kerror!("(Sched) Estado inesperado! PID:", old_pid as u64);
             if !is_old_idle {
                 unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
                 RUNQUEUE.lock().push(old_task);
             }
         }
 
-        // Para idle task cedendo CPU, não salvamos nada especial
-        // O contexto é salvo normalmente em old_ctx_ptr
+        // Faz o switch de contexto
         if is_old_idle {
-            // Não coloca idle na RunQueue, mas ainda precisamos do contexto
-            unsafe { super::switch::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard) };
+            // Switch DA idle task - precisamos usar o contexto em IDLE_TASK
+            let idle_ctx_ptr = unsafe { super::idle::get_idle_context() };
+            unsafe {
+                super::switch::prepare_and_switch_to(next, Some(idle_ctx_ptr), current_guard)
+            };
         } else {
             unsafe { super::switch::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard) };
         }
     } else {
-        // Nenhuma task atual - primeira execução ou após idle
+        // Nenhuma task atual - primeira execução
         crate::ktrace!("(Sched) Primeira execução de PID:", next_pid as u64);
         unsafe { super::switch::prepare_and_switch_to(next, None, current_guard) };
     }

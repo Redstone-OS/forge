@@ -85,8 +85,8 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Inicializando Drivers de Input'");
     crate::drivers::input::init();
 
-    // 8.5. Inicializar Idle Task ANTES de qualquer processo
-    // A idle task fica em CURRENT e será swapped quando o init process começar
+    // 8.5. Inicializar Idle Task
+    // A idle task fica em IDLE_TASK (fallback permanente) e NÃO em CURRENT
     crate::kinfo!("'Inicializando Idle Task'");
     crate::sched::core::idle::init_idle_task();
 
@@ -96,11 +96,11 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Inicialização do Kernel Concluída'");
 
     // 9. Habilitar Timer IRQ (APÓS scheduler estar pronto)
-    // O timer dispara e chama schedule(), então só habilitamos após spawn_init
     crate::kinfo!("'Habilitando Timer Preemptivo'");
     crate::arch::x86_64::interrupts::pic_enable_irq(0);
 
     // 10. Entrar no loop do scheduler
-    // A idle task já está em CURRENT, então schedule() vai trocar para o init
+    // CURRENT está vazio, schedule() vai pegar a primeira task da RunQueue
+    // Se não houver tasks, vai para a idle task (fallback)
     crate::sched::core::scheduler::run();
 }

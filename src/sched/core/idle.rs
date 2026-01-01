@@ -1,15 +1,14 @@
-//! Idle Task - Tarefa ociosa dedicada para quando não há trabalho
+//! Idle Task - Tarefa ociosa dedicada como fallback permanente
 //!
-//! Esta módulo implementa uma Idle Task com TID 0 que é executada quando
-//! não há nenhuma outra tarefa pronta. Isso resolve o problema de context
-//! switching do idle loop, onde contextos eram perdidos.
+//! A idle task é mantida em uma variável estática separada (IDLE_TASK) e
+//! NUNCA é removida. Quando não há tasks prontas, o sistema sempre volta
+//! para a idle task de forma segura.
 
-use super::runqueue::RUNQUEUE;
-use super::scheduler::CURRENT;
 use crate::arch::Cpu;
 use crate::mm::VirtAddr;
 use crate::sched::task::context::CpuContext;
 use crate::sched::task::{Task, TaskState};
+use crate::sync::Spinlock;
 use crate::sys::types::Tid;
 use alloc::boxed::Box;
 use core::pin::Pin;
@@ -18,21 +17,24 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// Flag indicando se a idle task foi inicializada
 static IDLE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-/// Verifica se há tasks prontas para executar
-fn has_ready_tasks() -> bool {
-    if let Some(rq) = RUNQUEUE.try_lock() {
-        !rq.queue.is_empty()
+/// A IDLE TASK permanente - NUNCA é removida daqui
+/// Esta é a diferença crucial: a idle task tem sua própria "casa" permanente
+pub static IDLE_TASK: Spinlock<Option<Pin<Box<Task>>>> = Spinlock::new(None);
+
+/// Retorna um ponteiro mutável para o contexto da idle task
+///
+/// # Safety
+/// O chamador deve garantir que a idle task está inicializada
+pub unsafe fn get_idle_context() -> *mut CpuContext {
+    let mut guard = IDLE_TASK.lock();
+    if let Some(ref mut task) = *guard {
+        &mut Pin::get_unchecked_mut(task.as_mut()).context as *mut CpuContext
     } else {
-        false
+        panic!("(Idle) get_idle_context chamado sem idle task inicializada!");
     }
 }
 
-/// Loop principal da idle task
-///
-/// Esta função é o entry point da idle task. Ela:
-/// 1. Fica em loop infinito fazendo HLT (economia de energia)
-/// 2. Verifica periodicamente se há tasks prontas
-/// 3. Quando uma task está pronta, chama schedule() para trocar
+/// Entry point da idle task - loop infinito de espera
 #[no_mangle]
 pub extern "C" fn idle_task_entry() -> ! {
     crate::kinfo!("(Idle) Idle task iniciada (TID 0)");
@@ -47,24 +49,21 @@ pub extern "C" fn idle_task_entry() -> ! {
 
         idle_count = idle_count.wrapping_add(1);
 
-        // Log periódico a cada 1000 iterações (mais silencioso)
+        // Log periódico a cada 1000 iterações
         if idle_count % 1000 == 0 {
             crate::kdebug!("(Idle) Ciclos:", idle_count);
         }
 
-        // Verifica se há tasks prontas
-        if has_ready_tasks() {
-            // Há trabalho a fazer! Chama o scheduler
-            super::scheduler::schedule();
-            // Quando retornarmos aqui, significa que não há mais tasks prontas
-        }
+        // Verifica se há tasks prontas e chama schedule
+        super::scheduler::schedule();
+        // Sempre retorna aqui quando não há mais tasks
     }
 }
 
 /// Cria e inicializa a idle task
 ///
-/// Deve ser chamada uma vez durante a inicialização do scheduler,
-/// ANTES de qualquer outra task ser criada.
+/// A idle task é criada e armazenada em IDLE_TASK (não em CURRENT).
+/// Isso garante que ela SEMPRE está disponível como fallback.
 pub fn init_idle_task() {
     if IDLE_INITIALIZED.swap(true, Ordering::SeqCst) {
         crate::kwarn!("(Idle) init_idle_task chamado mais de uma vez!");
@@ -84,19 +83,19 @@ pub fn init_idle_task() {
 
     let stack_top = (stack_ptr as u64) + stack_size as u64;
 
-    // Cria a task manualmente (não usa NEXT_TID pois queremos TID 0)
+    // Cria a task manualmente com TID 0
     let mut name_buf = [0u8; 32];
     let name = b"idle";
     name_buf[..4].copy_from_slice(name);
 
     let mut idle_task = Box::pin(Task {
         tid: Tid::new(0),
-        state: TaskState::Created,
+        state: TaskState::Running, // Idle sempre está "pronta"
         context: CpuContext::new(),
         kernel_stack: VirtAddr::new(stack_top),
         user_stack: VirtAddr::new(0),
-        aspace: None,  // Idle task usa espaço de endereçamento do kernel
-        priority: 255, // Menor prioridade possível
+        aspace: None,  // Usa espaço de endereçamento do kernel
+        priority: 255, // Menor prioridade
         accounting: crate::sched::task::accounting::Accounting::new(),
         parent_id: None,
         exit_code: None,
@@ -116,26 +115,59 @@ pub fn init_idle_task() {
             VirtAddr::new(idle_task_entry as *const () as u64),
             VirtAddr::new(stack_top),
         );
-        task_mut.state = TaskState::Running; // Idle task começa rodando
     }
 
-    crate::kdebug!("(Idle) Idle task criada com TID 0");
-
-    // Coloca a idle task em CURRENT para iniciar o sistema
+    // Armazena em IDLE_TASK (local permanente!)
     {
-        let mut current = CURRENT.lock();
-        *current = Some(idle_task);
+        let mut idle_guard = IDLE_TASK.lock();
+        *idle_guard = Some(idle_task);
     }
 
-    crate::kdebug!("(Idle) Idle task instalada em CURRENT");
+    crate::kinfo!("(Idle) Idle task criada e armazenada em IDLE_TASK");
 }
 
-/// Verifica se a task atual é a idle task (TID 0)
-pub fn is_idle_current() -> bool {
-    if let Some(current) = CURRENT.try_lock() {
-        if let Some(ref task) = *current {
-            return task.tid.as_u32() == 0;
-        }
+/// Verifica se a idle task está inicializada
+pub fn is_initialized() -> bool {
+    IDLE_INITIALIZED.load(Ordering::SeqCst)
+}
+
+/// Verifica se uma task é a idle task (TID 0)
+pub fn is_idle_task(task: &Task) -> bool {
+    task.tid.as_u32() == 0
+}
+
+/// Faz o switch para a idle task quando não há mais tasks
+///
+/// # Safety
+/// - Interrupções devem estar desabilitadas
+/// - old_ctx deve ser um ponteiro válido para salvar o contexto atual
+pub unsafe fn switch_to_idle(old_ctx: *mut CpuContext) {
+    let idle_guard = IDLE_TASK.lock();
+    if let Some(ref idle_task) = *idle_guard {
+        let idle_ctx = &idle_task.context as *const CpuContext;
+
+        crate::ktrace!("(Idle) Retornando para idle task");
+
+        // Switch: salva contexto atual em old_ctx, restaura contexto da idle
+        drop(idle_guard); // Libera o lock ANTES do switch
+        crate::sched::task::context::switch(&mut *old_ctx, &*idle_ctx);
+
+        // Retorna aqui quando a task for re-escalonada
+        crate::ktrace!("(Idle) Task retomada do idle");
+    } else {
+        panic!("(Idle) switch_to_idle: idle task não inicializada!");
     }
-    false
+}
+
+/// Obtém o ponteiro para o contexto da idle task (sem lock - para leitura rápida)
+///
+/// # Safety
+/// Só usar após init_idle_task() e com cuidado com concorrência
+pub unsafe fn idle_context_ptr() -> *const CpuContext {
+    let guard = IDLE_TASK.lock();
+    if let Some(ref task) = *guard {
+        &task.context as *const CpuContext
+    } else {
+        core::ptr::null()
+    }
 }
