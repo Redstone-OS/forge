@@ -22,13 +22,14 @@ pub enum FaultResult {
 #[derive(Debug, Clone, Copy)]
 pub struct PageFaultInfo {
     pub addr: VirtAddr,
+    pub ip: VirtAddr,
     pub error_code: u64,
     pub access: AccessType,
     pub user_mode: bool,
 }
 
 impl PageFaultInfo {
-    pub fn from_error_code(addr: u64, error_code: u64) -> Self {
+    pub fn from_error_code(addr: u64, ip: u64, error_code: u64) -> Self {
         let access = if error_code & 0x10 != 0 {
             AccessType::Execute
         } else if error_code & 0x02 != 0 {
@@ -38,6 +39,7 @@ impl PageFaultInfo {
         };
         Self {
             addr: VirtAddr::new(addr),
+            ip: VirtAddr::new(ip),
             error_code,
             access,
             user_mode: error_code & 0x04 != 0,
@@ -49,6 +51,7 @@ pub fn handle_page_fault(info: PageFaultInfo) -> FaultResult {
     // 1. Verificar se é um endereço de Kernel Space
     if info.addr.as_u64() >= 0xFFFF_8000_0000_0000 {
         crate::kerror!("(Fault) Kernel Page Fault at:", info.addr.as_u64());
+        crate::kerror!("(Fault) Faulting RIP:", info.ip.as_u64());
         return FaultResult::FatalError;
     }
 
@@ -70,9 +73,10 @@ pub fn handle_page_fault(info: PageFaultInfo) -> FaultResult {
         Some(v) => v,
         None => {
             crate::kerror!(
-                "(Fault) Segmentation Fault (No VMA) at:",
+                "(Fault) Falha de Segmentacao (Sem VMA) em:",
                 info.addr.as_u64()
             );
+            crate::kerror!("(Fault) RIP da Falha:", info.ip.as_u64());
             return FaultResult::InvalidAddress;
         }
     };

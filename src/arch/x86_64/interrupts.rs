@@ -223,7 +223,7 @@ pub extern "C" fn page_fault_handler_inner(
 
     // 1. Tentar resolver a falta de página via subsistema de memória
     use crate::mm::fault::{handle_page_fault, FaultResult, PageFaultInfo};
-    let info = PageFaultInfo::from_error_code(cr2, error_code);
+    let info = PageFaultInfo::from_error_code(cr2, frame.instruction_pointer, error_code);
 
     match handle_page_fault(info) {
         FaultResult::Success => {
