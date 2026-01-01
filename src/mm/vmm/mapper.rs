@@ -49,11 +49,10 @@ pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u
     // Copiar kernel mappings (Entradas 256 a 511)
     let current_pml4 = read_cr3();
 
-    // Acessar fisicamente
-    // Nota: Como estamos em Identity Map nas tabelas, podemos ler diretamente
+    // Acessar via HHDM (mais seguro que identity)
     unsafe {
-        let src_ptr = current_pml4 as *const u64;
-        let dst_ptr = pml4_phys as *mut u64;
+        let src_ptr: *const u64 = crate::mm::addr::phys_to_virt(current_pml4);
+        let dst_ptr: *mut u64 = crate::mm::addr::phys_to_virt(pml4_phys);
 
         // Copiar metade superior (Kernel)
         for i in 256..512 {
@@ -77,8 +76,8 @@ pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u
             zero_page(new_pdpt_phys);
 
             // 2. Copiar entries da PDPT original, mas fazer deep copy de PD[0]
-            let src_pdpt = (entry0 & PAGE_MASK) as *const u64;
-            let dst_pdpt = new_pdpt_phys as *mut u64;
+            let src_pdpt: *const u64 = crate::mm::addr::phys_to_virt(entry0 & PAGE_MASK);
+            let dst_pdpt: *mut u64 = crate::mm::addr::phys_to_virt(new_pdpt_phys);
 
             for i in 0..512 {
                 let pdpt_entry = core::ptr::read_volatile(src_pdpt.add(i));
@@ -93,8 +92,8 @@ pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u
                     zero_page(new_pd_phys);
 
                     // Copiar entries da PD original
-                    let src_pd = (pdpt_entry & PAGE_MASK) as *const u64;
-                    let dst_pd = new_pd_phys as *mut u64;
+                    let src_pd: *const u64 = crate::mm::addr::phys_to_virt(pdpt_entry & PAGE_MASK);
+                    let dst_pd: *mut u64 = crate::mm::addr::phys_to_virt(new_pd_phys);
 
                     for j in 0..512 {
                         let pd_entry = core::ptr::read_volatile(src_pd.add(j));
@@ -197,7 +196,7 @@ pub fn grant_user_access(page_virt: u64) {
 /// Usa identity mapping para acessar tabelas de página
 #[inline]
 unsafe fn get_table_entry(table_phys: u64, index: usize) -> u64 {
-    let table_ptr = table_phys as *const u64;
+    let table_ptr: *const u64 = crate::mm::addr::phys_to_virt(table_phys);
     core::ptr::read_volatile(table_ptr.add(index))
 }
 
@@ -205,7 +204,7 @@ unsafe fn get_table_entry(table_phys: u64, index: usize) -> u64 {
 /// Usa identity mapping para acessar tabelas de página
 #[inline]
 unsafe fn set_table_entry(table_phys: u64, index: usize, value: u64) {
-    let table_ptr = table_phys as *mut u64;
+    let table_ptr: *mut u64 = crate::mm::addr::phys_to_virt(table_phys);
     core::ptr::write_volatile(table_ptr.add(index), value);
 }
 
@@ -585,7 +584,7 @@ pub fn map_page_in_target_p4(
 /// Zera uma página física (usada para novas tabelas de página)
 #[inline]
 unsafe fn zero_page(phys_addr: u64) {
-    let ptr = phys_addr as *mut u64;
+    let ptr: *mut u64 = crate::mm::addr::phys_to_virt(phys_addr);
     let mut i = 0;
     while i < (PAGE_SIZE as usize / 8) {
         core::ptr::write_volatile(ptr.add(i), 0);

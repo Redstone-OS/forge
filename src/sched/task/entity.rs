@@ -3,9 +3,12 @@
 use super::accounting::Accounting;
 use super::context::CpuContext;
 use super::state::TaskState;
+use crate::mm::aspace::{AddressSpace, Pid};
 use crate::mm::VirtAddr;
+use crate::sync::Spinlock;
 use crate::sys::types::Tid;
 use crate::syscall::handle::table::HandleTable;
+use alloc::sync::Arc;
 
 /// Task ID counter
 static NEXT_TID: crate::sync::AtomicCounter = crate::sync::AtomicCounter::new(1);
@@ -22,8 +25,8 @@ pub struct Task {
     pub kernel_stack: VirtAddr,
     /// Stack pointer do usuário
     pub user_stack: VirtAddr,
-    /// CR3 (Physical Address da PML4)
-    pub cr3: u64,
+    /// Espaço de endereçamento gerenciado
+    pub aspace: Option<Arc<Spinlock<AddressSpace>>>,
     /// Prioridade (0 = maior)
     pub priority: u8,
     /// Estatísticas de contabilidade
@@ -71,7 +74,7 @@ impl Task {
             context: CpuContext::new(),
             kernel_stack: VirtAddr::new(0),
             user_stack: VirtAddr::new(0),
-            cr3: 0,
+            aspace: None,
             priority: super::super::config::PRIORITY_DEFAULT,
             accounting: Accounting::new(),
             parent_id: None,
@@ -110,8 +113,8 @@ impl Task {
         }
 
         // 2. Trocar espaço de endereçamento (CR3)
-        if self.cr3 != 0 {
-            crate::arch::Cpu::write_cr3(self.cr3);
+        if let Some(aspace) = &self.aspace {
+            aspace.lock().activate();
         }
     }
 }

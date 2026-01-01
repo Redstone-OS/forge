@@ -46,10 +46,59 @@ impl PageFaultInfo {
 }
 
 pub fn handle_page_fault(info: PageFaultInfo) -> FaultResult {
+    // 1. Verificar se é um endereço de Kernel Space
     if info.addr.as_u64() >= 0xFFFF_8000_0000_0000 {
+        crate::kerror!("(Fault) Kernel Page Fault at:", info.addr.as_u64());
+        return FaultResult::FatalError;
+    }
+
+    // 2. Obter AddressSpace da tarefa atual
+    let current_guard = crate::sched::core::CURRENT.lock();
+    let aspace_arc = match current_guard.as_ref() {
+        Some(task) => match &task.aspace {
+            Some(as_arc) => as_arc.clone(),
+            None => return FaultResult::FatalError,
+        },
+        None => return FaultResult::FatalError,
+    };
+    drop(current_guard);
+
+    let as_lock = aspace_arc.lock();
+
+    // 3. Procurar VMA correspondente
+    let vma = match as_lock.find_vma(info.addr) {
+        Some(v) => v,
+        None => {
+            crate::kerror!(
+                "(Fault) Segmentation Fault (No VMA) at:",
+                info.addr.as_u64()
+            );
+            return FaultResult::InvalidAddress;
+        }
+    };
+
+    // 4. Validar permissões
+    if !vma.protection.permits(info.access) {
+        crate::kerror!("(Fault) Protection Violation at:", info.addr.as_u64());
         return FaultResult::ProtectionViolation;
     }
-    FaultResult::InvalidAddress
+
+    // 5. Resolver Fault (Lazy Allocation para Anonymous)
+    crate::kdebug!("(Fault) Lazy allocation for:", info.addr.as_u64());
+
+    // Converter Protection/VmaFlags para MapFlags (Simplificado)
+    let mut flags = MapFlags::PRESENT | MapFlags::USER;
+    if vma.protection.can_write() {
+        flags |= MapFlags::WRITABLE;
+    }
+    if vma.protection.can_exec() {
+        flags |= MapFlags::EXECUTABLE;
+    }
+
+    match lazy_alloc(info.addr.align_down(4096), flags) {
+        Ok(_) => FaultResult::Success,
+        Err(e) => e,
+    }
 }
 
 pub fn lazy_alloc(addr: VirtAddr, flags: MapFlags) -> Result<PhysAddr, FaultResult> {
@@ -79,8 +128,8 @@ pub fn resolve_cow(
         .ok_or(FaultResult::OutOfMemory)?;
 
     unsafe {
-        let src: *const u8 = crate::mm::hhdm::phys_to_virt(old_phys.as_u64());
-        let dst: *mut u8 = crate::mm::hhdm::phys_to_virt(new_phys.as_u64());
+        let src: *const u8 = crate::mm::hhdm::phys_to_virt::<u8>(old_phys.as_u64());
+        let dst: *mut u8 = crate::mm::hhdm::phys_to_virt::<u8>(new_phys.as_u64());
         core::ptr::copy_nonoverlapping(src, dst, crate::mm::config::PAGE_SIZE);
     }
 

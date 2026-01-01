@@ -6,10 +6,17 @@ use crate::mm::VirtAddr;
 use crate::sys::{KernelError, KernelResult};
 
 mod structs;
+use crate::mm::aspace::vma::{MemoryIntent, Protection, VmaFlags};
+use crate::mm::aspace::AddressSpace;
+use crate::sync::Spinlock;
+use alloc::sync::Arc;
 use structs::*;
 
-/// Carrega um binário ELF na memória
-pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
+/// Carrega um binário ELF na memória de um AddressSpace
+pub fn load_binary(
+    data: &[u8],
+    aspace_arc: &Arc<Spinlock<AddressSpace>>,
+) -> KernelResult<VirtAddr> {
     // 1. Validar Magic Header (\x7FELF)
     if data.len() < 64 || &data[0..4] != b"\x7fELF" {
         crate::kerror!("(ELF) Invalid Magic");
@@ -31,16 +38,9 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
         return Err(KernelError::InvalidArgument);
     }
 
-    crate::ktrace!("(ELF) Entry Point:", ehdr.e_entry);
-
     let ph_offset = ehdr.e_phoff as usize;
     let ph_num = ehdr.e_phnum as usize;
     let ph_size = ehdr.e_phentsize as usize;
-
-    // Validar limites
-    if ph_offset + ph_num * ph_size > data.len() {
-        return Err(KernelError::InvalidArgument);
-    }
 
     // Iterar Program Headers
     for i in 0..ph_num {
@@ -48,95 +48,72 @@ pub fn load_binary(data: &[u8]) -> KernelResult<VirtAddr> {
         let phdr = unsafe { &*(data.as_ptr().add(offset) as *const Elf64_Phdr) };
 
         if phdr.p_type == PT_LOAD {
-            // Flags de mapeamento
-            let mut flags = MapFlags::PRESENT | MapFlags::USER;
+            // 1. Determinar Proteções e Intenção
+            let mut prot = Protection::READ;
             if phdr.p_flags & PF_W != 0 {
-                flags |= MapFlags::WRITABLE;
+                prot = Protection::RW;
             }
             if phdr.p_flags & PF_X != 0 {
-                flags |= MapFlags::EXECUTABLE;
+                prot = if phdr.p_flags & PF_W != 0 {
+                    Protection::RWX
+                } else {
+                    Protection::RX
+                };
             }
 
-            crate::ktrace!("(ELF) MapFlags:", flags.bits() as u64);
+            let intent = if phdr.p_flags & PF_X != 0 {
+                MemoryIntent::Code
+            } else if phdr.p_flags & PF_W != 0 {
+                MemoryIntent::Data
+            } else {
+                MemoryIntent::FileReadOnly
+            };
 
-            // Alocar e mapear páginas
+            // 2. Registrar VMA no AddressSpace
+            let start_vaddr = VirtAddr::new(phdr.p_vaddr);
+            let mem_size = phdr.p_memsz as usize;
+
+            {
+                let mut aspace = aspace_arc.lock();
+                aspace
+                    .map_region(Some(start_vaddr), mem_size, prot, VmaFlags::empty(), intent)
+                    .expect("(ELF) Falha ao registrar VMA");
+            }
+
+            // 3. Alocar e mapear páginas físicas (Manual Load para agora)
+            // Futuramente: isso será feito via Page Fault (Lazy Load)
             let start_page = phdr.p_vaddr & !(FRAME_SIZE - 1);
             let end_page = (phdr.p_vaddr + phdr.p_memsz + FRAME_SIZE - 1) & !(FRAME_SIZE - 1);
-
-            // crate::ktrace!("(ELF) start_page:", start_page);
-            // crate::ktrace!("(ELF) end_page:", end_page);
-            // crate::ktrace!("(ELF) FRAME_SIZE:", FRAME_SIZE);
-
-            if FRAME_SIZE == 0 {
-                crate::kerror!("(ELF) PANIC: FRAME_SIZE is 0!");
-                return Err(KernelError::InvalidArgument);
-            }
-
             let pages = (end_page - start_page) / FRAME_SIZE;
 
             let mut pmm = FRAME_ALLOCATOR.lock();
+            let mut vmm_flags = MapFlags::PRESENT | MapFlags::USER | MapFlags::WRITABLE; // W p/ carregar
 
             for page_idx in 0..pages {
                 let vaddr = start_page + page_idx * FRAME_SIZE;
-
-                // CORREÇÃO: Verificar se a página já está mapeada
-                // Se já está mapeada (por um segment anterior), NÃO re-alocar!
-                // Isso resolve o problema de segmentos que compartilham a mesma página.
-                if crate::mm::vmm::translate_addr(vaddr).is_some() {
-                    // Página já mapeada - apenas pular, os dados serão copiados depois
-                    continue;
-                }
-
-                // Página não mapeada - alocar novo frame
                 if let Some(frame) = pmm.allocate_frame() {
-                    let frame_phys = frame.as_u64();
-
-                    // FORÇAR WRITABLE para poder zerar e copiar
-                    let effective_flags = flags | MapFlags::WRITABLE;
-
-                    if let Err(_e) =
-                        map_page_with_pmm(vaddr, frame_phys, effective_flags, &mut *pmm)
-                    {
-                        crate::kerror!("(ELF) Map failed:", vaddr);
-                        return Err(KernelError::OutOfMemory);
-                    }
-
-                    // Zera APENAS páginas recém-alocadas
                     unsafe {
-                        let ptr = vaddr as *mut u8;
-                        for i in 0..FRAME_SIZE as usize {
-                            ptr.add(i).write_volatile(0);
-                        }
+                        map_page_with_pmm(vaddr, frame.as_u64(), vmm_flags, &mut *pmm)
+                            .expect("(ELF) Erro ao mapear página do segmento");
+
+                        // Zerar página
+                        core::ptr::write_bytes(vaddr as *mut u8, 0, FRAME_SIZE as usize);
                     }
-                } else {
-                    crate::kerror!("(ELF) Alloc failed OOM");
-                    return Err(KernelError::OutOfMemory);
                 }
             }
 
-            // Copiar dados do arquivo para memória
-            // IMPORTANTE: p_filesz pode ser menor que p_memsz (BSS)
-            // A memória já foi zerada acima, então BSS já está limpo.
-            let file_offset = phdr.p_offset as usize;
+            // 4. Copiar dados
             let file_size = phdr.p_filesz as usize;
-
             if file_size > 0 {
+                let file_offset = phdr.p_offset as usize;
                 let dest = phdr.p_vaddr as *mut u8;
-
-                // Validar bounds do arquivo
-                if file_offset + file_size > data.len() {
-                    crate::kerror!("(ELF) Segment out of bounds");
-                    return Err(KernelError::InvalidArgument);
-                }
-
                 unsafe {
-                    // Use Manual Copy to avoid intrinsics
-                    for i in 0..file_size {
-                        let b = data[file_offset + i];
-                        dest.add(i).write_volatile(b);
-                    }
+                    core::ptr::copy_nonoverlapping(data.as_ptr().add(file_offset), dest, file_size);
                 }
             }
+
+            // 5. Ajustar Flags Finais (Efetivar RX se necessário)
+            // TODO: Atualizar flags da page table para remover WRITABLE se original não tinha
         }
     }
 

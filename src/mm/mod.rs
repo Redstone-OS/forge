@@ -131,12 +131,20 @@ pub mod debug;
 /// # Safety
 ///
 /// Deve ser chamado uma única vez durante early-boot.
-pub unsafe fn init(boot_info: &'static crate::core::BootInfo) {
+pub unsafe fn init(boot_info: &'static crate::core::boot::handoff::BootInfo) {
     crate::kinfo!("(MM) Inicializando VMM...");
     vmm::init(boot_info);
 
+    crate::kinfo!("(MM) Inicializando HHDM...");
+    hhdm::init(boot_info.hhdm_offset, boot_info.hhdm_size);
+
     crate::kinfo!("(MM) Inicializando PMM...");
     pmm::init(boot_info);
+
+    crate::kinfo!("(MM) Inicializando PFM...");
+    // TODO: Precisamos de uma lista de FrameInfo alocada no heap ou early
+    // Por enquanto, o PFM vai ser inicializado sob demanda ou em uma fase posterior
+    // se precisarmos de rastreamento de ownership.
 
     crate::kinfo!("(MM) Inicializando Heap...");
     heap::init(&mut *pmm::FRAME_ALLOCATOR.lock());

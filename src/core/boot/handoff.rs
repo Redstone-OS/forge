@@ -19,10 +19,10 @@ pub struct BootInfo {
     pub magic: u64,
 
     /// Versão do protocolo de boot.
+    /// v3: Suporte a HHDM.
     pub version: u32,
 
     /// Padding para alinhamento de 8 bytes (campos seguintes são u64).
-    /// O kernel DEVE ter este campo também para manter ABI.
     pub _padding: u32,
 
     /// Informações de vídeo (GOP).
@@ -46,6 +46,12 @@ pub struct BootInfo {
     /// Endereço FÍSICO do CR3 (PML4) configurado pelo bootloader.
     /// O kernel herda esta hierarquia de page tables.
     pub cr3_phys: u64,
+
+    /// Offset usado para o Higher Half Direct Map (HHDM).
+    pub hhdm_offset: u64,
+
+    /// Tamanho da RAM mapeada no HHDM (em bytes).
+    pub hhdm_size: u64,
 }
 
 #[repr(C)]

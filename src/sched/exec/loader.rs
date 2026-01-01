@@ -37,7 +37,7 @@ const USER_STACK_TOP: u64 = 0x7FFF_FFFF_F000;
 pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pid, ExecError> {
     crate::kinfo!("(Spawn) Spawning:", path.as_ptr() as u64);
 
-    // 1. Carregar arquivo do Initramfs (via lookup direto temporário)
+    // 1. Carregar arquivo do Initramfs
     let data = match crate::fs::initramfs::lookup_file(path) {
         Some(d) => d,
         None => {
@@ -46,221 +46,147 @@ pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pi
         }
     };
 
-    // 3. Criar task
-    crate::kinfo!("(Spawn) Creating task struct...");
+    // 2. Criar task
     let mut task = crate::sched::task::Task::new(path);
     task.parent_id = parent_id;
-    crate::kinfo!("(Spawn) Task created via Task::new");
-
-    // === PROCESS ISOLATION SETUP ===
-
-    // 1. Criar nova Page Table isolada PRIMEIRO
-    // Isso copia Kernel Half + Identity Map do kernel P4
-    let new_p4 = {
-        let mut pmm = FRAME_ALLOCATOR.lock();
-        crate::mm::vmm::mapper::create_new_p4(&mut *pmm).expect("(Spawn) Falha ao criar P4")
-    };
-    task.cr3 = new_p4;
-    crate::kinfo!("(Spawn) Nova PML4 criada:", new_p4);
-
-    // 2. Alocar e Mapear Kernel Stack em AMBOS os P4s
-    // Isso garante que o TrapFrame seja visível em ambos os CR3s
     let pid = Pid::new(task.tid.as_u32());
-    const KERNEL_STACK_BASE: u64 = 0xFFFF_9100_0000_0000;
-    // Usa o tamanho definido em config.rs
-    let kstack_size = crate::sched::config::KERNEL_STACK_SIZE as u64;
-
     let pid_u64 = pid.as_u32() as u64;
+
+    // 3. Criar AddressSpace isolado
+    use crate::mm::aspace::vma::{MemoryIntent, Protection, VmaFlags};
+    use crate::mm::aspace::AddressSpace;
+    use crate::sync::Spinlock;
+    use alloc::sync::Arc;
+
+    let aspace = Arc::new(Spinlock::new(
+        AddressSpace::new(pid_u64).map_err(|_| ExecError::OutOfMemory)?,
+    ));
+    task.aspace = Some(aspace.clone());
+
+    // 4. Mapear Stack do Kernel (Espaço do Kernel - compartilhado mas visível na P4 do processo)
+    const KERNEL_STACK_BASE: u64 = 0xFFFF_9100_0000_0000;
+    let kstack_size = crate::sched::config::KERNEL_STACK_SIZE as u64;
     let kstack_start = KERNEL_STACK_BASE + (pid_u64 * kstack_size);
     let kstack_top = kstack_start + kstack_size;
 
-    // Alocar frames e mapear em AMBOS os P4s (kernel e processo)
     {
-        crate::kinfo!("(Spawn) Allocating KStack frames for PID:", pid_u64);
         let mut pmm = FRAME_ALLOCATOR.lock();
-        let flags = MapFlags::PRESENT | MapFlags::WRITABLE; // Kernel acessa
         let pages = kstack_size / FRAME_SIZE;
-
         for i in 0..pages {
             let vaddr = kstack_start + i * FRAME_SIZE;
             if let Some(frame) = pmm.allocate_frame() {
-                let frame_phys = frame.as_u64();
                 unsafe {
-                    // Mapear no Kernel P4 atual
-                    if let Err(_e) = map_page_with_pmm(vaddr, frame_phys, flags, &mut *pmm) {
-                        return Err(ExecError::OutOfMemory);
-                    }
-                    // Mapear no P4 do processo (MESMO frame físico!)
-                    if let Err(_e) = crate::mm::vmm::map_page_in_target_p4(
-                        new_p4, vaddr, frame_phys, flags, &mut *pmm,
-                    ) {
-                        return Err(ExecError::OutOfMemory);
-                    }
-                    // Zerar stack (pode ser feito com qualquer CR3 pois está mapeado em ambos)
-                    let ptr = vaddr as *mut u8;
-                    for j in 0..FRAME_SIZE as usize {
-                        ptr.add(j).write_volatile(0);
-                    }
+                    // Mapeia no P4 do processo (estamos usando a P4 do aspace)
+                    crate::mm::vmm::map_page_in_target_p4(
+                        aspace.lock().cr3(),
+                        vaddr,
+                        frame.as_u64(),
+                        MapFlags::PRESENT | MapFlags::WRITABLE,
+                        &mut *pmm,
+                    )
+                    .expect("(Spawn) Falha ao mapear KStack");
+
+                    // Zerar stack via HHDM (seguro com qualquer CR3)
+                    core::ptr::write_bytes(
+                        crate::mm::hhdm::phys_to_virt::<u8>(frame.as_u64()),
+                        0,
+                        FRAME_SIZE as usize,
+                    );
                 }
-            } else {
-                return Err(ExecError::OutOfMemory);
             }
         }
     }
     task.kernel_stack = VirtAddr::new(kstack_top);
 
-    // 2. Trocar para nova P4 temporariamente para carregar ELF e configurar User Space
+    // 5. Ativar AddressSpace para carregar ELF e configurar User Space
     let old_cr3 = crate::mm::vmm::mapper::read_cr3();
     unsafe {
-        crate::mm::vmm::mapper::write_cr3(new_p4);
+        aspace.lock().activate();
     }
-    crate::kinfo!("(Spawn) CR3 trocado para nova P4 (contexto temporário)");
 
-    // 3. Carregar ELF (agora mapeia na nova P4)
-    crate::kinfo!("(Spawn) Chamando elf::load_binary...");
-    let entry_point = match crate::sched::exec::fmt::elf::load_binary(data) {
-        Ok(addr) => {
-            crate::kinfo!("(Spawn) elf::load_binary OK. Addr:", addr.as_u64());
-            addr
-        }
+    // 6. Carregar ELF (agora registra VMAs no aspace)
+    let entry_point = match crate::sched::exec::fmt::elf::load_binary(data, &aspace) {
+        Ok(addr) => addr,
         Err(_) => {
             unsafe {
                 crate::mm::vmm::mapper::write_cr3(old_cr3);
             }
-            crate::kerror!("(Spawn) elf::load_binary FALHOU");
             return Err(ExecError::InvalidFormat);
         }
     };
 
-    // 4. Conceder Permissões de Usuário
-    crate::mm::vmm::mapper::grant_user_access(entry_point.as_u64());
-    crate::mm::vmm::mapper::grant_user_access(0x400000);
+    // 7. Configurar Stack de Usuário via VMA
+    let ustack_size = USER_STACK_SIZE as usize;
+    let ustack_start = USER_STACK_TOP - ustack_size as u64;
 
-    // 5. Alocar Stack de Usuário (na nova P4)
-    task.user_stack = VirtAddr::new(USER_STACK_TOP);
-    crate::kinfo!("(Spawn) Allocating user stack...");
     {
-        crate::kinfo!("(Spawn) Locking PMM...");
-        let mut pmm = FRAME_ALLOCATOR.lock();
-        let flags = MapFlags::PRESENT | MapFlags::WRITABLE | MapFlags::USER;
-        let start_page = USER_STACK_TOP - USER_STACK_SIZE as u64;
-        let pages = USER_STACK_SIZE as u64 / FRAME_SIZE;
+        let mut as_lock = aspace.lock();
+        as_lock
+            .map_region(
+                Some(VirtAddr::new(ustack_start)),
+                ustack_size,
+                Protection::RW,
+                VmaFlags::GROWS_DOWN,
+                MemoryIntent::Stack,
+            )
+            .expect("(Spawn) Falha ao registrar User Stack VMA");
+    }
 
-        for i in 0..pages {
-            let vaddr = start_page + i * FRAME_SIZE;
+    // Alocar frames para a User Stack (Imediato por enquanto)
+    {
+        let mut pmm = FRAME_ALLOCATOR.lock();
+        for i in 0..(ustack_size as u64 / FRAME_SIZE) {
+            let vaddr = ustack_start + i * FRAME_SIZE;
             if let Some(frame) = pmm.allocate_frame() {
                 unsafe {
-                    if let Err(_e) = map_page_with_pmm(vaddr, frame.as_u64(), flags, &mut *pmm) {
-                        crate::mm::vmm::mapper::write_cr3(old_cr3);
-                        return Err(ExecError::OutOfMemory);
-                    }
-                    let ptr = vaddr as *mut u8;
-                    for j in 0..FRAME_SIZE as usize {
-                        ptr.add(j).write_volatile(0);
-                    }
+                    map_page_with_pmm(
+                        vaddr,
+                        frame.as_u64(),
+                        MapFlags::PRESENT | MapFlags::WRITABLE | MapFlags::USER,
+                        &mut *pmm,
+                    )
+                    .expect("(Spawn) Falha ao mapear User Stack");
+                    core::ptr::write_bytes(vaddr as *mut u8, 0, FRAME_SIZE as usize);
                 }
-            } else {
-                unsafe {
-                    crate::mm::vmm::mapper::write_cr3(old_cr3);
-                }
-                return Err(ExecError::OutOfMemory);
             }
         }
     }
+    task.user_stack = VirtAddr::new(USER_STACK_TOP);
 
-    // DEBUG: Validate entry point code
+    // 8. Configurar Trap Frame
     unsafe {
-        let entry_ptr = entry_point.as_u64() as *const u8;
-        crate::ktrace!(
-            "(Spawn) Validating Entry Point Code at:",
-            entry_point.as_u64()
-        );
-        let b0 = core::ptr::read_volatile(entry_ptr);
-        let b1 = core::ptr::read_volatile(entry_ptr.add(1));
-        let b2 = core::ptr::read_volatile(entry_ptr.add(2));
-        let b3 = core::ptr::read_volatile(entry_ptr.add(3));
-
-        if b0 == 0 && b1 == 0 && b2 == 0 && b3 == 0 {
-            crate::kerror!("(Spawn) CRITICAL: Entry point code is all ZEROS!");
-        }
-    }
-
-    // 6. Configurar Trap Frame na Kernel Stack (ENQUANTO CR3 do processo está ativo!)
-    // Hotfix: escrever o TrapFrame com o CR3 do processo ativo garante que
-    // a escrita vá para a memória visível pelo processo.
-    unsafe {
-        let current_cr3 = crate::mm::vmm::mapper::read_cr3();
-        crate::ktrace!("(Spawn) TrapFrame escrito com CR3=", current_cr3);
-        crate::kinfo!("(Spawn) Building TrapFrame at:", kstack_top);
-        let _ptr = kstack_top as *mut u64;
-
-        // Seletores (RPL 3)
-        const USER_CODE_SEL: u64 = 0x23; // Index 4, RPL 3
-        const USER_DATA_SEL: u64 = 0x1B; // Index 3, RPL 3
+        const USER_CODE_SEL: u64 = 0x23;
+        const USER_DATA_SEL: u64 = 0x1B;
         const RFLAGS_IF: u64 = 0x202;
-
         use crate::arch::x86_64::interrupts::ExceptionStackFrame;
-
-        // BUGFIX: Reservar 8 bytes ACIMA do TrapFrame para o 'push rax' do context_switch_asm.
-        // O context_switch_asm faz 'mov rsp, [rsi+0x30]; push rax; ret' para saltar para nova task.
-        // Sem essa reserva, o 'push' sobrescreve o SS do TrapFrame, corrompendo-o.
         const SWITCH_RESERVE: u64 = 8;
 
-        // Calcular base do TrapFrame (topo - reserva - sizeof(ExceptionStackFrame))
-        // ExceptionStackFrame tem 5 u64s = 40 bytes.
         let frame_ptr =
             (kstack_top - SWITCH_RESERVE - core::mem::size_of::<ExceptionStackFrame>() as u64)
                 as *mut ExceptionStackFrame;
-
-        // Escrever frame estruturado
         (*frame_ptr).instruction_pointer = entry_point.as_u64();
         (*frame_ptr).code_segment = USER_CODE_SEL;
         (*frame_ptr).cpu_flags = RFLAGS_IF;
         (*frame_ptr).stack_pointer = USER_STACK_TOP;
         (*frame_ptr).stack_segment = USER_DATA_SEL;
 
-        // Alteração DEADLOCK FIX: Usar user_entry_stub em vez de ir direto para iretq_restore
         let trampoline = crate::sched::core::entry::user_entry_stub as u64;
-        // context.rsp aponta para a área reservada (8 bytes acima do TrapFrame)
-        // Após switch: push rax decrementa RSP, ret consome o valor, deixando RSP na reserva
-        // O user_entry_stub então ajusta para o TrapFrame.
-        // FIX: Subtrair 8 bytes para apontar para o início da reserva (slot do endereço de retorno).
-        // Isso permite que 'mov [rsp], rax' escreva no slot reservado (válido) em vez do topo (OOB).
-        // Após 'ret', o RSP será incrementado de volta para o topo (início da reserva + 8).
-        let context_rsp =
+        task.context.rsp =
             frame_ptr as u64 + core::mem::size_of::<ExceptionStackFrame>() as u64 + SWITCH_RESERVE
                 - 8;
-
-        task.context.rsp = context_rsp;
         task.context.rip = trampoline;
-
-        crate::ktrace!("(Spawn) TrapFrame base:", context_rsp);
-        crate::ktrace!("(Spawn) Trampolim:", trampoline);
-        crate::ktrace!("(Spawn) Entry point escrito:", entry_point.as_u64());
-
-        // Verificar leitura de volta do TrapFrame
-        // frame_ptr é *mut ExceptionStackFrame. Instruction Pointer é o primeiro campo (offset 0).
-        let rip_check = core::ptr::read_volatile(&(*frame_ptr).instruction_pointer);
-        crate::ktrace!("(Spawn) TrapFrame[RIP] lido:", rip_check);
-        if rip_check == 0 {
-            crate::kerror!("(Spawn) CRITICAL: TrapFrame RIP é ZERO após escrita!");
-        }
     }
 
-    // 7. Restaurar CR3 original (APÓS escrever TrapFrame!)
+    // 9. Restaurar CR3
     unsafe {
         crate::mm::vmm::mapper::write_cr3(old_cr3);
     }
-    crate::kinfo!("(Spawn) CR3 restaurado para Kernel P4");
 
-    // 6. Marcar como pronta
+    // 10. Enfileirar Task
     task.set_ready();
-    // let pid = Pid::new(task.tid.as_u32()); // Already defined above
-
-    // 7. Adicionar ao scheduler
     crate::sched::core::enqueue(Box::pin(task));
-    crate::kinfo!("Process spawned from ELF! PID:", pid.as_u32() as u64);
 
+    crate::kinfo!("Process spawned successfully! PID:", pid.as_u32() as u64);
     Ok(pid)
 }
 

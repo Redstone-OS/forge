@@ -35,17 +35,15 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::arch::init_basics(); // TODO: Expor init unificado em arch
     }
 
-    // 2.5. Inicialização de Vídeo (Framebuffer)
-    // Inicializamos cedo para ter saída visual se o serial falhar ou para mostrar logo
-    crate::drivers::display::init(boot_info.framebuffer);
-
-    // 3. Inicialização de Memória (PMM, VMM, Heap)
+    // 3. Inicialização de Memória (PMM, VMM, Heap, HHDM)
     crate::kinfo!("'Inicializando Memória'");
     unsafe {
-        // Agora passamos o boot_info completo. O mm::init deve saber lidar com
-        // memory_map_addr e memory_map_len.
         crate::mm::init(boot_info);
     }
+
+    // 2.5. Inicialização de Vídeo (Framebuffer)
+    // Inicializamos agora que o HHDM está pronto para mapear o FB corretamente
+    crate::drivers::display::init(boot_info.framebuffer);
 
     // 4. Inicialização do Core (Time, SMP, Sched)
     crate::kinfo!("'Inicializando Subsistemas do Núcleo'");

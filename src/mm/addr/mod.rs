@@ -51,6 +51,14 @@ impl PhysAddr {
     pub fn is_aligned(&self, align: u64) -> bool {
         self.0 % align == 0
     }
+
+    pub fn align_down(&self, align: u64) -> Self {
+        Self(self.0 & !(align - 1))
+    }
+
+    pub fn align_up(&self, align: u64) -> Self {
+        Self((self.0 + align - 1) & !(align - 1))
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -77,6 +85,14 @@ impl VirtAddr {
     pub fn offset(&self, count: u64) -> Self {
         Self(self.0 + count)
     }
+
+    pub fn align_down(&self, align: u64) -> Self {
+        Self(self.0 & !(align - 1))
+    }
+
+    pub fn align_up(&self, align: u64) -> Self {
+        Self((self.0 + align - 1) & !(align - 1))
+    }
 }
 
 /// Converte endereço físico para ponteiro virtual acessível.
@@ -92,30 +108,25 @@ impl VirtAddr {
 /// Faz panic se `phys >= PHYS_IDENTITY_LIMIT` (não temos mapeamento)
 #[inline(always)]
 pub unsafe fn phys_to_virt<T>(phys: u64) -> *mut T {
-    debug_assert!(
-        phys < PHYS_IDENTITY_LIMIT,
-        "(VMM) phys_to_virt: endereço {:#x} fora do identity map!",
-        phys
-    );
-
-    // No identity map: virtual == physical para 0-4GB
-    phys as *mut T
+    // Se o HHDM estiver inicializado, usa o offset dinâmico
+    if crate::mm::hhdm::is_initialized() {
+        crate::mm::hhdm::phys_to_virt(phys)
+    } else {
+        // Fallback para identity map durante early boot (Ignite garante isso)
+        phys as *mut T
+    }
 }
 
-/// Converte ponteiro virtual (do identity map) de volta para endereço físico.
-///
-/// # Safety
-///
-/// O ponteiro DEVE estar dentro do identity map (< 4GB)
+/// Converte ponteiro virtual (do HHDM) de volta para endereço físico.
 #[inline(always)]
 pub fn virt_to_phys<T>(virt: *const T) -> u64 {
     let addr = virt as u64;
-    debug_assert!(
-        addr < PHYS_IDENTITY_LIMIT,
-        "(VMM) virt_to_phys: endereço {:#x} fora do identity map!",
+    if crate::mm::hhdm::is_initialized() && crate::mm::hhdm::is_hhdm_address(addr) {
+        crate::mm::hhdm::virt_to_phys(addr)
+    } else {
+        // Fallback para identity map
         addr
-    );
-    addr
+    }
 }
 
 /// Converte endereço físico para ponteiro virtual COM validação.
