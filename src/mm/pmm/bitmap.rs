@@ -168,15 +168,14 @@ impl BitmapFrameAllocator {
         // Barreira após memset
         compiler_fence(Ordering::SeqCst);
 
+        // 5. Liberar regiões usable
+        self.init_free_regions(boot_info, bitmap_phys, req_size_bytes as u64);
+
         // 4.5 CRÍTICO: Marcar page tables do bootloader como ocupadas
-        // DEVE ser feito APÓS bitmap estar preenchido (tudo ocupado) e
-        // ANTES de init_free_regions liberar frames "Usable".
+        // DEVE ser feito APÓS init_free_regions liberar frames "Usable".
         crate::ktrace!("(PMM) Escaneando tabelas de página do bootloader...");
         // SAFETY: mark_bootloader_page_tables é unsafe, assume self inicializado
         unsafe { super::pt_scanner::mark_bootloader_page_tables(self) };
-
-        // 5. Liberar regiões usable
-        self.init_free_regions(boot_info, bitmap_phys, req_size_bytes as u64);
 
         // Barreira final
         compiler_fence(Ordering::SeqCst);

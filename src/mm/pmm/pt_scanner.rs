@@ -18,7 +18,7 @@
 //! }
 //! ```
 
-use crate::mm::addr::{phys_to_virt};
+use crate::mm::addr::phys_to_virt;
 use crate::mm::config::{PAGE_HUGE, PAGE_MASK, PAGE_PRESENT};
 use crate::mm::pmm::BitmapFrameAllocator;
 use core::arch::asm;
@@ -124,11 +124,11 @@ unsafe fn mark_frame(pmm: &mut BitmapFrameAllocator, phys: u64, _level: &str) ->
         return false;
     }
 
-    if pmm.is_frame_used(phys) {
+    if pmm.is_frame_used(frame_idx as u64) {
         return false;
     }
 
-    pmm.mark_frame_used(phys, true);
+    pmm.mark_frame_used(frame_idx as u64, true);
     true
 }
 
