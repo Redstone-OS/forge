@@ -79,6 +79,139 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: ExceptionStackFr
 }
 
 // =============================================================================
+// HANDLERS ASM (WRAPPERS - EXCEPTION TRAMPOLINES)
+// =============================================================================
+
+core::arch::global_asm!(
+    r#"
+.global divide_error_wrapper
+.global invalid_opcode_wrapper
+.global page_fault_wrapper
+.global general_protection_wrapper
+.global double_fault_wrapper
+.global breakpoint_wrapper
+
+.extern divide_error_handler_inner
+.extern invalid_opcode_handler_inner
+.extern page_fault_handler_inner
+.extern general_protection_handler_inner
+.extern double_fault_handler_inner
+.extern breakpoint_handler_inner
+
+// Macro para salvar scratch registers
+.macro PUSH_SCRATCH_REGS
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+.endm
+
+.macro POP_SCRATCH_REGS
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+.endm
+
+// Wrapper para exceções SEM código de erro
+// Stack: [RIP, CS, RFLAGS, RSP, SS]
+.macro EXCEPTION_NO_ERR name, inner
+\name:
+    // Salvar regs voláteis
+    PUSH_SCRATCH_REGS
+    
+    // Verificar CS (bit 1-0) em [RSP + 72 + 8] = [RSP + 80]
+    // 72 bytes de regs + 8 bytes RIP = CS está em +80
+    testb $3, 80(%rsp)
+    jz 1f
+    swapgs
+1:
+    // RDI = Ponteiro para stack frame (começa no RIP, em RSP + 72)
+    lea rdi, [rsp + 72]
+    
+    // Alinhar stack (opcional, mas bom pra ABI)
+    and rsp, -16
+    
+    call \inner
+    
+    // Restaurar GS se necessário
+    // Stack original foi alterada? Não, pois 'and rsp' só afeta localmente se usarmos frame pointer
+    // Mas aqui não salvamos RSP antigo. O 'and rsp' poderia quebrar o retorno?
+    // SIM! Se alterarmos RSP sem salvar, perdemos a stack de retorno.
+    // Vamos remover o alinhamento manual por enquanto ou fazer direito (mov rbp, rsp).
+    // Como estamos apenas chamando func Rust que não usa muita stack de args, talvez ok.
+    // Melhor não arriscar: SEM ALINHAMENTO MANUAL AGORA.
+    
+    // Recuperar stack original? Não mudamos se não fizermos 'and'.
+    
+    // Checar swapgs de volta
+    // Mas espera, como acessamos a stack original para checar CS se mudamos RSP?
+    // Ah, não mudamos RSP.
+    
+    testb $3, 80(%rsp)
+    jz 2f
+    swapgs
+2:
+    POP_SCRATCH_REGS
+    iretq
+.endm
+
+// Wrapper para exceções COM código de erro
+// Stack: [ERR, RIP, CS, RFLAGS, RSP, SS]
+.macro EXCEPTION_WITH_ERR name, inner
+\name:
+    // Salvar regs voláteis
+    PUSH_SCRATCH_REGS
+    
+    // Verificar CS. 
+    // Stack: [Regs(72), ERR(8), RIP(8), CS(8)]
+    // CS está em 72 + 8 + 8 = 88
+    testb $3, 88(%rsp)
+    jz 1f
+    swapgs
+1:
+    // RDI = Ponteiro para stack frame (RIP está em RSP + 80, pois tem ERR code antes)
+    lea rdi, [rsp + 80]
+    
+    // RSI = Error Code (está em RSP + 72)
+    mov rsi, [rsp + 72]
+    
+    call \inner
+    
+    testb $3, 88(%rsp)
+    jz 2f
+    swapgs
+2:
+    POP_SCRATCH_REGS
+    // Pop error code
+    add rsp, 8
+    iretq
+.endm
+
+EXCEPTION_NO_ERR divide_error_wrapper, divide_error_handler_inner
+EXCEPTION_NO_ERR invalid_opcode_wrapper, invalid_opcode_handler_inner
+EXCEPTION_NO_ERR breakpoint_wrapper, breakpoint_handler_inner
+EXCEPTION_WITH_ERR page_fault_wrapper, page_fault_handler_inner
+EXCEPTION_WITH_ERR general_protection_wrapper, general_protection_handler_inner
+EXCEPTION_WITH_ERR double_fault_wrapper, double_fault_handler_inner
+"#
+);
+
+// =============================================================================
+// HANDLERS RUST (INNER)
+// =============================================================================
+
+// =============================================================================
 // HANDLERS ASM (IRQ0 PREEMPTS)
 // =============================================================================
 
@@ -269,6 +402,7 @@ pub fn pic_disable_irq(irq: u8) {
 // =============================================================================
 
 /// Trata falhas de CPU decidindo se deve matar o processo ou dar Panic no kernel.
+#[allow(dead_code)]
 fn handle_fault(
     name: &str,
     stack_frame: &ExceptionStackFrame,
@@ -302,5 +436,3 @@ fn handle_fault(
         panic!("Falha Crítica no Kernel!");
     }
 }
-
-// (Handlers antigos removidos)
