@@ -103,8 +103,7 @@ pub extern "C" fn timer_handler_inner() {
     crate::sched::core::scheduler::timer_tick();
 
     // 3. Verificar se há tasks para acordar na SleepQueue
-    // (Descomente se o módulo existir e for necessário agora)
-    // crate::sched::core::sleep_queue::check_sleep_queue();
+    crate::sched::core::sleep_queue::check_sleep_queue();
 
     // 4. Enviar EOI para o PIC (Master = 0x20)
     crate::arch::x86_64::ports::outb(0x20, 0x20);
