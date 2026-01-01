@@ -51,10 +51,10 @@ pub fn check_sleep_queue() {
         for t in sleep_queue.iter() {
             if t.tid.as_u32() == 1 {
                 crate::ktrace!(
-                    "(Sleep) Task 1 (Supervisor) in queue. Wake at:",
+                    "(Sleep) Task 1 (Supervisor) na fila. Acordando em:",
                     t.wake_at.unwrap_or(0)
                 );
-                crate::ktrace!("(Sleep) Current jiffies:", now);
+                crate::ktrace!("(Sleep) Jiffies atual:", now);
             }
         }
     }

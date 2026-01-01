@@ -21,12 +21,12 @@ pub unsafe fn prepare_and_switch_to(
     old_ctx: Option<*mut CpuContext>,
     mut current_guard: SpinlockGuard<Option<Pin<Box<Task>>>>,
 ) {
-    // 1. Marcar nova task como Running
-    core::pin::Pin::get_unchecked_mut(next.as_mut()).state = TaskState::Running;
-
     // 2. Extrair dados necessários
-    let new_ctx_ptr = &next.context as *const _;
     let is_new = next.state == TaskState::Created;
+    let new_ctx_ptr = &next.context as *const _;
+
+    // 1. Marcar nova task como Running (após verificar se é Created)
+    core::pin::Pin::get_unchecked_mut(next.as_mut()).state = TaskState::Running;
 
     // 3. Log de Depuração (Opcional)
     crate::ktrace!("(Sched) Mudando para PID:", next.tid.as_u32() as u64);

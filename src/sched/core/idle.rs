@@ -21,7 +21,7 @@ pub unsafe fn enter_idle_loop(old_ctx: Option<*mut CpuContext>) -> ! {
 
         idle_count += 1;
         if idle_count % 100 == 0 {
-            crate::ktrace!("(Sched) Idler pulsação:", idle_count);
+            crate::kdebug!("(Sched) Modo ocioso:", idle_count);
         }
 
         // Verifica se há alguma task na runqueue agora

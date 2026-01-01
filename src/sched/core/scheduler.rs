@@ -209,6 +209,12 @@ pub extern "C" fn schedule() {
     let next = next_opt.unwrap();
     if let Some(mut old_task) = current_guard.take() {
         let state = old_task.state;
+
+        // DEBUG: Rastrear saída de task
+        crate::ktrace!("(Sched) Swapping out PID:", old_task.tid.as_u32() as u64);
+        // crate::ktrace!("(Sched) Old State (2=Run,3=Ready,4=Sleep):", state as u64);
+        // Nota: TaskState não tem cast direto fácil aqui sem usar unsafe transmute ou Debug,
+        // mas vamos assumir que state reflete o valor correto.
         if state == TaskState::Running || state == TaskState::Sleeping {
             let old_ctx_ptr =
                 unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };

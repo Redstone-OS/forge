@@ -47,15 +47,7 @@ pub fn sys_thread_exit_wrapper(args: &SyscallArgs) -> SysResult<usize> {
 ///
 /// Nunca retorna.
 pub fn sys_exit(code: i32) -> ! {
-    crate::kwarn!("(Syscall) sys_exit invocado. Code=", code as u64);
-    {
-        let tid = crate::sched::core::CURRENT
-            .lock()
-            .as_ref()
-            .map(|t| t.tid.as_u32())
-            .unwrap_or(0);
-        crate::kwarn!("(Syscall) PID saindo: ", tid as u64);
-    }
+    crate::kinfo!("(Syscall) sys_exit code=", code as u64);
 
     // Chamar exit_current do scheduler que remove o processo
     // e pula para o próximo sem reenfileirar
