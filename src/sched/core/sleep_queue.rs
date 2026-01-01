@@ -30,7 +30,8 @@ pub fn check_sleep_queue() {
         if should_wake {
             // Remove da fila de sleep
             if let Some(mut task) = sleep_queue.remove(i) {
-                crate::kinfo!("(Sleep) Acordando task PID:", task.tid.as_u32() as u64);
+                crate::kdebug!("(Sleep) Acordando task PID:", task.tid.as_u32() as u64);
+                // TODO: Remover esse log causa panico no supervisor investigar o motivo
 
                 // Limpa o wake_at e marca como pronta
                 task.wake_at = None;
