@@ -23,7 +23,10 @@ pub struct ExceptionStackFrame {
     pub stack_segment: u64,
 }
 
-// Declaração dos wrappers definidos no global_asm!
+// Inclui o arquivo assembly externo contendo os trampolins e handlers de baixo nível
+core::arch::global_asm!(include_str!("interrupts.s"));
+
+// Declaração dos wrappers definidos no assembly
 extern "C" {
     fn divide_error_wrapper();
     fn invalid_opcode_wrapper();
@@ -31,7 +34,10 @@ extern "C" {
     fn general_protection_wrapper();
     fn double_fault_wrapper();
     fn breakpoint_wrapper();
+    fn timer_handler(); // Definido em interrupts.s
 }
+
+// (Helpers removidos pois já existem em sched/core/cpu.rs e scheduler.rs)
 
 /// Inicializa a Tabela de Descritores de Interrupção (IDT).
 /// Deve ser chamado no boot antes de habilitar interrupções.
@@ -64,7 +70,7 @@ pub fn init_idt() {
 }
 
 // =============================================================================
-// HANDLERS ASM
+// HANDLERS ASM (IRQs Simples)
 // =============================================================================
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: ExceptionStackFrame) {
@@ -79,225 +85,8 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: ExceptionStackFr
 }
 
 // =============================================================================
-// HANDLERS ASM (WRAPPERS - EXCEPTION TRAMPOLINES)
-// =============================================================================
-
-core::arch::global_asm!(
-    r#"
-.global divide_error_wrapper
-.global invalid_opcode_wrapper
-.global page_fault_wrapper
-.global general_protection_wrapper
-.global double_fault_wrapper
-.global breakpoint_wrapper
-
-.extern divide_error_handler_inner
-.extern invalid_opcode_handler_inner
-.extern page_fault_handler_inner
-.extern general_protection_handler_inner
-.extern double_fault_handler_inner
-.extern breakpoint_handler_inner
-
-// Macro para salvar scratch registers
-.macro PUSH_SCRATCH_REGS
-    push rax
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push r8
-    push r9
-    push r10
-    push r11
-.endm
-
-.macro POP_SCRATCH_REGS
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rax
-.endm
-
-// Wrapper para exceções SEM código de erro
-// Stack: [RIP, CS, RFLAGS, RSP, SS]
-.macro EXCEPTION_NO_ERR name, inner
-\name:
-    // Salvar regs voláteis
-    PUSH_SCRATCH_REGS
-    
-    // Verificar CS (bit 1-0) em [RSP + 72 + 8] = [RSP + 80]
-    // 72 bytes de regs + 8 bytes RIP = CS está em +80
-    testb $3, 80(%rsp)
-    jz 1f
-    swapgs
-1:
-    // RDI = Ponteiro para stack frame (começa no RIP, em RSP + 72)
-    lea rdi, [rsp + 72]
-    
-    // Alinhar stack (opcional, mas bom pra ABI)
-    and rsp, -16
-    
-    call \inner
-    
-    // Restaurar GS se necessário
-    // Stack original foi alterada? Não, pois 'and rsp' só afeta localmente se usarmos frame pointer
-    // Mas aqui não salvamos RSP antigo. O 'and rsp' poderia quebrar o retorno?
-    // SIM! Se alterarmos RSP sem salvar, perdemos a stack de retorno.
-    // Vamos remover o alinhamento manual por enquanto ou fazer direito (mov rbp, rsp).
-    // Como estamos apenas chamando func Rust que não usa muita stack de args, talvez ok.
-    // Melhor não arriscar: SEM ALINHAMENTO MANUAL AGORA.
-    
-    // Recuperar stack original? Não mudamos se não fizermos 'and'.
-    
-    // Checar swapgs de volta
-    // Mas espera, como acessamos a stack original para checar CS se mudamos RSP?
-    // Ah, não mudamos RSP.
-    
-    testb $3, 80(%rsp)
-    jz 2f
-    swapgs
-2:
-    POP_SCRATCH_REGS
-    iretq
-.endm
-
-// Wrapper para exceções COM código de erro
-// Stack: [ERR, RIP, CS, RFLAGS, RSP, SS]
-.macro EXCEPTION_WITH_ERR name, inner
-\name:
-    // Salvar regs voláteis
-    PUSH_SCRATCH_REGS
-    
-    // Verificar CS. 
-    // Stack: [Regs(72), ERR(8), RIP(8), CS(8)]
-    // CS está em 72 + 8 + 8 = 88
-    testb $3, 88(%rsp)
-    jz 1f
-    swapgs
-1:
-    // RDI = Ponteiro para stack frame (RIP está em RSP + 80, pois tem ERR code antes)
-    lea rdi, [rsp + 80]
-    
-    // RSI = Error Code (está em RSP + 72)
-    mov rsi, [rsp + 72]
-    
-    call \inner
-    
-    testb $3, 88(%rsp)
-    jz 2f
-    swapgs
-2:
-    POP_SCRATCH_REGS
-    // Pop error code
-    add rsp, 8
-    iretq
-.endm
-
-EXCEPTION_NO_ERR divide_error_wrapper, divide_error_handler_inner
-EXCEPTION_NO_ERR invalid_opcode_wrapper, invalid_opcode_handler_inner
-EXCEPTION_NO_ERR breakpoint_wrapper, breakpoint_handler_inner
-EXCEPTION_WITH_ERR page_fault_wrapper, page_fault_handler_inner
-EXCEPTION_WITH_ERR general_protection_wrapper, general_protection_handler_inner
-EXCEPTION_WITH_ERR double_fault_wrapper, double_fault_handler_inner
-"#
-);
-
-// =============================================================================
 // HANDLERS RUST (INNER)
 // =============================================================================
-
-// =============================================================================
-// HANDLERS ASM (IRQ0 PREEMPTS)
-// =============================================================================
-
-core::arch::global_asm!(
-    r#"
-.global timer_handler
-.extern timer_handler_inner
-
-// Macro para salvar scratch registers (caller-saved)
-.macro PUSH_SCRATCH_REGS
-    push rax
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push r8
-    push r9
-    push r10
-    push r11
-.endm
-
-// Macro para restaurar scratch registers
-.macro POP_SCRATCH_REGS
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rax
-.endm
-
-timer_handler:
-    // 1. Salvar contexto volátil (scratch)
-    PUSH_SCRATCH_REGS
-
-    // 2. Chamar handler Rust (manda EOI e atualiza jiffies)
-    call timer_handler_inner
-
-    // 3. Ponto de Preempção (Preemption Point)
-    // Somente preemptamos se estávamos voltando para User Mode (Ring 3).
-    // Preemptar o Kernel (Ring 0) requer cuidado extremo com reentrância e locks.
-    // O Code Segment (CS) está em [rsp + 80] (9 regs salvos + RIP)
-    mov rax, [rsp + 80]
-    and rax, 3
-    cmp rax, 3
-    jne .skip_preemption
-
-    // Verificar se a CPU sinalizou que precisamos de agendamento
-    // Alinhamento manual de stack (16-bytes) para chamadas Rust.
-    // Preservamos o r12 (callee-saved) pois vamos usá-lo como âncora para o RSP.
-    push r12
-    mov r12, rsp
-    and rsp, -16
-    
-    call should_reschedule
-    test al, al
-    jz .restore_rsp
-
-    // Se chegamos aqui, o quantum acabou!
-    // Limpamos a flag e chamamos o orquestrador.
-    call clear_need_resched
-    call schedule
-
-.restore_rsp:
-    mov rsp, r12
-    pop r12
-
-.skip_preemption:
-    // 4. Restaurar contexto volátil
-    POP_SCRATCH_REGS
-
-    // 5. Retornar da interrupção (restaura CS, RIP, RFLAGS, RSP, SS)
-    iretq
-"#
-);
-
-#[allow(dead_code)]
-extern "C" {
-    fn timer_handler();
-    fn should_reschedule() -> bool;
-    fn clear_need_resched();
-    fn schedule();
-}
 
 /// Handler Rust do Timer (chamado pelo ASM)
 ///
@@ -313,7 +102,8 @@ pub extern "C" fn timer_handler_inner() {
     crate::sched::core::scheduler::timer_tick();
 
     // 3. Verificar se há tasks para acordar na SleepQueue
-    crate::sched::core::sleep_queue::check_sleep_queue();
+    // (Descomente se o módulo existir e for necessário agora)
+    // crate::sched::core::sleep_queue::check_sleep_queue();
 
     // 4. Enviar EOI para o PIC (Master = 0x20)
     crate::arch::x86_64::ports::outb(0x20, 0x20);
@@ -398,8 +188,65 @@ pub fn pic_disable_irq(irq: u8) {
 }
 
 // =============================================================================
-// HANDLERS DE EXCEÇÕES
+// HANDLERS DE EXCEÇÕES (CORE)
 // =============================================================================
+
+#[no_mangle]
+pub extern "C" fn divide_error_handler_inner(stack_frame: *const ExceptionStackFrame) {
+    // Reconstruímos a referência a partir do ponteiro
+    let frame = unsafe { &*stack_frame };
+    handle_fault("Divide Error (#DE)", frame, None, None);
+}
+
+#[no_mangle]
+pub extern "C" fn invalid_opcode_handler_inner(stack_frame: *const ExceptionStackFrame) {
+    let frame = unsafe { &*stack_frame };
+    handle_fault("Invalid Opcode (#UD)", frame, None, None);
+}
+
+#[no_mangle]
+pub extern "C" fn breakpoint_handler_inner(stack_frame: *const ExceptionStackFrame) {
+    let frame = unsafe { &*stack_frame };
+    crate::kinfo!("EXCEPTION: BREAKPOINT at", frame.instruction_pointer);
+}
+
+#[no_mangle]
+pub extern "C" fn page_fault_handler_inner(
+    stack_frame: *const ExceptionStackFrame,
+    error_code: u64,
+) {
+    let frame = unsafe { &*stack_frame };
+    let cr2: u64;
+    unsafe {
+        core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
+    }
+    handle_fault("Page Fault (#PF)", frame, Some(error_code), Some(cr2));
+}
+
+#[no_mangle]
+pub extern "C" fn general_protection_handler_inner(
+    stack_frame: *const ExceptionStackFrame,
+    error_code: u64,
+) {
+    let frame = unsafe { &*stack_frame };
+    handle_fault(
+        "General Protection Fault (#GP)",
+        frame,
+        Some(error_code),
+        None,
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn double_fault_handler_inner(
+    stack_frame: *const ExceptionStackFrame,
+    _error_code: u64,
+) -> ! {
+    let frame = unsafe { &*stack_frame };
+    crate::kerror!("EXCEPTION: DOUBLE FAULT (#DF)");
+    crate::kerror!("RIP:", frame.instruction_pointer);
+    panic!("DOUBLE FAULT - Stack Overflow ou corrupção crítica detectada.");
+}
 
 /// Trata falhas de CPU decidindo se deve matar o processo ou dar Panic no kernel.
 #[allow(dead_code)]
