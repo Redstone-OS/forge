@@ -97,15 +97,7 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
     }
     let search_bytes = &path_bytes[start..];
 
-    // Log do path sendo buscado (primeiros 4 bytes para debug)
-    if search_bytes.len() >= 4 {
-        crate::ktrace!("(InitramFS) Search[0]:", search_bytes[0] as u64);
-        crate::ktrace!("(InitramFS) Search[1]:", search_bytes[1] as u64);
-        crate::ktrace!("(InitramFS) Search[2]:", search_bytes[2] as u64);
-        crate::ktrace!("(InitramFS) Search[3]:", search_bytes[3] as u64);
-    }
-
-    crate::ktrace!("(InitramFS) Search Loop Start");
+    crate::ktrace!("(InitramFS) Início do Loop de Busca");
 
     let mut offset = 0;
     while offset + TAR_BLOCK_SIZE <= data.len() {
@@ -176,12 +168,12 @@ pub fn lookup_file(path: &str) -> Option<&'static [u8]> {
                 return None;
             }
 
-            crate::ktrace!("(TAR) Creating slice...");
+            crate::ktrace!("(TAR) Criando slice...");
             // Usando from_raw_parts para evitar problemas com lifetimes/bounds check implícitos
             let ptr = unsafe { data.as_ptr().add(file_start) };
             let slice = unsafe { slice::from_raw_parts(ptr, size) };
 
-            crate::ktrace!("(TAR) Returning slice len:", slice.len() as u64);
+            crate::ktrace!("(TAR) Retornando slice len:", slice.len() as u64);
             return Some(slice);
         }
 

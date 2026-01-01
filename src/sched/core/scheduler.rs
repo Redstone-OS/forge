@@ -22,19 +22,19 @@ use core::pin::Pin;
 
 use super::runqueue::RUNQUEUE;
 
-/// Task atualmente em execução neste núcleo.
-/// TODO: Em SMP, este deve ser um campo interno da estrutura `Cpu` ou acessado via GS-base.
+// Task atualmente em execução neste núcleo.
+// TODO: Em SMP, este deve ser um campo interno da estrutura `Cpu` ou acessado via GS-base.
 pub static CURRENT: Spinlock<Option<Pin<Box<Task>>>> = Spinlock::new(None);
 
-/// Inicializa o subsistema de agendamento.
+// Inicializa o subsistema de agendamento.
 pub fn init() {
     crate::kinfo!("[SCHED] Sistema de agendamento pronto.");
 }
 
-/// Chamado a cada tick do relógio de hardware para gerenciar o tempo de CPU.
-///
-/// Realiza a contabilização do quantum da tarefa atual e sinaliza se uma
-/// preempção é necessária.
+// Chamado a cada tick do relógio de hardware para gerenciar o tempo de CPU.
+//
+// Realiza a contabilização do quantum da tarefa atual e sinaliza se uma
+// preempção é necessária.
 pub fn timer_tick() {
     // Tentamos o lock. Em interrupções não podemos travar (deadlock) se o kernel já tem o lock.
     if let Some(mut current_guard) = CURRENT.try_lock() {
@@ -54,7 +54,7 @@ pub fn timer_tick() {
     }
 }
 
-/// Retorna ponteiro para a task atual (unsafe se dereferenciado sem lock, uteil para IDs)
+// Retorna ponteiro para a task atual (unsafe se dereferenciado sem lock, uteil para IDs)
 pub fn current() -> Option<*const Task> {
     CURRENT
         .lock()
@@ -62,34 +62,42 @@ pub fn current() -> Option<*const Task> {
         .map(|t| t.as_ref().get_ref() as *const Task)
 }
 
-/// Adiciona task à fila de execução
+// Adiciona task à fila de execução
 pub fn enqueue(task: Pin<Box<Task>>) {
     if task.tid.as_u32() == 0 {
-        crate::kerror!("(Sched) ERRO: Tentativa de colocar PID 0 na RunQueue! Ignorando...");
+        crate::kerror!("(Sched) Tentativa de colocar PID 0 na RunQueue! Ignorando...");
+        // TODO: Tratar melhor isso
         return;
     }
-    crate::ktrace!("(Sched) enqueue PID:", task.tid.as_u32() as u64);
+    crate::ktrace!(
+        "(Sched) Nova tarefa na RunQueue PID:",
+        task.tid.as_u32() as u64
+    );
     RUNQUEUE.lock().push(task);
 }
 
-/// Seleciona próxima task para executar
+// Seleciona próxima task para executar
 pub fn pick_next() -> Option<Pin<Box<Task>>> {
     let mut rq = RUNQUEUE.lock();
     let res = rq.pop();
     if let Some(ref t) = res {
-        crate::ktrace!("(Sched) pick_next: selecionado PID:", t.tid.as_u32() as u64);
+        crate::ktrace!(
+            "(Sched) pick_next() selecionado PID:",
+            t.tid.as_u32() as u64
+        );
     }
     res
 }
 
-/// Yield: cede CPU voluntariamente
+// Yield: cede CPU voluntariamente
 pub fn yield_now() {
     Cpu::disable_interrupts();
+    crate::ktrace!("(Sched) yield_now() chamado");
     schedule();
     Cpu::enable_interrupts();
 }
 
-/// Sleep: coloca a task atual em estado dormente por N milissegundos
+// Sleep: coloca a task atual em estado dormente por N milissegundos
 pub fn sleep_current(ms: u64) {
     if ms == 0 {
         yield_now();
@@ -108,7 +116,7 @@ pub fn sleep_current(ms: u64) {
             unsafe { Pin::get_unchecked_mut(task.as_mut()) }.wake_at = Some(now + ticks);
             unsafe { Pin::get_unchecked_mut(task.as_mut()) }.state = TaskState::Sleeping;
 
-            crate::kdebug!("(Sched) Task Sleeping...");
+            crate::kdebug!("(Sched) Tarefa no estado Sleeping");
         }
     }
 
@@ -119,15 +127,15 @@ pub fn sleep_current(ms: u64) {
     Cpu::enable_interrupts();
 }
 
-/// Libera o lock do scheduler manualmente (usado por new tasks)
-/// # Safety
-/// Somente chamar no início de novas tasks.
+// Libera o lock do scheduler manualmente (usado por new tasks)
+// # Safety
+// Somente chamar no início de novas tasks.
 #[no_mangle]
 pub unsafe extern "C" fn release_scheduler_lock() {
     CURRENT.force_unlock();
 }
 
-/// Exit: termina processo atual e pula para próximo
+// Exit: termina processo atual e pula para próximo
 pub fn exit_current(code: i32) -> ! {
     Cpu::disable_interrupts();
 
@@ -159,7 +167,7 @@ pub fn exit_current(code: i32) -> ! {
     }
 }
 
-/// Função principal de escalonamento
+// Função principal de escalonamento
 #[no_mangle]
 pub extern "C" fn schedule() {
     let mut next_opt = pick_next();
@@ -168,8 +176,9 @@ pub extern "C" fn schedule() {
     while let Some(ref task) = next_opt {
         if task.tid.as_u32() == 0 {
             crate::kerror!(
-                "(Sched) AVISO: Detectada task com PID 0 inválida na RunQueue! Pulando..."
+                "(Sched) Detectada task com PID 0 inválida na RunQueue! Pulando para a próxima."
             );
+            // TODO: Tratar melhor isso
             super::debug::dump_tasks();
             next_opt = pick_next();
         } else {
@@ -193,6 +202,23 @@ pub extern "C" fn schedule() {
                 unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
             if old_task.state == TaskState::Sleeping {
                 super::sleep_queue::add_task(old_task);
+            } else if old_task.state == TaskState::Blocked {
+                // Task Blocked sem próxima task: manter na RUNQUEUE como fallback
+                crate::kerror!(
+                    "(Sched) BUG CASO A: Task Blocked em CURRENT sem próxima task! PID:",
+                    old_task.tid.as_u32() as u64
+                );
+                unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
+                RUNQUEUE.lock().push(old_task);
+            } else {
+                // Estado inesperado: manter na RUNQUEUE como fallback
+                crate::kerror!(
+                    "(Sched) BUG CASO A: Estado inesperado em CURRENT! PID:",
+                    old_task.tid.as_u32() as u64
+                );
+                crate::kerror!("(Sched) Estado:", old_task.state as u64);
+                unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
+                RUNQUEUE.lock().push(old_task);
             }
 
             // Entra no loop de idle (não retorna)
@@ -211,7 +237,10 @@ pub extern "C" fn schedule() {
         let state = old_task.state;
 
         // DEBUG: Rastrear saída de task
-        crate::ktrace!("(Sched) Swapping out PID:", old_task.tid.as_u32() as u64);
+        crate::ktrace!(
+            "(Sched) Trocando contexto PID:",
+            old_task.tid.as_u32() as u64
+        );
         // crate::ktrace!("(Sched) Old State (2=Run,3=Ready,4=Sleep):", state as u64);
         // Nota: TaskState não tem cast direto fácil aqui sem usar unsafe transmute ou Debug,
         // mas vamos assumir que state reflete o valor correto.
@@ -225,15 +254,42 @@ pub extern "C" fn schedule() {
                 super::sleep_queue::add_task(old_task);
             }
             unsafe { super::switch::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard) };
+        } else if state == TaskState::Blocked {
+            // Task Blocked: Algo está errado - tasks Blocked não devem estar em CURRENT
+            // pois WaitQueue.wait() as remove de CURRENT antes de bloquear.
+            // Isso indica um bug em outro lugar, mas para evitar perda de tasks,
+            // fazemos fallback para RUNQUEUE.
+            crate::kerror!(
+                "(Sched) Task Blocked encontrada em CURRENT! PID:",
+                old_task.tid.as_u32() as u64
+            );
+            crate::kerror!(
+                "(Sched) Isso indica bug em IPC/WaitQueue. Movendo para RUNQUEUE como fallback."
+            );
+            let old_ctx_ptr =
+                unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
+            unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
+            RUNQUEUE.lock().push(old_task);
+            unsafe { super::switch::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard) };
         } else {
-            unsafe { super::switch::prepare_and_switch_to(next, None, current_guard) };
+            // Estado inesperado (Created, Zombie, Dead, Stopped, Ready)
+            // Isso indica um BUG sério no sistema - não deveria acontecer
+            crate::kerror!("(Sched) BUG CRÍTICO: Task com estado inválido em CURRENT!");
+            crate::kerror!("(Sched) PID:", old_task.tid.as_u32() as u64);
+            crate::kerror!("(Sched) Estado (enum):", state as u64);
+            crate::kerror!("(Sched) Movendo para RUNQUEUE como fallback de segurança");
+            let old_ctx_ptr =
+                unsafe { &mut Pin::get_unchecked_mut(old_task.as_mut()).context as *mut _ };
+            unsafe { Pin::get_unchecked_mut(old_task.as_mut()) }.state = TaskState::Ready;
+            RUNQUEUE.lock().push(old_task);
+            unsafe { super::switch::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard) };
         }
     } else {
         unsafe { super::switch::prepare_and_switch_to(next, None, current_guard) };
     }
 }
 
-/// Loop principal do scheduler
+// Loop principal do scheduler
 pub fn run() -> ! {
     Cpu::disable_interrupts();
     loop {
