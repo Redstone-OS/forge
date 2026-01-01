@@ -90,10 +90,16 @@ extern "C" {
 /// Esta função deve ser chamada apenas uma vez durante a inicialização do BSP.
 /// Escreve em MSRs específicos da CPU.
 pub unsafe fn init() {
-    // 1. Habilitar instrução SYSCALL no EFER
+    // 1. Habilitar instrução SYSCALL e bit NXE no EFER
+    const EFER_NXE: u64 = 1 << 11;
     let efer = Cpu::read_msr(MSR_EFER);
-    if (efer & EFER_SCE) == 0 {
-        Cpu::write_msr(MSR_EFER, efer | EFER_SCE);
+    let mut new_efer = efer | EFER_SCE;
+
+    // SEMPRE habilitar NXE se disponível (x86_64 requer suporte mas precisa habilitar)
+    new_efer |= EFER_NXE;
+
+    if new_efer != efer {
+        Cpu::write_msr(MSR_EFER, new_efer);
     }
 
     // 2. Configurar LSTAR (Target RIP) - Onde o SYSCALL vai pular

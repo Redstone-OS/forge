@@ -48,18 +48,14 @@ pub struct AddressSpace {
 
 impl AddressSpace {
     pub fn new(owner: Pid) -> ASpaceResult<Self> {
-        let pml4 = crate::mm::pmm::FRAME_ALLOCATOR
-            .lock()
-            .allocate_frame()
-            .ok_or(ASpaceError::OutOfMemory)?;
-
-        unsafe {
-            crate::mm::hhdm::zero_page(pml4.as_u64());
-            copy_kernel_mappings(pml4);
-        }
+        let pml4_phys = {
+            let mut pmm = crate::mm::pmm::FRAME_ALLOCATOR.lock();
+            crate::mm::vmm::mapper::create_new_p4(&mut *pmm)
+                .map_err(|_| ASpaceError::OutOfMemory)?
+        };
 
         Ok(Self {
-            pml4,
+            pml4: PhysAddr::new(pml4_phys),
             vmas: Spinlock::new(Vec::new()),
             owner,
             stats: AddressSpaceStats::default(),
@@ -138,15 +134,6 @@ impl AddressSpace {
 
     pub unsafe fn activate(&self) {
         crate::arch::Cpu::write_cr3(self.pml4.as_u64());
-    }
-}
-
-unsafe fn copy_kernel_mappings(new_pml4: PhysAddr) {
-    let kernel_cr3 = crate::arch::Cpu::read_cr3();
-    let src: *const u64 = crate::mm::hhdm::phys_to_virt(kernel_cr3);
-    let dst: *mut u64 = crate::mm::hhdm::phys_to_virt(new_pml4.as_u64());
-    for i in 256..512 {
-        *dst.add(i) = *src.add(i);
     }
 }
 

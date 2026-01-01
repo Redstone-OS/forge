@@ -46,7 +46,8 @@ pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u
         zero_page(pml4_phys);
     }
 
-    // Copiar kernel mappings (Entradas 256 a 511)
+    // Copiar kernel mappings (Entradas 256 a 511) da P4 ATUAL
+    // Isso garante que herdamos stacks de tasks já criadas e expansões do heap.
     let current_pml4 = read_cr3();
 
     // Acessar via HHDM (mais seguro que identity)
@@ -60,68 +61,8 @@ pub fn create_new_p4(pmm: &mut crate::mm::pmm::BitmapFrameAllocator) -> Result<u
             core::ptr::write_volatile(dst_ptr.add(i), entry);
         }
 
-        // Para Entry 0 (Identity Map), fazemos DEEP COPY completo das tabelas
-        // Isso permite que o kernel acesse memória baixa (Initramfs, etc.)
-        // enquanto permite que o ELF loader crie mapeamentos independentes.
-        //
-        // IMPORTANTE: Precisamos copiar PDPT E PD[0] para que as modificações
-        // feitas pelo ELF loader não afetem as tabelas do kernel.
-        let entry0 = core::ptr::read_volatile(src_ptr.add(0));
-        if entry0 & FLAG_PRESENT != 0 {
-            // 1. Alocar nova PDPT para Entry 0
-            let new_pdpt_frame = pmm
-                .allocate_frame()
-                .ok_or("(Mapper) OOM allocating PDPT copy")?;
-            let new_pdpt_phys = new_pdpt_frame.as_u64();
-            zero_page(new_pdpt_phys);
-
-            // 2. Copiar entries da PDPT original, mas fazer deep copy de PD[0]
-            let src_pdpt: *const u64 = crate::mm::addr::phys_to_virt(entry0 & PAGE_MASK);
-            let dst_pdpt: *mut u64 = crate::mm::addr::phys_to_virt(new_pdpt_phys);
-
-            for i in 0..512 {
-                let pdpt_entry = core::ptr::read_volatile(src_pdpt.add(i));
-
-                // Para PDPT[0] (range 0-1GB onde fica 0x400000), fazer deep copy da PD
-                if i == 0 && (pdpt_entry & FLAG_PRESENT != 0) && (pdpt_entry & (1 << 7) == 0) {
-                    // Não é huge page (1GB), então há uma PD
-                    let new_pd_frame = pmm
-                        .allocate_frame()
-                        .ok_or("(Mapper) OOM allocating PD copy")?;
-                    let new_pd_phys = new_pd_frame.as_u64();
-                    zero_page(new_pd_phys);
-
-                    // Copiar entries da PD original
-                    let src_pd: *const u64 = crate::mm::addr::phys_to_virt(pdpt_entry & PAGE_MASK);
-                    let dst_pd: *mut u64 = crate::mm::addr::phys_to_virt(new_pd_phys);
-
-                    for j in 0..512 {
-                        let pd_entry = core::ptr::read_volatile(src_pd.add(j));
-
-                        // Para PD[2] (range 4MB-6MB onde fica 0x400000):
-                        // NÃO copiar! Deixar zerada para que o ELF loader crie mapeamento limpo.
-                        // Isso garante que cada processo tenha seu próprio código.
-                        if j == 2 {
-                            // Não copiar - deixar zerada para userspace privado
-                        } else {
-                            // Outras entries: copiar diretamente (identity map para outras regiões)
-                            core::ptr::write_volatile(dst_pd.add(j), pd_entry);
-                        }
-                    }
-
-                    // Nova PDPT entry apontando para PD copiada
-                    let new_pdpt_entry = new_pd_phys | (pdpt_entry & 0xFFF);
-                    core::ptr::write_volatile(dst_pdpt.add(i), new_pdpt_entry);
-                } else {
-                    // Outras entries: copiar diretamente (identity map para memória alta)
-                    core::ptr::write_volatile(dst_pdpt.add(i), pdpt_entry);
-                }
-            }
-
-            // 3. Criar nova Entry 0 apontando para a PDPT copiada
-            let new_entry0 = new_pdpt_phys | (entry0 & 0xFFF);
-            core::ptr::write_volatile(dst_ptr.add(0), new_entry0);
-        }
+        // Entradas 0..255 (User Space) permanecem ZERADAS (via zero_page no início desta função).
+        // O ELF loader e o gerenciador de VMAs serão responsáveis por povoar esta área de forma isolada.
     }
 
     Ok(pml4_phys)
@@ -208,10 +149,8 @@ unsafe fn set_table_entry(table_phys: u64, index: usize, value: u64) {
     core::ptr::write_volatile(table_ptr.add(index), value);
 }
 
-/// Traduz endereço virtual para físico usando as tabelas de página atuais
-pub fn translate_addr(virt: u64) -> Option<u64> {
-    let pml4_phys = read_cr3();
-
+/// Traduz endereço virtual para físico usando uma PML4 específica
+pub fn translate_addr_in_p4(pml4_phys: u64, virt: u64) -> Option<u64> {
     let pml4_idx = ((virt >> 39) & 0x1FF) as usize;
     let pdpt_idx = ((virt >> 30) & 0x1FF) as usize;
     let pd_idx = ((virt >> 21) & 0x1FF) as usize;
@@ -231,7 +170,6 @@ pub fn translate_addr(virt: u64) -> Option<u64> {
         if pdpte & FLAG_PRESENT == 0 {
             return None;
         }
-        // Verifica huge page (1GB)
         if pdpte & (1 << 7) != 0 {
             return Some((pdpte & 0x000F_FFFF_C000_0000) | (virt & 0x3FFF_FFFF));
         }
@@ -242,7 +180,6 @@ pub fn translate_addr(virt: u64) -> Option<u64> {
         if pde & FLAG_PRESENT == 0 {
             return None;
         }
-        // Verifica huge page (2MB)
         if pde & (1 << 7) != 0 {
             return Some((pde & 0x000F_FFFF_FFE0_0000) | (virt & 0x1F_FFFF));
         }
@@ -257,6 +194,11 @@ pub fn translate_addr(virt: u64) -> Option<u64> {
 
         Some(frame_phys | offset)
     }
+}
+
+/// Traduz endereço virtual para físico usando as tabelas de página atuais
+pub fn translate_addr(virt: u64) -> Option<u64> {
+    translate_addr_in_p4(read_cr3(), virt)
 }
 
 /// Mapeia uma página virtual para um frame físico
@@ -280,7 +222,7 @@ pub fn map_page(page_virt: u64, frame_phys: u64, flags: MapFlags) -> Result<(), 
     if flags.contains(MapFlags::USER) {
         pte_flags |= FLAG_USER;
     }
-    if !flags.contains(MapFlags::EXECUTABLE) {
+    if !flags.contains(MapFlags::EXECUTABLE) || flags.contains(MapFlags::NO_EXECUTE) {
         pte_flags |= FLAG_NO_EXEC;
     }
 
@@ -372,7 +314,7 @@ pub fn map_page_with_pmm(
     let pd_idx = ((page_virt >> 21) & 0x1FF) as usize;
     let pt_idx = ((page_virt >> 12) & 0x1FF) as usize;
 
-    // Converte MapFlags para flags de PTE
+    // Converte MapFlags para flags de PTE do hardware
     let mut pte_flags = FLAG_PRESENT;
     if flags.contains(MapFlags::WRITABLE) {
         pte_flags |= FLAG_WRITABLE;
@@ -380,7 +322,7 @@ pub fn map_page_with_pmm(
     if flags.contains(MapFlags::USER) {
         pte_flags |= FLAG_USER;
     }
-    if !flags.contains(MapFlags::EXECUTABLE) {
+    if !flags.contains(MapFlags::EXECUTABLE) || flags.contains(MapFlags::NO_EXECUTE) {
         pte_flags |= FLAG_NO_EXEC;
     }
 
@@ -509,7 +451,7 @@ pub fn map_page_in_target_p4(
     if flags.contains(MapFlags::USER) {
         pte_flags |= FLAG_USER;
     }
-    if !flags.contains(MapFlags::EXECUTABLE) {
+    if !flags.contains(MapFlags::EXECUTABLE) || flags.contains(MapFlags::NO_EXECUTE) {
         pte_flags |= FLAG_NO_EXEC;
     }
 

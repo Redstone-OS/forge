@@ -220,7 +220,21 @@ pub extern "C" fn page_fault_handler_inner(
     unsafe {
         core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
     }
-    handle_fault("Page Fault (#PF)", frame, Some(error_code), Some(cr2));
+
+    // 1. Tentar resolver a falta de página via subsistema de memória
+    use crate::mm::fault::{handle_page_fault, FaultResult, PageFaultInfo};
+    let info = PageFaultInfo::from_error_code(cr2, error_code);
+
+    match handle_page_fault(info) {
+        FaultResult::Success => {
+            // Falta resolvida (ex: lazy allocation ou COW), podemos retornar e repetir a instrução
+            return;
+        }
+        _ => {
+            // Falha não pôde ser resolvida rotineiramente, chama o tratador genérico (panic/kill)
+            handle_fault("Page Fault (#PF)", frame, Some(error_code), Some(cr2));
+        }
+    }
 }
 
 #[no_mangle]

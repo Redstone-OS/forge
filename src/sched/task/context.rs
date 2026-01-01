@@ -161,6 +161,7 @@ iretq_restore:
     mov ax, 0x1B  
     mov ds, ax
     mov es, ax
+    mov fs, ax
     swapgs
     iretq
 "#

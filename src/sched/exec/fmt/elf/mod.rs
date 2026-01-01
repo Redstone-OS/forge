@@ -80,40 +80,81 @@ pub fn load_binary(
                     .expect("(ELF) Falha ao registrar VMA");
             }
 
-            // 3. Alocar e mapear páginas físicas (Manual Load para agora)
-            // Futuramente: isso será feito via Page Fault (Lazy Load)
+            // 3. Alocar e mapear páginas físicas (Manual Load via HHDM)
             let start_page = phdr.p_vaddr & !(FRAME_SIZE - 1);
             let end_page = (phdr.p_vaddr + phdr.p_memsz + FRAME_SIZE - 1) & !(FRAME_SIZE - 1);
             let pages = (end_page - start_page) / FRAME_SIZE;
 
+            let target_cr3 = aspace_arc.lock().cr3();
             let mut pmm = FRAME_ALLOCATOR.lock();
-            let mut vmm_flags = MapFlags::PRESENT | MapFlags::USER | MapFlags::WRITABLE; // W p/ carregar
+            let mut vmm_flags = MapFlags::PRESENT | MapFlags::USER | MapFlags::WRITABLE;
+
+            if phdr.p_flags & 0x1 != 0 {
+                vmm_flags |= MapFlags::EXECUTABLE;
+            }
 
             for page_idx in 0..pages {
                 let vaddr = start_page + page_idx * FRAME_SIZE;
-                if let Some(frame) = pmm.allocate_frame() {
-                    unsafe {
-                        map_page_with_pmm(vaddr, frame.as_u64(), vmm_flags, &mut *pmm)
-                            .expect("(ELF) Erro ao mapear página do segmento");
 
-                        // Zerar página
-                        core::ptr::write_bytes(vaddr as *mut u8, 0, FRAME_SIZE as usize);
+                // Verificar se já está mapeado no alvo
+                if crate::mm::vmm::mapper::translate_addr_in_p4(target_cr3, vaddr).is_none() {
+                    if let Some(frame) = pmm.allocate_frame() {
+                        unsafe {
+                            crate::mm::vmm::mapper::map_page_in_target_p4(
+                                target_cr3,
+                                vaddr,
+                                frame.as_u64(),
+                                vmm_flags,
+                                &mut *pmm,
+                            )
+                            .expect("(ELF) Erro ao mapear página");
+
+                            // Zerar página NOVA via HHDM
+                            core::ptr::write_bytes(
+                                crate::mm::addr::phys_to_virt::<u8>(frame.as_u64()),
+                                0,
+                                FRAME_SIZE as usize,
+                            );
+                        }
                     }
                 }
             }
 
-            // 4. Copiar dados
+            // 4. Copiar dados via HHDM para os frames do AddressSpace alvo
             let file_size = phdr.p_filesz as usize;
             if file_size > 0 {
+                let mut bytes_copied = 0usize;
                 let file_offset = phdr.p_offset as usize;
-                let dest = phdr.p_vaddr as *mut u8;
-                unsafe {
-                    core::ptr::copy_nonoverlapping(data.as_ptr().add(file_offset), dest, file_size);
+                let segment_data = &data[file_offset..file_offset + file_size];
+
+                while bytes_copied < file_size {
+                    let vaddr = phdr.p_vaddr + bytes_copied as u64;
+                    let page_offset = vaddr % FRAME_SIZE;
+                    let bytes_to_copy = core::cmp::min(
+                        file_size - bytes_copied,
+                        (FRAME_SIZE - page_offset) as usize,
+                    );
+
+                    // Achar frame físico correspondente no alvo
+                    if let Some(phys) =
+                        crate::mm::vmm::mapper::translate_addr_in_p4(target_cr3, vaddr)
+                    {
+                        unsafe {
+                            let dst = crate::mm::addr::phys_to_virt::<u8>(phys & !0xFFF)
+                                .add(page_offset as usize);
+                            core::ptr::copy_nonoverlapping(
+                                segment_data.as_ptr().add(bytes_copied),
+                                dst,
+                                bytes_to_copy,
+                            );
+                        }
+                    } else {
+                        panic!("(ELF) Erro fatal: página do segmento não mapeada!");
+                    }
+
+                    bytes_copied += bytes_to_copy;
                 }
             }
-
-            // 5. Ajustar Flags Finais (Efetivar RX se necessário)
-            // TODO: Atualizar flags da page table para remover WRITABLE se original não tinha
         }
     }
 

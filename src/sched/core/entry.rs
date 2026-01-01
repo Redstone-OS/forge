@@ -41,6 +41,20 @@ user_entry_stub:
     // Restaurar RSP original (apontando pro TrapFrame)
     mov rsp, r12
     
+    // Limpar registradores de propósito geral (Segurança e Ambiente limpo para init)
+    xor rax, rax
+    xor rbx, rbx
+    xor rcx, rcx
+    xor rdx, rdx
+    xor rsi, rsi
+    xor rdi, rdi
+    xor r8, r8
+    xor r9, r9
+    xor r10, r10
+    xor r11, r11
+    // R12 foi usado por nós, R13-R15 já estão em estado indefinido ou CpuContext
+    xor r12, r12
+
     // Pular para o restaurador de contexto
     // IMPORTANTE: JMP, não CALL, pois não queremos voltar aqui e não queremos sujar a stack
     jmp iretq_restore

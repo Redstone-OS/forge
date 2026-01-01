@@ -72,7 +72,10 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 7.5. Inicializar InitRAMFS
     if boot_info.initramfs_addr != 0 && boot_info.initramfs_size > 0 {
         crate::kinfo!("'Inicializando InitRAMFS'");
-        let addr = crate::mm::VirtAddr::new(boot_info.initramfs_addr);
+        // SEMPRE acessar via HHDM para evitar depender do identity map legado
+        let phys = boot_info.initramfs_addr;
+        let virt = unsafe { crate::mm::addr::phys_to_virt::<u8>(phys) };
+        let addr = crate::mm::VirtAddr::new(virt as u64);
         crate::fs::initramfs::init(addr, boot_info.initramfs_size as usize);
     } else {
         crate::kwarn!("InitRAMFS não encontrado!");
