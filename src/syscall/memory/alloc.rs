@@ -88,10 +88,26 @@ pub fn sys_alloc(size: usize, _flags: u32) -> SysResult<usize> {
             return Err(SysError::OutOfMemory);
         }
 
-        // Zerar a página
-        unsafe {
-            core::ptr::write_bytes(vaddr as *mut u8, 0, 4096);
-        }
+        // Registrar VMA (apenas na primeira página da alocação ou em cada página?
+        // Idealmente, registrar uma única VMA para o bloco todo após o loop)
+    }
+
+    // Registrar VMA para o bloco inteiro
+    if let Some(aspace) = &task.aspace {
+        use crate::mm::aspace::vma::{MemoryIntent, Protection, VmaFlags};
+        let mut as_lock = aspace.lock();
+        let _ = as_lock.map_region(
+            Some(crate::mm::VirtAddr::new(alloc_addr)),
+            aligned_size,
+            Protection::RW,
+            VmaFlags::empty(),
+            MemoryIntent::Heap,
+        );
+    }
+
+    // Zerar o bloco (seguro agora que está mapeado e no contexto da task)
+    unsafe {
+        core::ptr::write_bytes(alloc_addr as *mut u8, 0, aligned_size);
     }
 
     // Importante: liberar o lock do CURRENT antes de retornar,

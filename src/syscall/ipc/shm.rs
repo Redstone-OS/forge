@@ -81,11 +81,32 @@ pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
         // 1. Mapear
         match shm.map(base_addr) {
             Ok(_) => {
+                // 2. Registrar VMA para que o Page Fault handler saiba que esta região é legítima
+                let aspace_arc = {
+                    let guard = crate::sched::core::CURRENT.lock();
+                    if let Some(task) = guard.as_ref() {
+                        task.aspace.clone()
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(aspace) = aspace_arc {
+                    use crate::mm::aspace::vma::{MemoryIntent, Protection, VmaFlags};
+                    let mut as_lock = aspace.lock();
+                    let _ = as_lock.map_region(
+                        Some(crate::mm::VirtAddr::new(base_addr)),
+                        shm.size,
+                        Protection::RW,
+                        VmaFlags::SHARED,
+                        MemoryIntent::SharedMemory,
+                    );
+                }
+
                 // Flush TLB
                 unsafe {
-                    let cr3: u64;
-                    core::arch::asm!("mov {}, cr3", out(reg) cr3);
-                    core::arch::asm!("mov cr3, {}", in(reg) cr3);
+                    let cr3 = crate::mm::vmm::mapper::read_cr3();
+                    crate::mm::vmm::mapper::write_cr3(cr3);
                 }
 
                 Ok(base_addr as usize)
@@ -117,49 +138,43 @@ pub fn sys_shm_get_size(shm_id: u64) -> SysResult<usize> {
 
 // Remove entradas Huge Page que bloqueiam o mapeamento granular
 unsafe fn nuke_huge_page_if_exists(vaddr: u64) {
-    let cr3: u64;
-    core::arch::asm!("mov {}, cr3", out(reg) cr3);
+    let cr3: u64 = crate::mm::vmm::mapper::read_cr3();
     let pml4_phys = cr3 & !0xFFF;
 
     let pml4_idx = ((vaddr >> 39) & 0x1FF) as usize;
     let pdpt_idx = ((vaddr >> 30) & 0x1FF) as usize;
     let pd_idx = ((vaddr >> 21) & 0x1FF) as usize;
 
-    let pml4_ptr = pml4_phys as *const u64;
-    let pml4e = *pml4_ptr.add(pml4_idx);
+    let pml4_ptr = crate::mm::addr::phys_to_virt::<u64>(pml4_phys);
+    let pml4e = core::ptr::read_volatile(pml4_ptr.add(pml4_idx));
     if pml4e & 1 == 0 {
         return;
-    } // Não mapeado
+    }
 
     let pdpt_phys = pml4e & 0x000F_FFFF_FFFF_F000;
-    let pdpt_ptr = pdpt_phys as *const u64;
-    let pdpte = *pdpt_ptr.add(pdpt_idx);
+    let pdpt_ptr = crate::mm::addr::phys_to_virt::<u64>(pdpt_phys);
+    let pdpte = core::ptr::read_volatile(pdpt_ptr.add(pdpt_idx));
     if pdpte & 1 == 0 {
         return;
-    } // Não mapeado
+    }
 
-    // Check Huge PDPT (1GB) - just in case
     if (pdpte & 0x80) != 0 {
         crate::kdebug!("(SHM) WARN: Found 1GB Huge Page at PDPT. Nuking...");
-        let mut_pdpt_ptr = pdpt_phys as *mut u64;
-        *mut_pdpt_ptr.add(pdpt_idx) = 0; // Clear
+        core::ptr::write_volatile(pdpt_ptr.add(pdpt_idx) as *mut u64, 0);
         core::arch::asm!("invlpg [{}]", in(reg) vaddr);
         return;
     }
 
     let pd_phys = pdpte & 0x000F_FFFF_FFFF_F000;
-    let pd_ptr = pd_phys as *const u64;
-    let pde = *pd_ptr.add(pd_idx);
+    let pd_ptr = crate::mm::addr::phys_to_virt::<u64>(pd_phys);
+    let pde = core::ptr::read_volatile(pd_ptr.add(pd_idx));
     if pde & 1 == 0 {
         return;
-    } // Não mapeado
+    }
 
-    // Check Huge PDE (2MB) - O CULPADO
     if (pde & 0x80) != 0 {
         crate::kdebug!("(SHM) FATAL: Found 2MB Huge Page at PDE. Nuking to allow split!");
-        crate::kdebug!("(SHM) PDE was: ", pde);
-        let mut_pd_ptr = pd_phys as *mut u64;
-        *mut_pd_ptr.add(pd_idx) = 0; // DELETE A ENTRADA
+        core::ptr::write_volatile(pd_ptr.add(pd_idx) as *mut u64, 0);
         core::arch::asm!("invlpg [{}]", in(reg) vaddr);
     }
 }
