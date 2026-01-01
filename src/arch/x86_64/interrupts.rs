@@ -47,22 +47,23 @@ pub fn init_idt() {
     // Debug: Print handler address
     crate::kinfo!(
         "(IDT) Divide Error Wrapper Addr:",
-        divide_error_wrapper as u64
+        divide_error_wrapper as *const () as u64
     );
 
-    idt.set_handler(0, divide_error_wrapper as u64);
-    idt.set_handler(3, breakpoint_wrapper as u64);
-    idt.set_handler(6, invalid_opcode_wrapper as u64);
-    idt.set_handler(8, double_fault_wrapper as u64);
-    idt.set_handler(13, general_protection_wrapper as u64);
-    idt.set_handler(14, page_fault_wrapper as u64);
+    idt.set_handler(0, divide_error_wrapper as *const () as u64);
+    idt.set_handler(3, breakpoint_wrapper as *const () as u64);
+    idt.set_handler(6, invalid_opcode_wrapper as *const () as u64);
+    // Double Fault usa IST 1 para garantir stack segura
+    idt.set_handler_ist(8, double_fault_wrapper as *const () as u64, 1);
+    idt.set_handler(13, general_protection_wrapper as *const () as u64);
+    idt.set_handler(14, page_fault_wrapper as *const () as u64);
 
     // Remapear IRQs (PIC) -> 32..47
     // Timer (IRQ 0) -> 32
     // Agora usamos o handler asm 'timer_handler' para permitir preempção
-    idt.set_handler(32, timer_handler as u64);
-    idt.set_handler(33, keyboard_interrupt_handler as u64);
-    idt.set_handler(44, mouse_interrupt_handler as u64);
+    idt.set_handler(32, timer_handler as *const () as u64);
+    idt.set_handler(33, keyboard_interrupt_handler as *const () as u64);
+    idt.set_handler(44, mouse_interrupt_handler as *const () as u64);
 
     unsafe {
         idt.load();

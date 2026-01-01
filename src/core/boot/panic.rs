@@ -31,12 +31,12 @@ fn panic(info: &PanicInfo) -> ! {
 
     // Tenta extrair a mensagem de pânico
     crate::kerror!("Mensagem:", 0u64); // TODO: suporte a str
-    let payload = info.payload();
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        crate::kerror!(s);
-    } else {
-        crate::kerror!("(Erro desconhecido ou não-string)");
-    }
+                                       // let payload = info.payload();
+                                       // if let Some(s) = payload.downcast_ref::<&str>() {
+                                       //     crate::kerror!(s);
+                                       // } else {
+    crate::kerror!("(Panic payload indisponivel temporariamente)");
+    // }
 
     crate::kerror!("*****************************************************");
     crate::kerror!("*             SISTEMA HALTED FOREVER                *");

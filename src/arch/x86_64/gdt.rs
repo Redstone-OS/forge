@@ -188,6 +188,10 @@ static mut GDT: [GdtEntry; 7] = [
 // TSS global estática
 static mut TSS: Tss = Tss::new();
 
+// Stack Dedicado para Double Fault (IST 1)
+// Evita Triple Fault (Reset) quando o Kernel Stack estoura ou é corrompido.
+static mut DOUBLE_FAULT_STACK: [u8; 4096] = [0; 4096];
+
 /// Estrutura do Ponteiro da GDT (GDTR)
 #[repr(C, packed)]
 struct GdtDescriptor {
@@ -205,6 +209,10 @@ pub unsafe fn init() {
     // 1. Configurar entradas do TSS na GDT
     let tss_base = (&raw const TSS) as u64;
     let tss_limit = (size_of::<Tss>() - 1) as u32;
+
+    // Configurar IST 1 (Double Fault Stack)
+    let df_stack_top = (&raw const DOUBLE_FAULT_STACK as u64) + 4096;
+    TSS.ist1 = df_stack_top;
 
     GDT[5] = GdtEntry::tss_low(tss_base, tss_limit);
     GDT[6] = GdtEntry::tss_high(tss_base);
@@ -227,10 +235,10 @@ pub unsafe fn init() {
 
     core::arch::asm!(
         "push {0:r}",           // Push CS (64-bit)
-        "lea {1}, [rip + 1f]", // Load return address (Intel syntax)
+        "lea {1}, [rip + 2f]", // Load return address (Intel syntax)
         "push {1:r}",           // Push RIP
         "retfq",                // Far return to reload CS
-        "1:",
+        "2:",
         "mov ds, {2:x}",      // Reload DS (16-bit reg name - AX/BX/etc)
         "mov es, {2:x}",      // Reload ES
         "mov ss, {2:x}",      // Reload SS

@@ -4,9 +4,6 @@ use super::runqueue::RUNQUEUE;
 use super::scheduler::CURRENT;
 use super::sleep_queue::SLEEP_QUEUE;
 use crate::sched::task::lifecycle::ZOMBIES;
-use crate::sched::task::{Task, TaskState};
-use alloc::boxed::Box;
-use core::pin::Pin;
 
 /// Imprime o estado de todas as tarefas conhecidas no sistema
 pub fn dump_tasks() {

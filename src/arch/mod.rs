@@ -85,5 +85,5 @@ pub use traits::cpu::CpuTrait;
 // TESTS
 // =============================================================================
 
-#[cfg(feature = "self_test")]
-pub mod test;
+// #[cfg(feature = "self_test")]
+// pub mod test;

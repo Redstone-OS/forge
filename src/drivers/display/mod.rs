@@ -17,7 +17,6 @@ pub mod buffer;
 pub mod crtc;
 
 use crate::core::boot::handoff::FramebufferInfo as HandoffFbInfo;
-use crate::sync::Spinlock;
 
 pub use buffer::{BufferManager, DisplayBuffer, BUFFER_MANAGER};
 pub use crtc::{Crtc, DISPLAY_CRTC};

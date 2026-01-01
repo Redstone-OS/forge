@@ -120,30 +120,6 @@ extern "C" {
 // TRAMPOLINS (TRAMPOLINES)
 // =============================================================================
 
-/// Trampolim de entrada para o Modo de Usuário (Ring 3).
-///
-/// Esta função é o ponto de "retorno" forçado para iniciar uma tarefa em user space.
-/// Ela configura os seletores de segmento de dados para os valores de usuário (RPL 3)
-/// e executa `iretq` para pular para o código do usuário com o nível de privilégio correto.
-///
-/// # Safety
-/// Esta função é `naked` (sem prólogo/epílogo) e manipula registradores de segmento
-/// diretamente. Se a Stack Frame não estiver configurada corretamente antes do salto
-/// para cá, o resultado é indefinido (provavelmente um GP Fault).
-#[naked]
-#[no_mangle]
-pub unsafe extern "C" fn user_entry_trampoline() {
-    ::core::arch::asm!(
-        "mov ax, 0x23", // Carrega Seletor de Dados de Usuário (Index 4 | RPL 3)
-        "mov ds, ax",   // Atualiza DS
-        "mov es, ax",   // Atualiza ES
-        "mov fs, ax",   // Atualiza FS
-        "mov gs, ax",   // Atualiza GS
-        "iretq", // Retorna da "interrupção", trocando para Ring 3 e pulando para o RIP do usuário
-        options(noreturn)
-    );
-}
-
 // =============================================================================
 // INICIALIZAÇÃO DO SUBSISTEMA
 // =============================================================================

@@ -37,10 +37,7 @@
 #![no_std]
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
-#![feature(naked_functions)]
-#![feature(asm_const)]
 #![feature(raw_ref_op)]
-#![feature(panic_info_message)]
 
 extern crate alloc;
 

@@ -11,7 +11,7 @@ use crate::mm::{PhysAddr, VirtAddr};
 use crate::sync::Spinlock;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-use gfx_types::{BufferDescriptor, BufferHandle, PixelFormat};
+use gfx_types::{BufferDescriptor, BufferHandle};
 
 // ============================================================================
 // ERRORS

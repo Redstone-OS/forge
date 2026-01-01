@@ -1,4 +1,3 @@
-.intel_syntax noprefix
 .section .text
 .global divide_error_wrapper
 .global invalid_opcode_wrapper
@@ -178,21 +177,36 @@ double_fault_wrapper:
 # =============================================================================
 timer_handler:
     PUSH_SCRATCH_REGS
+    
+    # 1. Checar se viemos de User Mode (CS & 3 == 3)
+    # CS salvo em [rsp + 72 (scratch) + 8 (RIP) + 8 (CS)] = [rsp + 80]
+    test byte ptr [rsp + 80], 3
+    jz .L_timer_kernel
+    
+    # Se User Mode: precisamos de SWAPGS para ter acesso ao Kernel GS (se usado)
+    swapgs
+    
+.L_timer_kernel:
+    # 2. Chamar handler Rust (inc jiffies, etc)
     call timer_handler_inner
     
-    # Verifica CS em [RSP + 80]
+    # 3. Verificar Preempção
+    # Se estávamos em Kernel Mode (CS & 3 == 0), NÃO fazemos preempção agora
+    # (Simples kernel não-preemptivo por enquanto, ou lógica complexa de irq_count)
     mov rax, [rsp + 80]
     and rax, 3
     cmp rax, 3
-    jne .L_skip_preemption
-
+    jne .L_timer_exit # Retorna se veio do Kernel
+    
+    # Se chegamos aqui, viemos de User Mode. Podemos agendar.
     call should_reschedule
     test al, al
-    jz .L_skip_preemption
-
+    jz .L_timer_exit
+    
     call clear_need_resched
     
-    # Salvar R12 (callee-saved) antes de usar para alinhar stack
+    # Preempção:
+    # Salvar callee-saved e chamar schedule
     push r12
     mov r12, rsp
     and rsp, -16
@@ -200,6 +214,12 @@ timer_handler:
     mov rsp, r12
     pop r12
 
-.L_skip_preemption:
+.L_timer_exit:
+    # 4. Restaurar SwapGS se necessário
+    test byte ptr [rsp + 80], 3
+    jz .L_timer_iret
+    swapgs
+
+.L_timer_iret:
     POP_SCRATCH_REGS
     iretq
