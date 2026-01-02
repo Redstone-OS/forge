@@ -1,6 +1,6 @@
 //! # File System (FS)
 //!
-//! Abstração unificada de armazenamento.
+//! Abstração unificada de armazenamento para o RedstoneOS.
 //!
 //! ## Arquitetura VFS
 //!
@@ -17,19 +17,26 @@
 //!                          ↓
 //! ┌─────────────────────────────────────────────────────┐
 //! │              FILESYSTEM BACKENDS                    │
-//! │   InitramFS │ DevFS │ ProcFS │ SysFS │ TmpFS        │
+//! │       InitramFS │ FAT │ RFS (futuro)                │
 //! └─────────────────────────────────────────────────────┘
 //! ```
 //!
-//! ## Filesystems
+//! ## Hierarquia RedstoneOS
 //!
-//! | FS        | Tipo       | Persistente | Propósito              |
-//! |-----------|------------|-------------|------------------------|
-//! | initramfs | Read-only  | Não         | Boot inicial           |
-//! | devfs     | Virtual    | Não         | /dev/null, /dev/sda    |
-//! | procfs    | Virtual    | Não         | /proc (estado kernel)  |
-//! | sysfs     | Virtual    | Não         | /sys (dispositivos)    |
-//! | tmpfs     | RAM-backed | Não         | Storage temporário     |
+//! ```text
+//! /
+//! ├─ system/     # SO imutável (services, drivers, manifests)
+//! ├─ apps/       # Aplicações instaladas pelo usuário
+//! ├─ users/      # Dados e config por usuário
+//! ├─ devices/    # Hardware abstraído
+//! ├─ volumes/    # Partições lógicas
+//! ├─ runtime/    # Estado volátil (tmpfs)
+//! ├─ state/      # Estado persistente pequeno
+//! ├─ data/       # Dados globais
+//! ├─ net/        # Rede como namespace
+//! ├─ snapshots/  # Histórico navegável
+//! └─ boot/       # Boot mínimo
+//! ```
 
 // =============================================================================
 // VIRTUAL FILE SYSTEM
@@ -41,51 +48,30 @@ pub mod vfs;
 pub use vfs::file::{File, FileOps};
 pub use vfs::inode::{Inode, InodeOps};
 
-// Re-export VFS (struct/trait if strictly needed, or just the module logic)
-// Since VFS is a module here, this line might be redundant or wrong if VFS is not a struct.
-// Checking previous fs/mod.rs error: 'no VFS in fs::vfs'.
-// vfs/mod.rs defines functions like init, open. It doesn't define a VFS struct.
-// But some code imports VFS. Maybe it means the module? 'pub use vfs as VFS'?
-// Or maybe there IS a VFS struct missing?
-// Given existing code tries to import it, I'll export what is available.
-// If VFS struct is missing, I should create a dummy one or point to the module.
-// For now, let's export Inode/File which are definitely missing.
-
 // =============================================================================
 // FILESYSTEM IMPLEMENTATIONS
 // =============================================================================
 
-/// DevFS (/dev)
-pub mod devfs;
-
-/// InitramFS (boot)
+/// InitramFS (boot) - TAR-based initial ramdisk
 pub mod initramfs;
 
-/// ProcFS (/proc)
-pub mod procfs;
+/// FAT Filesystem (FAT16/FAT32)
+pub mod fat;
 
-/// SysFS (/sys)
-pub mod sysfs;
-
+/// RFS - Redstone File System (futuro)
 pub mod rfs;
-
-/// TmpFS (volatile storage)
-pub mod tmpfs;
 
 // =============================================================================
 // INITIALIZATION
 // =============================================================================
 
-/// Inicializa o VFS e monta filesystems virtuais
+/// Inicializa o VFS e monta filesystems
 pub fn init() {
     crate::kinfo!("(FS) Inicializando VFS...");
     vfs::init();
 
-    crate::kinfo!("(FS) Montando filesystems virtuais...");
-    // devfs::mount("/dev");
-    // procfs::mount("/proc");
-    // sysfs::mount("/sys");
-    // tmpfs::mount("/tmp");
+    crate::kinfo!("(FS) Inicializando módulo FAT...");
+    fat::init();
 
     crate::kinfo!("(FS) Filesystem inicializado");
 }

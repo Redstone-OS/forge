@@ -6,6 +6,6 @@ pub struct ArcCache;
 
 impl ArcCache {
     pub fn init() {
-        crate::kinfo!("(RFS/ARC) Inicializando cache...");
+        crate::kinfo!("(RFS) Inicializando cache...");
     }
 }
