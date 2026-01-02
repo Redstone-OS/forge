@@ -11,7 +11,7 @@
 
 *Escrito em Rust puro seguindo padrões Industriais e Militares de confiabilidade*
 
-[🚀 Quick Start](#-quick-start) • [🏛️ Arquitetura](#️-arquitetura) • [💾 RFS & FS](#-sistema-de-arquivos-distribuído-rfs) • [🧠 Memória](#-gerenciamento-de-memória-mm) • [🤝 Contribuir](#-contribuir)
+[🚀 Quick Start](#-quick-start) • [📚 Docs](#-documentação-técnica) • [🏛️ Arquitetura](#️-arquitetura) • [💾 RFS](#-sistema-de-arquivos-rfs--layout) • [🤝 Contribuir](#-contribuir)
 
 </div>
 
@@ -29,6 +29,28 @@ O desenvolvimento do Forge segue diretrizes estritas para garantir robustez inig
 2.  **ABI Imutável**: Estruturas de comunicação (como `BootInfo` e mensagens IPC) são congeladas por versão.
 3.  **Crash ≠ Reboot**: A falha de um driver ou serviço nunca derruba o sistema. O kernel apenas reinicia o componente falho.
 4.  **Single Source of Truth**: Hardware é definido uma única vez na HAL (`arch/`).
+
+---
+
+## 📚 Documentação Técnica
+
+Mantemos uma documentação detalhada para cada subsistema do kernel na pasta `doc/`.
+
+| Módulo | Documentação | Descrição |
+|:-------|:-------------|:----------|
+| **Architecture** | [🏛️ Architecture & HAL](doc/ARCHITECTURE_HAL.md) | Camada de Abstração de Hardware, Boot, Interrupções e Context Switch. |
+| **Core** | [⚙️ Kernel Core](doc/KERNEL_CORE.md) | Inicialização (`main.rs`), SMP, Power Management e Debugging. |
+| **Memory** | [🧠 Memory Management](doc/MEMORY_MANAGEMENT.md) | PMM, VMM (HHDM), Heap e Alocadores. |
+| **Sched** | [⚡ Scheduler](doc/SCHEDULER.md) | Ciclo de vida de Tasks, Algoritmo Round-Robin e Troca de Contexto. |
+| **Syscalls** | [📞 Syscall Interface](doc/SYSCALLS.md) | ABI completa, números de syscall (`RAX`), erros e convenções. |
+| **IPC** | [💬 IPC System](doc/IPC_SYSTEM.md) | Ports, Channels, Shared Memory e Message Passing. |
+| **FS** | [💾 Filesystem](doc/FILESYSTEM.md) | Virtual File System (VFS), Inodes e Drivers de FS. |
+| **Drivers** | [🔌 Drivers Model](doc/DRIVERS.md) | Modelo de dispositivos, PCI e inicialização de hardware. |
+| **Modules** | [📦 Module System](doc/MODULE_SYSTEM.md) | Carregamento dinâmico de drivers (`.ko`), assinaturas e sandbox. |
+| **Security** | [🔒 Security Model](doc/SECURITY_MODEL.md) | Capabilities (OCAP), ACLs e isolamento. |
+| **Sync** | [🚦 Synchronization](doc/SYNC_PRIMITIVES.md) | Mutex, Spinlock, Atomics e RCU. |
+| **Sys** | [🧱 System Definitions](doc/SYS_DEFINITIONS.md) | Tipos fundamentais (`Pid`, `Tid`) e definições compartilhadas. |
+| **Klib** | [🧰 Kernel Library](doc/KERNEL_LIBRARY.md) | Estruturas de dados `no_std` (Bitmap, Lists, Trees). |
 
 ---
 
@@ -103,27 +125,6 @@ Nada de bagunça em `/`. Cada diretório tem um contrato claro:
 
 ---
 
-## 🧠 Gerenciamento de Memória (`mm`)
-
-O subsistema `mm` é o coração da segurança do Forge.
-
-### PMM (Physical Memory Manager)
-Implementa um **Bitmap Allocator**.
-*   **Por que?** Simplicidade e robustez. Bitmaps são fáceis de debugar e garantem uso contíguo.
-*   **Segurança**: O `init` do PMM detecta sobreposição com o kernel e consigo mesmo.
-
-### VMM (Virtual Memory Manager)
-Resolve o problema clássico de **Huge Pages vs 4KiB Pages**.
-
-> [!WARNING]
-> **O Problema**: O bootloader mapeia os primeiros 4GiB como Huge Pages (2MiB). Tentar alterar uma permissão de 4KiB nessa região causa GPF.
-
-**A Solução Forge**:
-*   **Scratch Slot**: Uma região virtual (`0xFFFF_FE00...`) reservada para manipulação de frames físicos.
-*   **Auto-Split**: Se o VMM detecta uma escrita em Huge Page, ele automaticamente a "quebra" em 512 páginas de 4KiB.
-
----
-
 ## ⚡ Escalonador & Tarefas
 
 O Forge utiliza um scheduler **Round-Robin Preemptivo** com suporte a **Prioridades Dinâmicas**.
@@ -140,42 +141,22 @@ A troca de contexto é feita manipulando diretamente o **Stack Pointer (RSP)**.
 
 ---
 
-## 🗺️ Roadmap de Refatoração
-
-Seguindo o **Plano Mestre de Refatoração**, estamos na Fase 2.
-
-- [x] **Fase 1: Fundação & Handoff**
-    - [x] BootInfo ABI (compatível com Ignite)
-    - [x] Stack Setup & SSE
-
-- [ ] **Fase 2: Arquitetura Básica (HAL)**
-    - [x] GDT / IDT Setup
-    - [ ] Serial Driver (Polling)
-    - [ ] Panic Handler Visual
-
-- [ ] **Fase 3: Gerenciamento de Memória**
-    - [x] PMM (Bitmap Allocator)
-    - [x] VMM (Page Tables & Scratch Slot)
-    - [ ] Heap Allocator (Otimizar Linked List)
-
-- [ ] **Fase 4: Multitarefa & IPC**
-    - [x] Scheduler Básico (Round Robin)
-    - [ ] IPC Messaging (Send/Recv)
-    - [ ] Syscall Dispatcher (int 0x80)
-
----
-
 ## 📁 Estrutura do Projeto
 
 ```bash
 forge/
+├── doc/                # 📚 DOCUMENTAÇÃO TÉCNICA (Indexada acima)
 ├── src/
 │   ├── arch/           # Hardware Abstraction Layer (HAL)
-│   │   └── x86_64/     # GDT, IDT, Interrupts, Context Switch
 │   ├── core/           # Lógica Central (Logging, Panic, Entry)
-│   ├── drivers/        # Drivers de Boot (Serial, Vídeo Simples)
+│   ├── drivers/        # Drivers de Boot & Device Model
+│   ├── fs/             # Virtual File System (VFS)
+│   ├── ipc/            # Inter-Process Communication (Ports, SHM)
+│   ├── klib/           # Estuturas de Dados no_std
 │   ├── mm/             # Gerenciamento de Memória (PMM, VMM, Heap)
+│   ├── module/         # Carregamento de Drivers Dinâmicos (.ko)
 │   ├── sched/          # Scheduler e Tasks
+│   ├── security/       # Capabilities & Segurança
 │   ├── sys/            # Definições de Sistema (Constantes, ABI)
 │   ├── syscall/        # Interface Kernel <-> User
 │   └── main.rs         # Entry Point (_start)
