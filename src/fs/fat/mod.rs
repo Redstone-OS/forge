@@ -441,14 +441,131 @@ impl FatFs {
 
         Some(data)
     }
+
+    /// Lista entradas de um diretório
+    ///
+    /// # Args
+    /// - path: caminho do diretório (relativo à raiz do FAT)
+    ///
+    /// # Returns
+    /// Lista de entradas ou None se não for um diretório válido
+    pub fn list_directory(&self, path: &str) -> Option<Vec<PublicDirEntry>> {
+        let path = path.trim_start_matches('/');
+        let mut entries = Vec::new();
+
+        // Se path vazio, listar raiz
+        let root_cluster = if self.fat_type == FatType::Fat32 {
+            self.bpb.root_cluster
+        } else {
+            0
+        };
+
+        let target_cluster = if path.is_empty() {
+            root_cluster
+        } else {
+            // Navegar até o diretório alvo
+            let components: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+            let mut current = root_cluster;
+
+            for component in components {
+                if let Some(entry) = self.find_entry(current, component) {
+                    if !entry.is_directory {
+                        return None; // Não é diretório
+                    }
+                    current = entry.first_cluster;
+                } else {
+                    return None; // Não encontrado
+                }
+            }
+            current
+        };
+
+        // Ler entradas do diretório
+        if target_cluster == 0 && self.fat_type != FatType::Fat32 {
+            // Root dir area para FAT12/16
+            self.list_root_dir(&mut entries);
+        } else {
+            self.list_cluster_dir(target_cluster, &mut entries);
+        }
+
+        Some(entries)
+    }
+
+    /// Lista entradas do root directory (FAT12/16)
+    fn list_root_dir(&self, entries: &mut Vec<PublicDirEntry>) {
+        let root_dir_sectors = ((self.bpb.root_entry_count as u32 * 32) + 511) / 512;
+        let first_root_sector = self.partition_offset
+            + self.bpb.reserved_sectors as u64
+            + (self.bpb.num_fats as u64 * self.bpb.sectors_per_fat() as u64);
+
+        let mut sector_buf = [0u8; 512];
+
+        for i in 0..root_dir_sectors as u64 {
+            if self
+                .device
+                .read_block(first_root_sector + i, &mut sector_buf)
+                .is_err()
+            {
+                continue;
+            }
+
+            for j in 0..16 {
+                let offset = j * 32;
+                if let Some(entry) = self.parse_dir_entry(&sector_buf[offset..offset + 32]) {
+                    entries.push(PublicDirEntry {
+                        name: entry.name,
+                        is_directory: entry.is_directory,
+                        size: entry.size,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Lista entradas de um diretório em clusters (FAT32 ou subdir)
+    fn list_cluster_dir(&self, start_cluster: u32, entries: &mut Vec<PublicDirEntry>) {
+        let cluster_size = self.bpb.cluster_size();
+        let mut buf = alloc::vec![0u8; cluster_size];
+        let mut cluster = start_cluster;
+
+        loop {
+            if self.read_cluster(cluster, &mut buf).is_err() {
+                break;
+            }
+
+            for i in 0..(cluster_size / 32) {
+                let offset = i * 32;
+                if let Some(entry) = self.parse_dir_entry(&buf[offset..offset + 32]) {
+                    entries.push(PublicDirEntry {
+                        name: entry.name,
+                        is_directory: entry.is_directory,
+                        size: entry.size,
+                    });
+                }
+            }
+
+            match self.next_cluster(cluster) {
+                Some(next) => cluster = next,
+                None => break,
+            }
+        }
+    }
 }
 
-/// Entrada de diretório simplificada
+/// Entrada de diretório interna
 struct DirEntry {
     name: String,
     is_directory: bool,
     first_cluster: u32,
     size: u32,
+}
+
+/// Entrada de diretório pública (para syscalls)
+#[derive(Debug, Clone)]
+pub struct PublicDirEntry {
+    pub name: String,
+    pub is_directory: bool,
+    pub size: u32,
 }
 
 /// Inicializa o módulo FAT e tenta montar o primeiro disco
@@ -476,6 +593,16 @@ pub fn read_file(path: &str) -> Option<Vec<u8>> {
     let guard = MOUNTED_FAT.lock();
     if let Some(fat) = guard.as_ref() {
         fat.read_file(path)
+    } else {
+        None
+    }
+}
+
+/// Lista entradas de um diretório do FAT montado
+pub fn list_directory(path: &str) -> Option<Vec<PublicDirEntry>> {
+    let guard = MOUNTED_FAT.lock();
+    if let Some(fat) = guard.as_ref() {
+        fat.list_directory(path)
     } else {
         None
     }

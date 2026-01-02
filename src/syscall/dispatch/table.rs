@@ -66,19 +66,55 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_TIMER_CREATE] = Some(super::super::time::sys_timer_create_wrapper);
     table[SYS_TIMER_SET] = Some(super::super::time::sys_timer_set_wrapper);
 
-    // === FILESYSTEM (0x60-0x6F) ===
+    // =========================================================================
+    // FILESYSTEM (0x60-0x7F)
+    // =========================================================================
+
+    // --- BÁSICO (0x60-0x67) ---
     table[SYS_OPEN] = Some(super::super::fs::sys_open_wrapper);
-    table[SYS_CLOSE] = Some(super::super::fs::sys_close_wrapper);
     table[SYS_READ] = Some(super::super::fs::sys_read_wrapper);
     table[SYS_WRITE] = Some(super::super::fs::sys_write_wrapper);
+    table[SYS_SEEK] = Some(super::super::fs::sys_seek_wrapper);
+    table[SYS_PREAD] = Some(super::super::fs::sys_pread_wrapper);
+    table[SYS_PWRITE] = Some(super::super::fs::sys_pwrite_wrapper);
+    table[SYS_FLUSH] = Some(super::super::fs::sys_flush_wrapper);
+    table[SYS_TRUNCATE] = Some(super::super::fs::sys_truncate_wrapper);
+
+    // --- METADADOS (0x68-0x6B) ---
     table[SYS_STAT] = Some(super::super::fs::sys_stat_wrapper);
     table[SYS_FSTAT] = Some(super::super::fs::sys_fstat_wrapper);
-    table[SYS_LSEEK] = Some(super::super::fs::sys_lseek_wrapper);
+    table[SYS_CHMOD] = Some(super::super::fs::sys_chmod_wrapper);
+    table[SYS_CHOWN] = Some(super::super::fs::sys_chown_wrapper);
+
+    // --- DIRETÓRIOS (0x6C-0x6F) ---
+    table[SYS_GETDENTS] = Some(super::super::fs::sys_getdents_wrapper);
     table[SYS_MKDIR] = Some(super::super::fs::sys_mkdir_wrapper);
     table[SYS_RMDIR] = Some(super::super::fs::sys_rmdir_wrapper);
+    table[SYS_GETCWD] = Some(super::super::fs::sys_getcwd_wrapper);
+
+    // --- MANIPULAÇÃO (0x70-0x73) ---
+    table[SYS_CREATE] = Some(super::super::fs::sys_create_wrapper);
     table[SYS_UNLINK] = Some(super::super::fs::sys_unlink_wrapper);
-    table[SYS_READDIR] = Some(super::super::fs::sys_readdir_wrapper);
-    table[SYS_CHMOD] = Some(super::super::fs::sys_chmod_wrapper);
+    table[SYS_RENAME] = Some(super::super::fs::sys_rename_wrapper);
+    table[SYS_LINK] = Some(super::super::fs::sys_link_wrapper);
+
+    // --- SYMLINKS (0x74-0x76) ---
+    table[SYS_SYMLINK] = Some(super::super::fs::sys_symlink_wrapper);
+    table[SYS_READLINK] = Some(super::super::fs::sys_readlink_wrapper);
+    table[SYS_REALPATH] = Some(super::super::fs::sys_realpath_wrapper);
+
+    // --- MONTAGEM (0x77-0x7A) ---
+    table[SYS_MOUNT] = Some(super::super::fs::sys_mount_wrapper);
+    table[SYS_UMOUNT] = Some(super::super::fs::sys_umount_wrapper);
+    table[SYS_STATFS] = Some(super::super::fs::sys_statfs_wrapper);
+    table[SYS_SYNC] = Some(super::super::fs::sys_sync_wrapper);
+
+    // --- AVANÇADO (0x7B-0x7F) ---
+    table[SYS_IOCTL] = Some(super::super::fs::sys_ioctl_wrapper);
+    table[SYS_FCNTL] = Some(super::super::fs::sys_fcntl_wrapper);
+    table[SYS_FLOCK] = Some(super::super::fs::sys_flock_wrapper);
+    table[SYS_ACCESS] = Some(super::super::fs::sys_access_wrapper);
+    table[SYS_CHDIR] = Some(super::super::fs::sys_chdir_wrapper);
 
     // === EVENTS (0x80-0x8F) ===
     table[SYS_POLL] = Some(super::super::event::sys_poll_wrapper);

@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Redstone OS Team"]
 description = "Forge - The RedstoneOS Microkernel"
@@ -21,7 +21,7 @@ bench = false
 # Apenas dependências internas
 # =========================================================
 [dependencies]
-gfx_types = { path = "../libs/gfx_types" }
+gfx_types = { path = "../lib/gfx_types" }
 
 [features]
 default = []
