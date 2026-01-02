@@ -1,10 +1,11 @@
 //! PS/2 Keyboard Driver (Interrupt Driven)
 
-use crate::arch::x86_64::ports::inb;
+use crate::arch::x86_64::ports::{inb, outb};
 use crate::sync::Spinlock;
 
 const DATA_PORT: u16 = 0x60;
 const STATUS_PORT: u16 = 0x64;
+const CMD_PORT: u16 = 0x64;
 const BUFFER_SIZE: usize = 256;
 
 struct KeyboardBuffer {
@@ -47,25 +48,59 @@ impl KeyboardBuffer {
 static KBD_BUFFER: Spinlock<KeyboardBuffer> = Spinlock::new(KeyboardBuffer::new());
 
 pub fn init() {
-    // Limpar buffer do controlador
+    // 1. Habilitar a porta do teclado no controlador 8042
+    unsafe {
+        wait_write();
+        outb(CMD_PORT, 0xAE); // Enable first PS/2 port
+    }
+
+    // 2. Limpar buffer do controlador
     while (inb(STATUS_PORT) & 0x01) != 0 {
         inb(DATA_PORT);
     }
 
-    // Habilitar IRQ 1 no PIC
+    // 3. Configurar o Command Byte para habilitar interrupções de teclado (Bit 0)
+    // Preservamos os outros bits para não quebrar o mouse se ele já estiver ativo
+    unsafe {
+        wait_write();
+        outb(CMD_PORT, 0x20); // Ler Command Byte
+        wait_read();
+        let config = inb(DATA_PORT) | 0x01; // Forçar Bit 0 (Keyboard IRQ)
+
+        wait_write();
+        outb(CMD_PORT, 0x60); // Escrever Command Byte
+        wait_write();
+        outb(DATA_PORT, config);
+    }
+
+    // 4. Habilitar IRQ 1 no PIC
     crate::arch::x86_64::interrupts::pic_enable_irq(1);
 
     crate::kinfo!("(Input) PS/2 Keyboard Initialized (Interrupt Mode)");
 }
 
+/// Helper para esperar o buffer de entrada do controlador estar vazio (pronto para escrita)
+fn wait_write() {
+    while (inb(STATUS_PORT) & 0x02) != 0 {
+        core::hint::spin_loop();
+    }
+}
+
+/// Helper para esperar o buffer de saída do controlador ter dados (pronto para leitura)
+fn wait_read() {
+    while (inb(STATUS_PORT) & 0x01) == 0 {
+        core::hint::spin_loop();
+    }
+}
+
 /// Handler de Interrupção (Chamado pelo ASM wrapper do IRQ 1)
 pub fn handle_irq() {
-    let status = inb(STATUS_PORT);
-    if (status & 0x01) != 0 {
-        let scancode = inb(DATA_PORT);
-        // crate::ktrace!("(KBD) IRQ: scancode=", scancode as u64);
-        KBD_BUFFER.lock().push(scancode);
-    }
+    // IMPORTANTE: Quando a IRQ 1 é disparada, SEMPRE há um scancode disponível.
+    // A verificação do status bit é desnecessária e pode causar race conditions
+    // onde o bit já foi limpo por outra operação.
+    let scancode = inb(DATA_PORT);
+    crate::kdebug!("(KBD) IRQ: scancode=", scancode as u64);
+    KBD_BUFFER.lock().push(scancode);
 }
 
 /// Consome um scancode do buffer

@@ -35,26 +35,30 @@ static MOUSE_BYTES: Spinlock<[u8; 3]> = Spinlock::new([0; 3]);
 
 pub fn init() {
     unsafe {
-        // Habilitar mouse auxiliar
+        // 1. Habilitar a porta do mouse auxiliar no controlador 8042
         wait_write();
         outb(CMD_PORT, 0xA8);
 
-        // Habilitar interrupções (IRQ 12) - Compaq Status Byte
+        // 2. Configurar o Command Byte para habilitar interrupções de mouse (Bit 1)
+        // IMPORTANTE: Preservar o Bit 0 (Teclado)
         wait_write();
-        outb(CMD_PORT, 0x20); // Ler byte de comando
+        outb(CMD_PORT, 0x20); // Ler Command Byte
         wait_read();
-        let status = inb(DATA_PORT) | 2; // Bit 1: Enable IRQ 12
+        let status = inb(DATA_PORT) | 0x02; // Bit 1: Enable IRQ 12
+
         wait_write();
-        outb(CMD_PORT, 0x60); // Escrever byte de comando
+        outb(CMD_PORT, 0x60); // Escrever Command Byte
         wait_write();
         outb(DATA_PORT, status);
 
-        // Set defaults
-        write_mouse(0xF6);
-
-        // Enable streaming
-        write_mouse(0xF4);
+        // 3. Configurar o dispositivo mouse (streaming mode, defaults)
+        write_mouse(0xF6); // Set defaults
+        write_mouse(0xF4); // Enable streaming
     }
+
+    // 4. Habilitar IRQ 12 no PIC (Slave PIC)
+    crate::arch::x86_64::interrupts::pic_enable_irq(12);
+
     crate::kinfo!("(Input) PS/2 Mouse Initialized (Interrupt Mode)");
 }
 
@@ -66,6 +70,8 @@ pub fn handle_irq() {
     }
 
     let data = inb(DATA_PORT);
+    // TODO: Remover este log de debug futuramente
+    // crate::kdebug!("(Mouse) IRQ: data=", data as u64);
 
     // Precisamos de lock para atomicidade na máquina de estados
     let mut cycle = MOUSE_CYCLE.lock();

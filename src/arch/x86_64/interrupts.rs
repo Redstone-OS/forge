@@ -75,11 +75,14 @@ pub fn init_idt() {
 // =============================================================================
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: ExceptionStackFrame) {
+    // TODO: Remover após debug
+    crate::kdebug!("(Arch) KBD Interrupt fired");
     crate::drivers::input::keyboard::handle_irq();
     crate::arch::x86_64::ports::outb(0x20, 0x20); // EOI Master
 }
 
 extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: ExceptionStackFrame) {
+    crate::kdebug!("(Arch) Mouse Interrupt fired");
     crate::drivers::input::mouse::handle_irq();
     crate::arch::x86_64::ports::outb(0xA0, 0x20); // EOI Slave
     crate::arch::x86_64::ports::outb(0x20, 0x20); // EOI Master

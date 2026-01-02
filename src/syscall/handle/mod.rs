@@ -27,10 +27,20 @@ pub fn sys_check_rights_wrapper(args: &SyscallArgs) -> SysResult<usize> {
 }
 
 /// Duplica handle com rights reduzidos
-pub fn sys_handle_dup(handle: u32, new_rights: u32) -> SysResult<usize> {
-    // TODO: Implementar
-    let _ = (handle, new_rights);
-    Err(SysError::NotImplemented)
+pub fn sys_handle_dup(handle_val: u32, new_rights: u32) -> SysResult<usize> {
+    let handle = Handle::new((handle_val & 0xFFFF) as u16, (handle_val >> 16) as u16);
+    let rights = HandleRights::from_bits_truncate(new_rights as u64);
+
+    let mut task_guard = crate::sched::core::CURRENT.lock();
+    if let Some(task) = task_guard.as_mut() {
+        if let Some(new_handle) = task.handle_table.dup(handle, rights) {
+            Ok(new_handle.as_u32() as usize)
+        } else {
+            Err(SysError::InvalidHandle)
+        }
+    } else {
+        Err(SysError::Interrupted)
+    }
 }
 
 /// Fecha um handle

@@ -78,6 +78,11 @@ pub fn sys_keyboard_read_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     let mut count = 0;
     let max = max_events.min(32); // Limitar para evitar overflow
 
+    // TODO: Remover após debug
+    if max > 0 {
+        crate::kdebug!("(Syscall) Keyboard read request. Max:", max as u64);
+    }
+
     for i in 0..max {
         if let Some(scancode) = keyboard::pop_scancode() {
             // Bit 7 = 1 significa key released (0x80)

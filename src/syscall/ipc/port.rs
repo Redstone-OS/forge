@@ -75,7 +75,8 @@ pub fn sys_create_port(name_ptr: usize, name_len: usize, capacity: usize) -> Sys
                 global_id,
                 crate::syscall::HandleRights::READ
                     .union(crate::syscall::HandleRights::WRITE)
-                    .union(crate::syscall::HandleRights::CLOSE),
+                    .union(crate::syscall::HandleRights::CLOSE)
+                    .union(crate::syscall::HandleRights::DUP),
             )
             .ok_or(SysError::LimitReached)?;
 
@@ -116,7 +117,8 @@ pub fn sys_port_connect(name_ptr: usize, name_len: usize) -> SysResult<usize> {
                 global_id,
                 crate::syscall::HandleRights::READ
                     .union(crate::syscall::HandleRights::WRITE)
-                    .union(crate::syscall::HandleRights::CLOSE),
+                    .union(crate::syscall::HandleRights::CLOSE)
+                    .union(crate::syscall::HandleRights::DUP),
             )
             .ok_or(SysError::LimitReached)?;
 
