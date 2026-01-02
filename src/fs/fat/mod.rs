@@ -38,6 +38,8 @@ pub struct FatFs {
     bpb: bpb::Bpb,
     /// Tipo de FAT
     fat_type: FatType,
+    /// Offset da partição (LBA do início do FAT)
+    partition_offset: u64,
 }
 
 /// Tipo de FAT
@@ -53,26 +55,105 @@ impl FatFs {
     pub fn mount(device: Arc<dyn BlockDevice>) -> Result<Self, FsError> {
         crate::kinfo!("(FAT) Montando filesystem...");
 
-        // Ler boot sector
-        let mut boot_sector = [0u8; 512];
+        // Ler setor 0 (pode ser MBR ou boot sector direto)
+        let mut sector0 = [0u8; 512];
         device
-            .read_block(0, &mut boot_sector)
+            .read_block(0, &mut sector0)
             .map_err(|_| FsError::IoError)?;
 
+        // Debug: mostrar primeiros bytes
+        crate::kdebug!(
+            "(FAT) Sector[0..4]:",
+            u32::from_le_bytes([sector0[0], sector0[1], sector0[2], sector0[3]]) as u64
+        );
+        crate::kdebug!(
+            "(FAT) Sector[510,511]:",
+            ((sector0[510] as u64) << 8) | (sector0[511] as u64)
+        );
+
+        // Determinar se é MBR ou FAT boot sector
+        // FAT boot sector começa com jump instruction: 0xEB ou 0xE9
+        // MBR/partitioned disk tem bytes 0-2 como zeros ou código de boot
+        let partition_start = if sector0[0] == 0xEB || sector0[0] == 0xE9 {
+            // Parece FAT boot sector direto
+            crate::kinfo!("(FAT) Boot sector direto detectado");
+            0u64
+        } else if sector0[510] == 0x55 && sector0[511] == 0xAA {
+            // Provavelmente MBR com tabela de partições
+            crate::kinfo!("(FAT) MBR detectado, buscando partição...");
+
+            // Partições começam em offset 0x1BE (446) no MBR
+            // Cada entrada tem 16 bytes
+            let part_entry = &sector0[0x1BE..0x1BE + 16];
+
+            // Offset 0x08-0x0B: LBA do início da partição
+            let lba_start =
+                u32::from_le_bytes([part_entry[8], part_entry[9], part_entry[10], part_entry[11]])
+                    as u64;
+
+            crate::kinfo!("(FAT) Partição 1 começa em LBA:", lba_start);
+
+            if lba_start == 0 {
+                crate::kwarn!("(FAT) Partição inválida (LBA=0)");
+                return Err(FsError::InvalidFormat);
+            }
+
+            lba_start
+        } else {
+            crate::kwarn!("(FAT) Formato desconhecido");
+            return Err(FsError::InvalidFormat);
+        };
+
+        // Ler o verdadeiro FAT boot sector
+        let mut boot_sector = [0u8; 512];
+        device
+            .read_block(partition_start, &mut boot_sector)
+            .map_err(|_| FsError::IoError)?;
+
+        crate::kdebug!(
+            "(FAT) FAT Boot sector[0..4]:",
+            u32::from_le_bytes([
+                boot_sector[0],
+                boot_sector[1],
+                boot_sector[2],
+                boot_sector[3]
+            ]) as u64
+        );
+
         // Parsear BPB
-        let bpb = bpb::Bpb::parse(&boot_sector).ok_or(FsError::IoError)?;
+        let bpb = match bpb::Bpb::parse(&boot_sector) {
+            Some(b) => b,
+            None => {
+                crate::kwarn!("(FAT) BPB inválido ou disco não formatado");
+                return Err(FsError::InvalidFormat);
+            }
+        };
+
+        // Validar valores críticos antes de usar
+        if bpb.bytes_per_sector == 0 {
+            crate::kwarn!("(FAT) bytes_per_sector = 0, inválido!");
+            return Err(FsError::InvalidFormat);
+        }
+        if bpb.sectors_per_cluster == 0 {
+            crate::kwarn!("(FAT) sectors_per_cluster = 0, inválido!");
+            return Err(FsError::InvalidFormat);
+        }
+
+        crate::kinfo!("(FAT) Bytes por setor:", bpb.bytes_per_sector as u64);
+        crate::kinfo!("(FAT) Setores por cluster:", bpb.sectors_per_cluster as u64);
+        crate::kinfo!("(FAT) Reserved sectors:", bpb.reserved_sectors as u64);
+        crate::kinfo!("(FAT) Num FATs:", bpb.num_fats as u64);
 
         // Determinar tipo de FAT
         let fat_type = bpb.fat_type();
 
-        crate::kinfo!("(FAT) Tipo detectado:", fat_type as u64);
-        crate::kinfo!("(FAT) Bytes por setor:", bpb.bytes_per_sector as u64);
-        crate::kinfo!("(FAT) Setores por cluster:", bpb.sectors_per_cluster as u64);
+        crate::kinfo!("(FAT) Tipo:", fat_type as u64);
 
         Ok(Self {
             device,
             bpb,
             fat_type,
+            partition_offset: partition_start,
         })
     }
 
@@ -83,7 +164,7 @@ impl FatFs {
             return Err(FsError::IoError);
         }
 
-        let first_sector = self.bpb.cluster_to_sector(cluster);
+        let first_sector = self.bpb.cluster_to_sector(cluster) + self.partition_offset;
         let sectors_per_cluster = self.bpb.sectors_per_cluster as u64;
 
         for i in 0..sectors_per_cluster {
@@ -105,7 +186,8 @@ impl FatFs {
             FatType::Fat32 => (cluster * 4) as usize,
         };
 
-        let fat_sector = self.bpb.reserved_sectors as u64 + (fat_offset / 512) as u64;
+        let fat_sector =
+            self.partition_offset + self.bpb.reserved_sectors as u64 + (fat_offset / 512) as u64;
         let entry_offset = fat_offset % 512;
 
         let mut sector_buf = [0u8; 512];
@@ -243,7 +325,8 @@ impl FatFs {
     /// Busca na área de root directory (FAT12/16)
     fn find_in_root_dir(&self, name: &str) -> Option<DirEntry> {
         let root_dir_sectors = ((self.bpb.root_entry_count as u32 * 32) + 511) / 512;
-        let first_root_sector = self.bpb.reserved_sectors as u64
+        let first_root_sector = self.partition_offset
+            + self.bpb.reserved_sectors as u64
             + (self.bpb.num_fats as u64 * self.bpb.sectors_per_fat() as u64);
 
         let mut sector_buf = [0u8; 512];

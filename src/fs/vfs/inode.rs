@@ -26,7 +26,7 @@ impl FileMode {
     pub const OTHER_READ: u32 = 0o004;
     pub const OTHER_WRITE: u32 = 0o002;
     pub const OTHER_EXEC: u32 = 0o001;
-    
+
     pub fn can_read(&self, is_owner: bool) -> bool {
         if is_owner {
             (self.0 & Self::OWNER_READ) != 0
@@ -67,13 +67,13 @@ pub struct Inode {
 pub trait InodeOps: Send + Sync {
     /// Lookup em diretório
     fn lookup(&self, name: &str) -> Option<InodeNum>;
-    
+
     /// Ler dados
     fn read(&self, offset: u64, buf: &mut [u8]) -> Result<usize, FsError>;
-    
+
     /// Escrever dados
     fn write(&self, offset: u64, buf: &[u8]) -> Result<usize, FsError>;
-    
+
     /// Listar diretório
     fn readdir(&self) -> Result<alloc::vec::Vec<DirEntry>, FsError>;
 }
@@ -95,4 +95,5 @@ pub enum FsError {
     IoError,
     ReadOnly,
     NoSpace,
+    InvalidFormat,
 }
