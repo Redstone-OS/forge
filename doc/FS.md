@@ -1,97 +1,179 @@
-# Documentação do Sistema de Arquivos (`src/fs`)
+# 📂 Sistema de Arquivos (FS) - RedstoneOS
 
-> **Caminho**: `src/fs`  
-> **Responsabilidade**: Abstração de armazenamento persistente e interface unificada de E/S.  
-> **Arquitetura**: Virtual File System (VFS).
+O subsistema de Filesystem do RedstoneOS (Forge Kernel) é projetado como uma arquitetura de camadas modulares que abstrai dispositivos de armazenamento físico em uma hierarquia de arquivos e diretórios unificada e lógica.
 
 ---
 
-## 🏛️ Arquitetura VFS
+## 🏛️ Arquitetura de Camadas
 
-O RedstoneOS implementa um **Virtual File System (VFS)** clássico, inspirado no Unix. O Kernel não interage diretamente com discos ou partições, mas sim com objetos abstratos (`Inode`, `File`, `Dentry`).
+A arquitetura do FS é dividida em quatro níveis principais de abstração:
 
-```mermaid
-graph TD
-    UserApp[Aplicação] -->|open/read| Syscall
-    Syscall -->|fd -> File| VFS
-    VFS -->|Resolve Path| Dentry[Dentry Cache]
-    Dentry -->|Lookup| Inode[Inode (Metadados)]
-    Inode -->|Read ops| Backend
-    
-    Backend -->|Driver| Initramfs
-    Backend -->|Driver| Ext2/FAT
-    Backend -->|Driver| DevFS
-    Backend -->|Driver| ProcFS
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 1. Camada de Aplicação & Syscalls                                          │
+│    open(), read(), write(), close(), lseek(), stat(), readdir()            │
+└────────────────────────────────────────────────────────────────────────────┘
+                                     ↓
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 2. Virtual File System (VFS)                                               │
+│    Abstracts: Inodes, File Handles, Dentries, Mount Points                 │
+│    Logic: Path Resolution, Permissions, Operation Routing                  │
+└────────────────────────────────────────────────────────────────────────────┘
+                                     ↓
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 3. Filesystem Backends (Drivers de FS)                                     │
+│    InitRAMFS (TAR) │  FAT (16/32)  │  RFS (Advanced COW)  │  DevFS (Virtual)  │
+└────────────────────────────────────────────────────────────────────────────┘
+                                     ↓
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 4. Block Device Interface (HAL)                                            │
+│    BlockDevice Trait ← ATA/IDE Driver, VirtIO-BLK, RAMDisk                 │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🧩 Componentes Principais (`vfs/`)
+## 🧩 Mapa do Módulo (`src/fs`)
 
-### `Inode` (Index Node)
-Representa um objeto único no sistema de arquivos (arquivo ou diretório). Contém metadados:
-*   Tamanho
-*   Permissões (0777)
-*   Timestamps (Access, Modify, Create)
-*   Ponteiros de dados (ex: blocos no disco).
-
-### `Dentry` (Directory Entry)
-Representa o nome de um arquivo em um diretório e faz a ponte "Nome -> Inode".
-*   O VFS mantém um cache (`dcache`) para agilizar lookups de paths frequentes.
-
-### `File`
-Representa um arquivo **aberto** por um processo.
-*   Contém a posição atual do cursor (`offset`).
-*   Pode haver múltiplos objetos `File` apontando para o mesmo `Inode` (se dois processos abrirem o mesmo arquivo).
+| Submódulo | Descrição | Status | Cabeçalho Principal |
+|-----------|-----------|--------|---------------------|
+| `vfs` | Virtual File System - Coração da abstração | Estável (Core) | `vfs/mod.rs` |
+| `initramfs`| Sistema boot-only baseado em formato TAR | Estável | `initramfs/mod.rs` |
+| `fat` | Suporte a FAT16/32 (Discos físicos) | Funcional (Read-only) | `fat/mod.rs` |
+| `rfs` | Redstone File System (Nativo, Avançado) | Em Design/SPA | `rfs/mod.rs` |
+| `devices` | Device nodes e abstrações de HW | Planejado | `devices/mod.rs` |
 
 ---
 
-## 📂 Sistemas de Arquivos Implementados
+## 🗺️ Mapa Detalhado de Arquivos
 
-O `src/fs` contém implementações de FS específicos:
+### 🚀 Virtual File System (`vfs/`)
+- **`mod.rs`**: Ponto de entrada, inicialização e roteamento global de caminhos.
+- **`inode.rs`**: Definição de Inodes, tipos de arquivos e o trait `InodeOps`.
+- **`file.rs`**: Gerenciamento de arquivos abertos e o trait `FileOps`.
+- **`path.rs`**: Parser e normalizador de caminhos (canonicalização).
+- **`dentry.rs`**: Estruturas para cache de entradas de diretório (Nome -> Inode).
+- **`mount.rs`**: Gerenciamento de pontos de montagem e sistemas de arquivos registrados.
 
-### 1. `initramfs`
-Sistema de arquivos somente-leitura carregado na memória durante o boot.
-*   Contém executáveis essenciais (`init`, `shell`) e drivers críticos.
-*   Estrutura simples (CPIO ou similar).
+### 💾 Filesystem Backends
+#### FAT (`fat/`)
+- **`mod.rs`**: Lógica de montagem, detecção de MBR e leitura de clusters.
+- **`bpb.rs`**: Parser do BIOS Parameter Block (Boot Sector).
+- **`dir.rs`**: Navegação em diretórios FAT e suporte a nomes curtos/longos.
+- **`file.rs`**: Implementação de leitura sequencial e aleatória de arquivos FAT.
 
-### 2. `devfs` (`/dev`)
-Sistema de arquivos sintético que expõe dispositivos como arquivos.
-*   `/dev/null`: Buraco negro.
-*   `/dev/serial`: Porta serial.
-*   `/dev/fb0`: Framebuffer de vídeo.
+#### InitRAMFS (`initramfs/`)
+- **`mod.rs`**: Driver para formato TAR, extração de arquivos estáticos da memória de boot.
 
-### 3. `tmpfs`
-Sistema de arquivos volátil que reside na RAM (Heap/Páginas).
-*   Rápido.
-*   Dados perdidos no reboot.
-*   Usado para `/tmp` e arquivos temporários de IPC.
-
-### 4. `procfs` (`/proc`)
-Interface de texto para estruturas internas do kernel.
-*   `/proc/1/status`: Informações do processo PID 1.
-*   `/proc/meminfo`: Uso de memória global.
-*   Não armazena dados, gera o conteúdo dinamicamente na leitura (`read`).
+#### RFS (`rfs/`)
+- **`spa.rs`**: Storage Pool Allocator (Gerenciamento de discos e pools).
+- **`dmu.rs`**: Data Management Unit (Transações e Objetos).
+- **`zpl.rs`**: Redstone Posix Layer (Interface VFS).
+- **`arc.rs`**: Adaptive Replacement Cache (Cache de dados em memória).
 
 ---
 
-## 🛠️ Interface VFS (`FileOps` Trait)
+## 🚀 Virtual File System (VFS)
 
-Qualquer novo sistema de arquivos deve implementar os traits:
+O VFS unifica múltiplos dispositivos e formatos de arquivo em uma árvore única começando em `/`.
 
-```rust
-pub trait FileOps {
-    fn read(&mut self, buf: &mut [u8]) -> usize;
-    fn write(&mut self, buf: &[u8]) -> usize;
-    fn seek(&mut self, offset: i64, whence: SeekWhence) -> u64;
-    fn close(&mut self);
-}
+### Estruturas Core:
+1. **`Inode`**: Representa um objeto no disco (arquivo ou diretório). Contém metadados (UID, GID, tamanho, tipo).
+2. **`File Handle`**: Representa um arquivo aberto por um processo. Mantém o cursor (`offset`) e flags de acesso.
+3. **`Dentry`**: Representa uma entrada de diretório (Nome -> Inode). Usado para cache de caminhos.
 
-pub trait InodeOps {
-    fn lookup(&self, name: &str) -> Option<Arc<Inode>>;
-    fn create(&self, name: &str, type: FileType) -> Result<Arc<Inode>>;
-    // ...
-}
-```
+### Path Resolution e Roteamento:
+O VFS roteia requisições baseado no caminho e na tabela de montagem:
+- Arquivos em `/system/core/` são prioritariamente buscados no **InitRAMFS**.
+- Demais caminhos como `/system/services/` ou `/apps/` são roteados para o **FAT** (disco principal).
 
-Isso permite polimorfismo: o kernel pode chamar `.read()` sem saber se está lendo de um SSD NVMe ou de um arquivo gerado na RAM.
+---
+
+## 💾 Filesystem Backends
+
+### 1. InitRAMFS (Boot FS)
+Carregado pelo Bootloader como um módulo na RAM. 
+- **Formato**: TAR (Tape Archive).
+- **Propósito**: Contém o `supervisor` e serviços críticos necessários antes do carregamento dos drivers de disco.
+- **Vantagem**: Simplicidade extrema e zero dependência de HW de disco.
+
+### 2. FAT Driver (Disk Migration)
+Permite ao RedstoneOS carregar arquivos de diretórios do Host (via QEMU `fat:rw:`) ou discos físicos formatados.
+- **Suporte**: FAT16 e FAT32.
+- **Destaque**: Parser de MBR integrado para localizar partições ativas.
+- **Modo**: Atualmente Read-Only para segurança do kernel.
+
+### 3. Redstone File System (RFS) - *Projeto Futuro*
+O RFS é o sistema de arquivos nativo planejado para ser o "state-of-the-art" do SO, trazendo características de nível enterprise para o desktop.
+
+#### Camadas do RFS:
+1.  **SPA (Storage Pool Allocator)**:
+    - Gerencia `vdevs` (Virtual Devices).
+    - Abstrai múltiplos discos físicos em um pool lógico de armazenamento.
+    - Implementa RAID-Z e espelhamento (planejado).
+2.  **DMU (Data Management Unit)**:
+    - Gerencia objetos e transações.
+    - Garante que o sistema nunca esteja em estado inconsistente via **Copy-on-Write (COW)**.
+    - Permite a criação de snapshots instantâneos e clones.
+3.  **ZPL (Redstone Posix Layer)**:
+    - Traduz os objetos da DMU em primitivas POSIX (arquivos, diretórios, links simbólicos).
+    - É a camada que se comunica diretamente com o VFS.
+
+#### Princípios de Design:
+- **Zero-Downtime**: Atualizações do kernel via snapshots (`/system`).
+- **Data Integrity**: Cada bloco de metadados e dados terá um checksum SHA-256 (ou similar).
+- **Elasticity**: Adição de discos ao pool sem necessidade de reformatação.
+
+---
+
+## 🏗️ Fluxo de E/S (Exemplo: `read()`)
+
+Quando uma aplicação chama `read()`, o dado percorre o seguinte caminho:
+
+1.  **Syscall**: O contexto muda de User para Kernel.
+2.  **VFS (`vfs/file.rs`)**: O Kernel localiza o `File Handle` do processo.
+3.  **Inode Table (`vfs/inode.rs`)**: O VFS verifica as permissões e chama o método `read` do Inode associado.
+4.  **Backend (`fat/mod.rs` ou `initramfs/mod.rs`)**:
+    - Se for FAT: Calcula o cluster → Calcula o LBA no disco → Chama o Driver ATA.
+    - Se for InitRAMFS: Localiza o offset no buffer TAR na memória.
+5.  **Block Layer (`drivers/block/mod.rs`)**: O driver de hardware executa a transferência física.
+6.  **Retorno**: O dado é copiado para o buffer do usuário e a syscall retorna.
+
+---
+
+## 📂 Hierarquia de Diretórios Planejada
+
+O RedstoneOS segue uma hierarquia rigorosa para garantir separação de preocupações e segurança:
+
+| Path | Descrição | Regra de Negócio |
+|------|-----------|------------------|
+| `/system` | Firmware e OS Core | Read-Only. Atualizado apenas via snapshots. |
+| `/apps` | Software do Usuário | Partição FAT ou RFS persistente. |
+| `/users` | `home` dos usuários | Isolamento de dados e configurações. |
+| `/devices` | Abstração de Hardware | Arquivos virtuais (DevFS). |
+| `/volumes` | Pontos de montagem | Onde partições secundárias são expostas. |
+| `/runtime` | Dados voláteis | `tmpfs`. Limpo a cada reboot. |
+| `/state`   | Estado persistente | Configurações globais pequenas. |
+| `/snapshots`| Histórico do SO | Links para estados anteriores do `/system`. |
+| `/boot`    | Bootloader & Kernel | Arquivos necessários para o próximo boot. |
+
+---
+
+## 🛠️ Regras de Negócio e Segurança
+
+1. **Imutabilidade do Core**: O diretório `/system` deve ser considerado imutável pela runtime do kernel. Qualquer alteração deve ser transacional.
+2. **Persistence-Later**: O sistema prioriza subir rapidamente com InitRAMFS e atrasar a montagem de volumes complexos até que os drivers PCI/ATA estejam estáveis.
+3. **Abstração de Bloco**: Nenhum driver de FS comunica-se diretamente com portas I/O. Eles usam o Trait `BlockDevice`, permitindo que o SO mude de ATA para VirtIO ou NVMe sem alterar o driver FAT.
+
+---
+
+## 🔮 Roadmap para o Módulo FS
+
+- [ ] **Block Cache**: Implementar cache de 4KB para setores de disco no kernel.
+- [ ] **Writable FAT**: Adicionar operações de `write()` e `create()` no driver FAT.
+- [ ] **DevFS**: Implementar `/devices/fb0` e `/devices/ttyS0` via sistema de arquivos virtual.
+- [ ] **RFS Alpha**: Finalizar o SPA (Storage Pool Allocator) para gerenciamento básico de blocos COW.
+- [ ] **Mount Points**: Implementar a função `mount()` real para permitir múltiplas partições.
+
+---
+*Documentação gerada pelo Forge Kernel Architecture Team.*

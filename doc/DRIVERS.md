@@ -1,63 +1,111 @@
-# Documentação do Sistema de Drivers (`src/drivers`)
+# 🔌 Subsistema de Drivers - RedstoneOS
 
-> **Caminho**: `src/drivers`  
-> **Responsabilidade**: Gerenciamento de dispositivos de hardware e barramentos (Bus).  
-> **Modelo**: Device Tree / Driver Binding dinâmico.
+O subsistema de drivers do RedstoneOS (Forge Kernel) é o motor que traduz as intenções do kernel e das aplicações em sinais elétricos no hardware. Ele foi projetado para ser modular, extensível e seguro, utilizando as garantias de tipagem do Rust para gerenciar acessos a I/O e memória.
 
 ---
 
-## 🏛️ O Modelo de Drivers
+## 🏛️ Arquitetura de Drivers
 
-O RedstoneOS adota um modelo hierárquico de dispositivos.
-1.  **Device**: Uma instância física ou virtual de hardware (ex: "Placa de Rede Intel E1000").
-2.  **Driver**: O código de software que sabe controlar aquele hardware.
-3.  **Bus**: O canal de comunicação onde dispositivos vivem (PCI, USB, Platform).
+O modelo segue uma hierarquia de quatro camadas:
 
-O processo de **Matching** conecta um `Driver` a um `Device` compatível (via VendorID/DeviceID).
-
----
-
-## 📂 Implementações (`src/drivers/`)
-
-### 1. `mod.rs` (O Orquestrador)
-Contém a função `init()`, que dispara a descoberta de hardware na ordem correta:
-1.  Drivers Base (System Timer, Serial).
-2.  Barramentos principais (PCI Scan).
-3.  Drivers de Vídeo.
-
-### 2. `pci/` (Peripheral Component Interconnect)
-O barramento mais importante em x86_64.
-*   Enumera dispositivos conectados.
-*   Lê o Header de Configuração PCI (Vendor ID, Device ID, BARs).
-*   Carrega o driver apropriado se disponível.
-
-### 3. Categorias de Drivers
-
-| Diretório | Tipo de Dispositivo | Exemplos |
-|:----------|:--------------------|:---------|
-| `serial/` | UART / COM Ports | `serial.rs` (debug log) |
-| `timer/`  | Relógios de Hardware| `pit.rs` (Programmable Interval Timer), `hpet.rs`, `lapic.rs` |
-| `input/`  | Dispositivos de Entrada | Teclado PS/2, Mouse, USB HID (futuro) |
-| `display/`| Vídeo | VESA, GOP (UEFI), Drivers nativos (GPU) |
-| `net/`    | Rede | Drivers E1000, Realtek, VirtIO-Net |
-| `block/`  | Armazenamento | AHCI (SATA), NVMe, VirtIO-Blk |
+```text
+┌─────────────────────────────────────────────────────────┐
+│ 1. Subsystems (Frameworks)                              │
+│    VFS (Block), Networking (Net), Input Stack (Keyboard)  │
+└─────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────┐
+│ 2. Device Drivers (Lógica Específica)                   │
+│    ATA Driver, VirtIO-BLK, PS/2 Keyboard                │
+└─────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────┐
+│ 3. Bus Controllers (Descoberta & Transporte)            │
+│    PCI Bus, USB Host Controller, Platform Bus           │
+└─────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────┐
+│ 4. Hardware Abstraction Layer (HAL)                     │
+│    I/O Ports, Memory Mapped I/O (MMIO), DMA, IRQs       │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 🔧 Exemplo de Fluxo de Inicialização (PCI)
+## 🗺️ Mapa do Módulo (`src/drivers`)
 
-1.  **Scan**: O módulo `pci` percorre todos os barramentos (0-255), dispositivos (0-31) e funções (0-7).
-2.  **Discovery**: Encontra um dispositivo com `Vendor=0x8086` e `Device=0x100E` (Intel E1000).
-3.  **Lookup**: Consulta a tabela de drivers registrados. Encontra o driver `e1000`.
-4.  **Probe**: Chama `e1000::probe(pci_device)`.
-5.  **Init**: O driver configura o hardware, aloca buffers de DMA e registra uma interface de rede no kernel.
-6.  **IRQ**: O driver registra um tratador de interrupção para receber pacotes.
+### 📦 Armazenamento (`block/`)
+Responsável por dispositivos de bloco (setores de 512 bytes ou 4KB).
+- **`traits.rs`**: Define o `BlockDevice` trait, a interface universal para o kernel ler/escrever em discos.
+- **`ata.rs`**: Driver ATA/IDE legacy usando modo PIO. Essencial para compatibilidade com o modo `fat:rw:` do QEMU.
+- **`virtio_blk.rs`**: Driver moderno de alta performance para ambientes virtualizados.
+- **`virtqueue.rs`**: Infraestrutura de filas circulares para comunicação VirtIO.
+
+### 🚌 Barramentos (`pci/`)
+O espinha dorsal da descoberta de hardware em arquiteturas modernas.
+- **`pci.rs`**: Implementa o escaneamento recursivo do barramento PCI, identificando dispositivos via Vendor/Device IDs.
+- **`config.rs`**: Acesso ao espaço de configuração PCI (registros de 32 bits).
+
+### ⌨️ Entrada (`input/`)
+- **`keyboard.rs`**: Driver de teclado PS/2 com suporte a Scancodes e estados de teclas.
+
+### 📺 Gráficos (`display/`)
+- **`vga.rs`**: Modo texto clássico 80x25.
+- **`framebuffer/`**: (Planejado) Abstração gráfica para resoluções modernas via VESA/GOP.
+
+### 🕒 Tempo & Interrupções (`timer/`, `irq/`)
+- **`pit.rs`**: Programmable Interval Timer para ticks de sistema básicos.
+- **`pic.rs`**: Programmable Interrupt Controller legacy.
 
 ---
 
-## ⚠️ Abstração de Hardware
+## 💿 Foco: Dispositivos de Bloco (Block IO)
 
-Para manter os drivers portáveis e seguros:
-*   Drivers **nunca** acessam portas de I/O arbitrariamente. Usam wrappers como `Port<u8>`.
-*   Acesso a memória de dispositivo (MMIO) é feito via `Volatile` reads/writes em regiões mapeadas como `Uncacheable` pelo VMM.
-*   Interrupções devem ser curtas e rápidas. Processamento pesado deve ser adiado (Deferred Work).
+A grande inovação recente foi a unificação de dispositivos de bloco sob um único trait, permitindo ao sistema de arquivos (FAT) operar sem saber a tecnologia do disco abaixo dele.
+
+### O Trait `BlockDevice`
+```rust
+pub trait BlockDevice: Send + Sync {
+    fn read_block(&self, sector: u64, buf: &mut [u8]) -> Result<(), BlockError>;
+    fn write_block(&self, sector: u64, buf: &[u8]) -> Result<(), BlockError>;
+    fn block_size(&self) -> usize;
+    fn total_blocks(&self) -> u64;
+}
+```
+
+### Ordem de Inicialização (Business Logic)
+O kernel segue uma heurística de prioridade para dispositivos de boot:
+1. **ATA/IDE**: Verificado primeiro para suportar discos de desenvolvimento rápidos.
+2. **VirtIO-BLK**: Verificado em seguida para máxima performance em produção cloud/VM.
+3. **NVMe/AHCI**: (Planejado) Para máquinas reais.
+
+---
+
+## 🔍 Processo de Descoberta (PCI Discovery)
+
+O RedstoneOS realiza um escaneamento dinâmico no boot:
+1. **Enumeration**: Percorre todos os Slots PCI e lê o Device ID.
+2. **Registration**: O kernel mantém uma lista global de dispositivos encontrados.
+3. **Driver Binding**:
+   - O Driver de Bloco pede ao barramento: "Me dê o primeiro dispositivo que se identifique como VirtIO Storage".
+   - Se encontrado, o driver toma controle do dispositivo e o registra no VFS.
+
+---
+
+## 🛡️ Segurança e Boas Práticas
+
+1. **Isolation de I/O**: Drivers nunca usam instruções `in` ou `out` brutas. Eles usam a estrutura `Port<T>` que garante operações atômicas e seguras.
+2. **Volatile Memory**: Todo acesso a hardware via MMIO é feito através de ponteiros voláteis, impedindo que o compilador Rust otimize e remova lógicas de controle vitais.
+3. **Arc & Mutex**: Dispositivos são protegidos por `Arc<Spinlock<T>>` para permitir acesso seguro por múltiplos núcleos de CPU durante operações assíncronas de I/O.
+
+---
+
+## 🔮 Roadmap de Hardware
+
+- [ ] **DMA (Direct Memory Access)**: Migrar o driver ATA de PIO para DMA para liberar a CPU durante transferências.
+- [ ] **MSI/MSI-X**: Substituir interrupções legadas por Message Signaled Interrupts para melhor escalabilidade em servidores.
+- [ ] **USB Stack**: Iniciar o suporte a drivers XHCI e dispositivos HID.
+- [ ] **AHCI/SATA**: Driver completo para discos modernos de máquinas reais.
+
+---
+*Atualizado em Janeiro de 2026 pelo Forge Kernel Team.*
