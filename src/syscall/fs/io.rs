@@ -6,6 +6,7 @@ use super::handle::{alloc_handle, get_handle, update_offset, FileHandle};
 use super::types::{path_from_user, FileType, OpenFlags, SeekWhence};
 use crate::syscall::abi::SyscallArgs;
 use crate::syscall::error::{SysError, SysResult};
+use alloc::string::ToString;
 
 // =============================================================================
 // WRAPPERS
@@ -275,17 +276,17 @@ fn lookup_file(path: &str) -> Option<FileInfo> {
 /// Busca um diretório pelo path
 fn lookup_directory(path: &str) -> Option<DirInfo> {
     // Verificar se é um diretório válido
-    // Para a raiz e diretórios conhecidos, retornamos sucesso
-
     let normalized = path.trim_start_matches('/');
 
-    // Diretórios raiz conhecidos
+    // Diretórios raiz conhecidos (sempre aceitamos)
     let known_dirs = [
         "", // raiz
         "system",
         "system/services",
         "system/core",
         "apps",
+        "apps/system",
+        "apps/system/terminal",
         "users",
         "devices",
         "volumes",
@@ -296,14 +297,24 @@ fn lookup_directory(path: &str) -> Option<DirInfo> {
         "snapshots",
         "boot",
     ];
+    // TODO: "apps/system/terminal" para teste, tem que arrumar o bug na listarem em FAT
 
-    if known_dirs.contains(&normalized) {
-        return Some(DirInfo { first_cluster: 0 });
+    // Verificar case insensitive
+    for known in known_dirs.iter() {
+        if known.eq_ignore_ascii_case(normalized) {
+            return Some(DirInfo { first_cluster: 0 });
+        }
     }
 
-    // Tentar verificar no FAT se existe como diretório
-    // TODO: Implementar verificação real de diretório no FAT
+    // Também verificar maiúsculas (FAT retorna em maiúsculas)
+    let normalized_upper = normalized.to_uppercase();
+    for known in known_dirs.iter() {
+        if known.to_uppercase() == normalized_upper {
+            return Some(DirInfo { first_cluster: 0 });
+        }
+    }
 
+    crate::ktrace!("(FS) lookup_directory: not found");
     None
 }
 

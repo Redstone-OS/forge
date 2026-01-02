@@ -516,6 +516,7 @@ impl FatFs {
                         name: entry.name,
                         is_directory: entry.is_directory,
                         size: entry.size,
+                        first_cluster: entry.first_cluster,
                     });
                 }
             }
@@ -540,6 +541,7 @@ impl FatFs {
                         name: entry.name,
                         is_directory: entry.is_directory,
                         size: entry.size,
+                        first_cluster: entry.first_cluster,
                     });
                 }
             }
@@ -566,6 +568,7 @@ pub struct PublicDirEntry {
     pub name: String,
     pub is_directory: bool,
     pub size: u32,
+    pub first_cluster: u32,
 }
 
 /// Inicializa o módulo FAT e tenta montar o primeiro disco
