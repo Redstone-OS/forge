@@ -16,6 +16,7 @@ pub mod nvme;
 pub mod ramdisk;
 pub mod traits;
 pub mod virtio_blk;
+pub mod virtqueue;
 
 pub use traits::{BlockDevice, BlockDeviceInfo, BlockError};
 
