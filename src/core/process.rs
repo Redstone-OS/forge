@@ -4,7 +4,8 @@
 
 pub fn spawn_init() {
     // Tenta spawnar o init process.
-    let init_path = "/system/services/supervisor";
+    // O supervisor está em /system/core/ dentro do initfs (bootstrap mínimo)
+    let init_path = "/system/core/supervisor";
 
     // Caminho para a função spawn via sched -> exec -> spawn (mod) -> spawn (file) -> spawn (func)
     match crate::sched::exec::spawn(init_path, None) {

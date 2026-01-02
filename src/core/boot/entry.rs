@@ -63,6 +63,14 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Necessário antes de qualquer operação de arquivo
     crate::fs::vfs::init();
 
+    // 6.6 Inicializar Dispositivos de Bloco (VirtIO, etc.)
+    crate::kinfo!("'Inicializando Dispositivos de Bloco'");
+    crate::drivers::block::init();
+
+    // 6.7 Inicializar e Montar FAT se houver disco
+    crate::kinfo!("'Inicializando FAT'");
+    crate::fs::fat::init();
+
     // 7. Executar Initcalls (Drivers, Filesystems, etc.)
 
     crate::kinfo!("'Executando Initcalls'");

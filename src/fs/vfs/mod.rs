@@ -171,3 +171,41 @@ fn lookup(path: &str) -> Result<InodeNum, FsError> {
 
     Ok(current_ino)
 }
+
+/// Lê o conteúdo completo de um arquivo pelo caminho.
+///
+/// Esta função roteia para o backend correto:
+/// - `/system/core/*` → InitRAMFS (bootstrap)
+/// - `/system/services/*`, `/apps/*`, etc → FAT no disco
+///
+/// # Retorno
+/// - `Some(bytes)` se o arquivo foi encontrado
+/// - `None` se não encontrado
+pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
+    crate::ktrace!("(VFS) read_file():", path.as_ptr() as u64);
+
+    // Rota 1: InitRAMFS para arquivos de bootstrap
+    // O initramfs contém apenas /system/core/supervisor
+    if path.starts_with("/system/core/") {
+        crate::ktrace!("(VFS) Roteando para InitRAMFS");
+        if let Some(data) = crate::fs::initramfs::lookup_file(path) {
+            return Some(data.to_vec());
+        }
+    }
+
+    // Rota 2: FAT no disco para todo o resto
+    // Paths mapeados para FAT:
+    // /system/services/* -> system/services/* no disco
+    // /apps/* -> apps/* no disco
+    crate::ktrace!("(VFS) Roteando para FAT");
+    if let Some(data) = crate::fs::fat::read_file(path) {
+        return Some(data);
+    }
+
+    // Fallback: tentar initramfs mesmo assim (para compatibilidade)
+    if let Some(data) = crate::fs::initramfs::lookup_file(path) {
+        return Some(data.to_vec());
+    }
+
+    None
+}

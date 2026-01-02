@@ -37,8 +37,8 @@ const USER_STACK_TOP: u64 = 0x7FFF_FFFF_F000;
 pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pid, ExecError> {
     crate::kinfo!("(Spawn) Spawning:", path.as_ptr() as u64);
 
-    // 1. Carregar arquivo do Initramfs
-    let data = match crate::fs::initramfs::lookup_file(path) {
+    // 1. Carregar arquivo via VFS (roteia para initramfs ou FAT)
+    let data = match crate::fs::vfs::read_file(path) {
         Some(d) => d,
         None => {
             crate::kerror!("(Spawn) Arquivo não encontrado:", path.as_ptr() as u64);
@@ -99,7 +99,7 @@ pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pi
     task.kernel_stack = VirtAddr::new(kstack_top);
 
     // 6. Carregar ELF (agora registra VMAs no aspace e mapeia via HHDM)
-    let entry_point = match crate::sched::exec::fmt::elf::load_binary(data, &aspace) {
+    let entry_point = match crate::sched::exec::fmt::elf::load_binary(&data, &aspace) {
         Ok(addr) => addr,
         Err(_) => {
             return Err(ExecError::InvalidFormat);
