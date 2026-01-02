@@ -26,9 +26,10 @@ static MOUSE_STATE: Spinlock<MouseState> = Spinlock::new(MouseState {
     delta_x: 0,
     delta_y: 0,
     buttons: 0,
-    screen_width: 800,
-    screen_height: 600,
+    screen_width: 1280,
+    screen_height: 800,
 });
+// TODO: Ler o tamanho da tela do monitor
 
 static MOUSE_CYCLE: Spinlock<u8> = Spinlock::new(0);
 static MOUSE_BYTES: Spinlock<[u8; 3]> = Spinlock::new([0; 3]);
