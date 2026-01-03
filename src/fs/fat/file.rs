@@ -10,7 +10,8 @@
 //! let data = file.read_all()?;
 //! ```
 
-use super::{dir::DirEntry, FatFs};
+use super::dir::DirEntry;
+use super::fs::FatFs;
 use crate::fs::vfs::inode::FsError;
 use alloc::vec::Vec;
 
@@ -21,7 +22,7 @@ pub struct FatFile<'a> {
     /// Entrada de diretório
     entry: DirEntry,
     /// Posição atual no arquivo
-    position: u64,
+    _position: u64,
 }
 
 impl<'a> FatFile<'a> {
@@ -30,7 +31,7 @@ impl<'a> FatFile<'a> {
         Self {
             fs,
             entry,
-            position: 0,
+            _position: 0,
         }
     }
 
@@ -47,7 +48,7 @@ impl<'a> FatFile<'a> {
         }
 
         let mut data = Vec::with_capacity(size);
-        let cluster_size = self.fs.bpb.cluster_size();
+        let cluster_size = self.fs.cluster_size();
         let mut cluster_buf = alloc::vec![0u8; cluster_size];
 
         let mut cluster = self.entry.first_cluster();
@@ -77,7 +78,7 @@ impl<'a> FatFile<'a> {
             return Ok(0);
         }
 
-        let cluster_size = self.fs.bpb.cluster_size() as u64;
+        let cluster_size = self.fs.cluster_size() as u64;
         let mut cluster_buf = alloc::vec![0u8; cluster_size as usize];
 
         // Encontrar cluster inicial

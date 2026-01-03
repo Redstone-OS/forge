@@ -182,7 +182,7 @@ fn lookup(path: &str) -> Result<InodeNum, FsError> {
 /// - `Some(bytes)` se o arquivo foi encontrado
 /// - `None` se não encontrado
 pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
-    crate::ktrace!("(VFS) read_file():", path.as_ptr() as u64);
+    crate::ktrace!("(VFS) read_file():", path);
 
     // Rota 1: InitRAMFS para arquivos de bootstrap
     // O initramfs contém apenas /system/core/supervisor

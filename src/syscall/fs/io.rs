@@ -6,7 +6,6 @@ use super::handle::{alloc_handle, get_handle, update_offset, FileHandle};
 use super::types::{path_from_user, FileType, OpenFlags, SeekWhence};
 use crate::syscall::abi::SyscallArgs;
 use crate::syscall::error::{SysError, SysResult};
-use alloc::string::ToString;
 
 // =============================================================================
 // WRAPPERS
@@ -62,7 +61,7 @@ pub fn sys_open(path_ptr: usize, path_len: usize, flags: u32, _mode: u32) -> Sys
     let path = path_from_user(path_ptr, path_len)?;
     let flags = OpenFlags(flags);
 
-    crate::ktrace!("(FS) sys_open:", path.as_ptr() as u64);
+    crate::ktrace!("(FS) sys_open:", path.as_str());
 
     // Tentar encontrar o arquivo/diretório
     // Primeiro: tentar via VFS (que roteia para InitRAMFS ou FAT)
@@ -278,7 +277,8 @@ fn lookup_directory(path: &str) -> Option<DirInfo> {
     // Verificar se é um diretório válido
     let normalized = path.trim_start_matches('/');
 
-    // Diretórios raiz conhecidos (sempre aceitamos)
+    // Diretórios raiz conhecidos (cache para evitar I/O desnecessário)
+    // Estes diretórios sempre existem e não precisam de verificação no FAT
     let known_dirs = [
         "", // raiz
         "system",
@@ -287,31 +287,36 @@ fn lookup_directory(path: &str) -> Option<DirInfo> {
         "apps",
         "apps/system",
         "apps/system/terminal",
+        "apps/system/index",
         "users",
         "devices",
         "volumes",
         "runtime",
         "state",
+        "state/db",
+        "state/indexes",
+        "state/indexes/apps",
+        "state/system-state",
         "data",
         "net",
         "snapshots",
         "boot",
     ];
-    // TODO: "apps/system/terminal" para teste, tem que arrumar o bug na listarem em FAT
 
-    // Verificar case insensitive
-    for known in known_dirs.iter() {
-        if known.eq_ignore_ascii_case(normalized) {
-            return Some(DirInfo { first_cluster: 0 });
-        }
-    }
-
-    // Também verificar maiúsculas (FAT retorna em maiúsculas)
+    // Verificar case-insensitive na cache
     let normalized_upper = normalized.to_uppercase();
     for known in known_dirs.iter() {
         if known.to_uppercase() == normalized_upper {
             return Some(DirInfo { first_cluster: 0 });
         }
+    }
+
+    // Não está na cache - tentar via FAT
+    // Isso permite acessar qualquer diretório válido no disco
+    if let Some(_entries) = crate::fs::fat::list_directory(normalized) {
+        // FAT encontrou o diretório - é válido
+        crate::ktrace!("(FS) lookup_directory via FAT ok");
+        return Some(DirInfo { first_cluster: 0 });
     }
 
     crate::ktrace!("(FS) lookup_directory: not found");

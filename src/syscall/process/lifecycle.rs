@@ -76,16 +76,12 @@ pub fn sys_spawn(
         return Err(SysError::InvalidArgument);
     }
 
-    // Ler path do userspace
-    // TODO: Validar que ponteiro está em região de usuário
-    let path_bytes = unsafe { core::slice::from_raw_parts(path_ptr as *const u8, path_len) };
-
-    // Converter para &str
-    let path = match core::str::from_utf8(path_bytes) {
+    // Copiar path do userspace de forma segura (copia os bytes para o kernel heap)
+    let path = match crate::syscall::fs::types::path_from_user(path_ptr, path_len) {
         Ok(s) => s,
-        Err(_) => {
-            crate::kerror!("(Syscall) sys_spawn: path não é UTF-8 válido");
-            return Err(SysError::InvalidArgument);
+        Err(e) => {
+            crate::kerror!("(Syscall) sys_spawn: falha ao ler path do user");
+            return Err(e);
         }
     };
 
@@ -96,7 +92,7 @@ pub fn sys_spawn(
     };
 
     // Chamar função de spawn existente
-    match crate::sched::exec::spawn(path, current_tid) {
+    match crate::sched::exec::spawn(&path, current_tid) {
         Ok(pid) => {
             crate::kinfo!("(Syscall) spawn OK, PID=", pid.as_u32() as u64);
             Ok(pid.as_u32() as usize)
