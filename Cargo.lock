@@ -11,4 +11,11 @@ dependencies = [
 
 [[package]]
 name = "gfx_types"
-version = "0.1.1"
+version = "0.2.0"
+dependencies = [
+ "rdsmath",
+]
+
+[[package]]
+name = "rdsmath"
+version = "0.1.0"
