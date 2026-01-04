@@ -1,129 +1,253 @@
 //! # Classes Funcionais (Class Layer)
 //!
-//! Agrupa dispositivos por sua "função" em vez de sua "conexão".
-//! É a abstração usada pelos subsistemas de alto nível do kernel, como VFS e GUI.
+//! Este módulo agrupa dispositivos por **função** em vez de **conexão física**.
+//! É a abstração usada pelos subsistemas de alto nível (VFS, GUI, Audio Stack).
 //!
-//! ## Por que usar Classes?
-//! - Um drive de disco pode estar no barramento USB, PCI (NVMe) ou IDE.
-//! - O subsistema de arquivos (VFS) não quer saber *como* o disco está conectado,
-//!   apenas que ele é um membro da classe `Storage`.
+//! ## Por que classes?
+//! Um teclado pode estar conectado via:
+//! - PS/2 (legacy)
+//! - USB (moderno)
+//! - Bluetooth (wireless)
 //!
-//! ## Exemplos:
-//! - `Input`: Consolida teclados PS/2 e USB para o gerenciador de janelas.
-//! - `Display`: Consolida drivers de vídeo para o subsistema gráfico.
+//! Para o gerenciador de janelas, não importa HOW o teclado está conectado,
+//! apenas que ele é um dispositivo de **Input**.
+//!
+//! ## Exemplos de Classes:
+//! - **Storage**: Discos NVMe, SATA, USB, VirtIO → todos são "block devices"
+//! - **Input**: Teclados, mouses, touchpads → todos geram InputEvents
+//! - **Display**: GPUs, framebuffers → todos mostram pixels na tela
+//! - **Network**: Ethernet, WiFi, VirtIO → todos enviam/recebem pacotes
 
-use super::device::Device;
+use super::device::{Device, DeviceId};
+use super::driver::DeviceType;
 use crate::sync::Spinlock;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-/// Categorias funcionais de dispositivos no RedstoneOS
+// =============================================================================
+// TIPOS DE CLASSE
+// =============================================================================
+
+/// Categorias funcionais de dispositivos.
+///
+/// Cada classe agrupa dispositivos que oferecem funcionalidade similar,
+/// independente de como estão conectados fisicamente.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClassType {
-    Display, // Saída de vídeo (Framebuffers, GPUs)
-    Input,   // Teclado, mouse, touchpad, joystick
-    Storage, // Armazenamento de dados (Drives de Bloco)
-    Network, // Conectividade (Ethernet, WiFi, Bluetooth)
-    Sound,   // Áudio (Placas de som, Codecs)
-    System,  // Dispositivos críticos do sistema (Timer, Interrupt Ctrl, DMA Ctrl)
-    Serial,  // Comunicação serial (UART, COM, USB-Serial)
-    Generic, // Dispositivos que não se encaixam em classes específicas
+    /// Saída de vídeo (Framebuffers, GPUs).
+    /// Subsistema gráfico usa esta classe.
+    Display,
+
+    /// Dispositivos de entrada (Teclado, Mouse, Touchpad).
+    /// Gerenciador de janelas usa esta classe.
+    Input,
+
+    /// Armazenamento de dados (Block devices).
+    /// VFS usa esta classe para montar filesystems.
+    Storage,
+
+    /// Conectividade de rede (Ethernet, WiFi, Bluetooth).
+    /// Stack de rede usa esta classe.
+    Network,
+
+    /// Dispositivos de áudio (Placas de som, CODECs).
+    /// Subsistema de áudio usa esta classe.
+    Sound,
+
+    /// Dispositivos críticos do sistema (Timer, IRQ Controller, DMA).
+    /// Kernel core usa esta classe.
+    System,
+
+    /// Comunicação serial (UART, COM, USB-Serial).
+    /// Usado para debug e dispositivos industriais.
+    Serial,
+
+    /// Dispositivos que não se encaixam em classes específicas.
+    Generic,
 }
 
-/// Interface fundamental para uma classe de hardware.
-/// Cada subsistema (ex: USB Storage) pode implementar uma classe funcional.
+impl ClassType {
+    /// Retorna nome legível da classe.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Display => "Display",
+            Self::Input => "Input",
+            Self::Storage => "Storage",
+            Self::Network => "Network",
+            Self::Sound => "Sound",
+            Self::System => "System",
+            Self::Serial => "Serial",
+            Self::Generic => "Generic",
+        }
+    }
+}
+
+// =============================================================================
+// TRAIT DE CLASSE
+// =============================================================================
+
+/// Interface que toda classe funcional deve implementar.
+///
+/// As classes concretas (Ex: StorageClass, InputClass) implementam esta trait
+/// para permitir que o sistema encontre dispositivos por função.
 pub trait Class: Send + Sync {
-    /// Nome descritivo da classe (ex: "Mass Storage Devices")
+    /// Retorna nome descritivo da classe.
     fn name(&self) -> &'static str;
 
-    /// Tipo funcional da classe
+    /// Retorna o tipo funcional.
     fn class_type(&self) -> ClassType;
 
-    /// Retorna todos os dispositivos atualmente registrados nesta classe funcional.
+    /// Retorna todos os dispositivos registrados nesta classe.
     fn get_devices(&self) -> Vec<Arc<Spinlock<Device>>>;
 
-    /// Notifica a classe que um novo dispositivo compatível foi adicionado
-    fn on_device_added(&self, _dev: Arc<Spinlock<Device>>) {}
+    /// Notifica que um novo dispositivo foi adicionado.
+    fn on_device_added(&self, dev: Arc<Spinlock<Device>>);
 
-    /// Notifica a classe que um dispositivo foi removido
-    fn on_device_removed(&self, _dev_id: super::device::DeviceId) {}
+    /// Notifica que um dispositivo foi removido.
+    fn on_device_removed(&self, dev_id: DeviceId);
 }
 
 // =============================================================================
-// REGISTRO DE CLASSES (CLASS REGISTRY)
+// REGISTRO DE CLASSES
 // =============================================================================
 
+/// Lista global de classes registradas.
 static CLASS_REGISTRY: Spinlock<Vec<Arc<dyn Class>>> = Spinlock::new(Vec::new());
 
-/// Registra uma nova classe funcional no sistema.
-/// Geralmente chamado durante a inicialização de subsistemas (ex: block::init()).
+/// Registra uma nova classe funcional.
+///
+/// Chamado durante inicialização pelos subsistemas (block, input, display, etc).
 pub fn register(class: Arc<dyn Class>) {
-    crate::kinfo!("(Class) Registrando classe funcional:", class.name());
+    let name = class.name();
+    crate::kinfo!("(Class) Registrando classe funcional:", name);
     CLASS_REGISTRY.lock().push(class);
 }
 
-/// Busca todos os dispositivos de uma determinada classe em todos os registros.
-/// Útil para o VFS encontrar todos os discos disponíveis.
+/// Busca todos os dispositivos de uma determinada classe.
+///
+/// Útil para o VFS encontrar todos os discos, por exemplo.
 pub fn get_devices_by_type(class_type: ClassType) -> Vec<Arc<Spinlock<Device>>> {
     let mut all_devices = Vec::new();
     let classes = CLASS_REGISTRY.lock();
 
     for class in classes.iter() {
         if class.class_type() == class_type {
-            all_devices.append(&mut class.get_devices());
+            all_devices.extend(class.get_devices());
         }
     }
 
     all_devices
 }
 
-/// Notifica as classes relevantes sobre um novo dispositivo (Broadcast de Hotplug)
+/// Notifica as classes sobre um novo dispositivo.
+///
+/// Chamado pelo DriverManager quando um dispositivo é pareado com driver.
 pub fn notify_device_added(dev: Arc<Spinlock<Device>>) {
     let dev_type = dev.lock().device_type;
     let classes = CLASS_REGISTRY.lock();
 
     for class in classes.iter() {
-        // Se a classe for compatível com o tipo do dispositivo, notifica
-        if is_class_compatible(class.class_type(), dev_type) {
+        if is_compatible(class.class_type(), dev_type) {
             class.on_device_added(dev.clone());
         }
     }
 }
 
-/// Mapeia o tipo de dispositivo para a classe funcional correspondente
-fn is_class_compatible(class: ClassType, dev: super::driver::DeviceType) -> bool {
-    use super::driver::DeviceType as DT;
-    match (class, dev) {
-        (ClassType::Storage, DT::Storage) => true,
-        (ClassType::Input, DT::Input) => true,
-        (ClassType::Display, DT::Display) => true,
-        (ClassType::Network, DT::Network) => true,
-        (ClassType::Serial, DT::Serial) => true,
-        (ClassType::System, DT::Timer) => true,
-        (ClassType::System, DT::Bus) => true,
+/// Notifica as classes sobre remoção de dispositivo.
+pub fn notify_device_removed(dev_id: DeviceId, dev_type: DeviceType) {
+    let classes = CLASS_REGISTRY.lock();
+
+    for class in classes.iter() {
+        if is_compatible(class.class_type(), dev_type) {
+            class.on_device_removed(dev_id);
+        }
+    }
+}
+
+/// Retorna lista de todas as classes registradas.
+pub fn get_all() -> Vec<Arc<dyn Class>> {
+    CLASS_REGISTRY.lock().clone()
+}
+
+// =============================================================================
+// FUNÇÕES AUXILIARES
+// =============================================================================
+
+/// Mapeia tipo de dispositivo para classe funcional.
+///
+/// Um dispositivo pode ser compatível com múltiplas classes.
+fn is_compatible(class_type: ClassType, dev_type: DeviceType) -> bool {
+    match (class_type, dev_type) {
+        (ClassType::Storage, DeviceType::Storage) => true,
+        (ClassType::Input, DeviceType::Input) => true,
+        (ClassType::Display, DeviceType::Display) => true,
+        (ClassType::Network, DeviceType::Network) => true,
+        (ClassType::Sound, DeviceType::Audio) => true,
+        (ClassType::Serial, DeviceType::Serial) => true,
+        (ClassType::System, DeviceType::Timer) => true,
+        (ClassType::System, DeviceType::Controller) => true,
+        (ClassType::System, DeviceType::Bus) => true,
+        (ClassType::Generic, DeviceType::Generic) => true,
         _ => false,
     }
 }
 
+/// Converte DeviceType para ClassType correspondente.
+pub fn device_type_to_class(dev_type: DeviceType) -> ClassType {
+    match dev_type {
+        DeviceType::Storage => ClassType::Storage,
+        DeviceType::Input => ClassType::Input,
+        DeviceType::Display => ClassType::Display,
+        DeviceType::Network => ClassType::Network,
+        DeviceType::Audio => ClassType::Sound,
+        DeviceType::Serial => ClassType::Serial,
+        DeviceType::Timer | DeviceType::Controller | DeviceType::Bus => ClassType::System,
+        _ => ClassType::Generic,
+    }
+}
+
 // =============================================================================
-// ROADMAP DE IMPLEMENTAÇÕES FUTURAS (PLANEJAMENTO)
+// IMPLEMENTAÇÕES DE CLASSE GENÉRICA (STUB)
 // =============================================================================
-//
-// 1. Criação Automática de Nós em /devices:
-//    - Integrar com o VFS para que qualquer dispositivo registrado em uma classe
-//      funcional (ex: Storage) apareça automaticamente como /devices/sdX ou /devices/fbX.
-//
-// 2. Abstração de Interface (Ops):
-//    - Definir uma trait de "Operations" para cada classe (ex: BlockOps para discos,
-//      NetOps para rede). Isso permitiria que o kernel usasse os dispositivos via
-//      classes sem conhecer o driver específico.
-//
-// 3. Priorização de Dispositivos:
-//    - Se houver dois teclados (Input), permitir que o sistema defina qual é a
-//      "instância primária" da classe.
-//
-// 4. Agrupamento de Estatísticas:
-//    - Coletar métricas de performance por classe (ex: "Uso total de banda na classe Network").
-//
-// 5. Suporte a Sensores e Atuadores:
-//    - Adicionar classes para I2C/SPI sensors, PWM, GPIOs, etc.
+
+/// Classe genérica para dispositivos sem classe específica.
+///
+/// Funciona como fallback para dispositivos que não se encaixam
+/// em nenhuma categoria.
+pub struct GenericClass {
+    devices: Spinlock<Vec<Arc<Spinlock<Device>>>>,
+}
+
+impl GenericClass {
+    pub fn new() -> Self {
+        Self {
+            devices: Spinlock::new(Vec::new()),
+        }
+    }
+}
+
+impl Class for GenericClass {
+    fn name(&self) -> &'static str {
+        "Generic Devices"
+    }
+
+    fn class_type(&self) -> ClassType {
+        ClassType::Generic
+    }
+
+    fn get_devices(&self) -> Vec<Arc<Spinlock<Device>>> {
+        self.devices.lock().clone()
+    }
+
+    fn on_device_added(&self, dev: Arc<Spinlock<Device>>) {
+        crate::kinfo!(
+            "(Class) Dispositivo genérico adicionado:",
+            dev.lock().name_as_str()
+        );
+        self.devices.lock().push(dev);
+    }
+
+    fn on_device_removed(&self, dev_id: DeviceId) {
+        self.devices.lock().retain(|d| d.lock().id != dev_id);
+    }
+}

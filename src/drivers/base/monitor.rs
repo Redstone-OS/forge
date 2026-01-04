@@ -1,88 +1,185 @@
 //! # Monitor de Saúde (Health Monitor)
 //!
-//! O "Watchdog" de software que observa o comportamento dos drivers em execução.
-//! Garante que o sistema saiba quando um hardware está apresentando falhas intermitentes
-//! antes que elas se tornem pânicos de kernel irreversíveis.
+//! Este módulo é o **watchdog de software** do RDS. Ele observa o
+//! comportamento dos drivers e detecta problemas antes que causem
+//! pânicos irreversíveis.
 //!
 //! ## Mecanismos:
-//! - **Score de Saúde**: Rastreia a frequência e severidade de erros reportados.
-//! - **Estados de Saúde**: Define níveis de degradação (`Healthy` -> `Dead`).
-//! - **Gatilhos de Recuperação**: Aciona automaticamente o `RecoveryManager` quando limites são atingidos.
+//! - **Score de Saúde**: Contador de erros por dispositivo
+//! - **Classificação**: Erros críticos vs transientes
+//! - **Limites**: Thresholds configurable para escalar ações
+//! - **Gatilhos**: Dispara RecoveryManager quando limites atingidos
 //!
-//! Este subsistema permite que o RedstoneOS isoladamente desative uma placa de rede
-//! instável para preservar a estabilidade global do sistema.
+//! ## Estados de Saúde:
+//! ```text
+//! Healthy → Degraded → Failing → Dead
+//!          (poucos    (muitos    (desativado)
+//!           erros)     erros)
+//! ```
+//!
+//! ## Filosofia:
+//! > "Detectar problemas cedo permite recuperação suave."
 
-use super::device::{DeviceId, DeviceState};
+use super::device::DeviceId;
 use super::driver::DriverError;
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
 
-/// Níveis de degradação operacional de um dispositivo
+// =============================================================================
+// CONSTANTES DE LIMITES
+// =============================================================================
+
+/// Número de erros comuns antes de marcar como Degraded.
+pub const ERROR_THRESHOLD_DEGRADED: u32 = 3;
+
+/// Número de erros comuns antes de marcar como Failing.
+pub const ERROR_THRESHOLD_FAILING: u32 = 10;
+
+/// Número de erros críticos antes de marcar como Dead.
+pub const CRITICAL_THRESHOLD_DEAD: u32 = 3;
+
+/// Intervalo entre verificações de saúde (em ticks).
+pub const HEALTH_CHECK_INTERVAL: u64 = 1000;
+
+// =============================================================================
+// ESTADOS DE SAÚDE
+// =============================================================================
+
+/// Níveis de degradação operacional de um dispositivo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthState {
     /// Funcionamento nominal, sem erros recentes.
+    /// Este é o estado desejado.
     Healthy,
-    /// Erros isolados detectados, mas o dispositivo continua operando.
+
+    /// Erros isolados detectados, mas dispositivo continua operando.
+    /// Usuário não precisa ser notificado ainda.
     Degraded,
-    /// Erros frequentes. O dispositivo pode parar de responder a qualquer momento.
+
+    /// Erros frequentes. Dispositivo pode parar a qualquer momento.
+    /// RecoveryManager já foi acionado.
     Failing,
-    /// Falha crítica irremediável ou desativado por excesso de erros.
+
+    /// Falha crítica irremediável.
+    /// Dispositivo foi desativado permanentemente.
     Dead,
 }
 
-/// Registro individual de monitoramento de saúde
+impl HealthState {
+    /// Retorna nome legível do estado.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Healthy => "Healthy",
+            Self::Degraded => "Degraded",
+            Self::Failing => "Failing",
+            Self::Dead => "Dead",
+        }
+    }
+
+    /// Verifica se o dispositivo está operacional.
+    pub fn is_operational(&self) -> bool {
+        matches!(self, Self::Healthy | Self::Degraded | Self::Failing)
+    }
+}
+
+// =============================================================================
+// REGISTRO DE MONITORAMENTO
+// =============================================================================
+
+/// Registro individual de saúde de um dispositivo.
+#[derive(Debug, Clone)]
 pub struct DeviceMonitor {
+    /// ID do dispositivo monitorado.
     pub device_id: DeviceId,
+
+    /// Estado atual de saúde.
     pub state: HealthState,
+
+    /// Contador total de erros.
     pub error_count: u32,
+
+    /// Contador de erros críticos.
     pub critical_errors: u32,
+
+    /// Último erro ocorrido.
     pub last_error: Option<DriverError>,
+
+    /// Timestamp do último erro.
     pub last_error_time: u64,
+
+    /// Timestamp da última verificação de saúde.
+    pub last_check_time: u64,
 }
 
-static MONITORS: Spinlock<Vec<DeviceMonitor>> = Spinlock::new(Vec::new());
-
-/// Limite de erros comuns antes de marcar como Failing
-const ERROR_THRESHOLD_FAILING: u32 = 10;
-/// Limite de erros críticos antes de marcar como Dead
-const CRITICAL_THRESHOLD_DEAD: u32 = 3;
-
-/// Inicializa o subsistema de monitoramento.
-pub fn init() {
-    // Futuramente aqui pode ser iniciada uma thread de varredura periódica (watchdog)
-}
-
-/// Registra a ocorrência de um erro em um dispositivo.
-/// Atualiza automaticamente o estado de saúde baseado na severidade.
-pub fn record_error(id: DeviceId, err: DriverError) {
-    let mut monitors = MONITORS.lock();
-
-    let monitor = if let Some(m) = monitors.iter_mut().find(|m| m.device_id == id) {
-        m
-    } else {
-        monitors.push(DeviceMonitor {
-            device_id: id,
+impl DeviceMonitor {
+    /// Cria novo monitor para um dispositivo.
+    fn new(device_id: DeviceId) -> Self {
+        Self {
+            device_id,
             state: HealthState::Healthy,
             error_count: 0,
             critical_errors: 0,
             last_error: None,
             last_error_time: 0,
-        });
+            last_check_time: 0,
+        }
+    }
+}
+
+// =============================================================================
+// GERENCIADOR DE MONITORES
+// =============================================================================
+
+/// Lista global de monitores de dispositivos.
+static MONITORS: Spinlock<Vec<DeviceMonitor>> = Spinlock::new(Vec::new());
+
+/// Flag de inicialização.
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
+
+// =============================================================================
+// FUNÇÕES PÚBLICAS
+// =============================================================================
+
+/// Inicializa o subsistema de monitoramento.
+pub fn init() {
+    crate::kinfo!("(Monitor) Inicializando Health Monitor...");
+
+    *INITIALIZED.lock() = true;
+
+    // TODO: Iniciar thread de verificação periódica
+    // Por enquanto, monitoramento é reativo (baseado em erros reportados)
+
+    crate::kinfo!("(Monitor) Sistema pronto (modo reativo)");
+}
+
+/// Registra a ocorrência de um erro em um dispositivo.
+///
+/// Atualiza o score de saúde e pode acionar RecoveryManager.
+pub fn record_error(id: DeviceId, err: DriverError) {
+    let mut monitors = MONITORS.lock();
+
+    // Busca ou cria monitor para este dispositivo
+    let monitor = if let Some(m) = monitors.iter_mut().find(|m| m.device_id == id) {
+        m
+    } else {
+        monitors.push(DeviceMonitor::new(id));
         monitors.last_mut().unwrap()
     };
 
-    // Atualizar estatísticas
+    // Atualiza estatísticas
     monitor.error_count += 1;
     monitor.last_error = Some(err);
+    monitor.last_error_time = 0; // TODO: Timestamp real
 
-    // Classificar erro
-    let is_critical = matches!(
-        err,
-        DriverError::InitFailed | DriverError::AccessDenied | DriverError::NoMemory
-    );
-
-    if is_critical {
+    // Classifica o erro
+    if err.is_critical() {
         monitor.critical_errors += 1;
+        crate::kerror!(
+            "(Monitor) Erro CRÍTICO para ID:",
+            id.0,
+            "total críticos:",
+            monitor.critical_errors
+        );
     }
 
     // Lógica de transição de estado
@@ -92,24 +189,28 @@ pub fn record_error(id: DeviceId, err: DriverError) {
         monitor.state = HealthState::Dead;
     } else if monitor.error_count >= ERROR_THRESHOLD_FAILING {
         monitor.state = HealthState::Failing;
-    } else if monitor.error_count > 0 {
+    } else if monitor.error_count >= ERROR_THRESHOLD_DEGRADED {
         monitor.state = HealthState::Degraded;
     }
 
-    // Se houve mudança para pior, notificar recuperação
-    if monitor.state != old_state
-        && (monitor.state == HealthState::Failing || monitor.state == HealthState::Dead)
-    {
-        crate::kerror!(
-            "(Monitor) Saúde do dispositivo degradada criticamente, ID:",
-            id.0
+    // Se houve degradação, notifica
+    if monitor.state != old_state {
+        crate::kwarn!(
+            "(Monitor) Saúde alterada para ID:",
+            id.0,
+            old_state.as_str(),
+            "->",
+            monitor.state.as_str()
         );
 
-        // Aciona o sistema de recuperação global
-        super::report_failure(id, err);
+        // Se degradou para Failing ou Dead, aciona recuperação
+        if monitor.state == HealthState::Failing || monitor.state == HealthState::Dead {
+            // Aciona o sistema de recuperação
+            super::report_failure(id, err);
 
-        // Emite evento para o sistema
-        super::events::emit(super::events::DeviceEvent::ErrorDetected(id, err));
+            // Emite evento
+            super::events::emit(super::events::DeviceEvent::ErrorDetected(id, err));
+        }
     }
 }
 
@@ -123,25 +224,82 @@ pub fn get_health(id: DeviceId) -> HealthState {
         .unwrap_or(HealthState::Healthy)
 }
 
-// =============================================================================
-// ROADMAP DE IMPLEMENTAÇÕES FUTURAS (PLANEJAMENTO)
-// =============================================================================
-//
-// 1. Monitoramento de Performance (Throughput/Latency):
-//    - Rastrear a velocidade de E/S. Se um SSD que deveria entregar 500MB/s
-//      estiver entregando 1MB/s, marcar como Degraded (Degradação de Performance).
-//
-// 2. Análise Preditiva de Falhas (S.M.A.R.T Integrado):
-//    - Estudar padrões de erros para prever falhas antes que elas ocorram.
-//
-// 3. Watchdog por Driver:
-//    - Exigir que drivers enviem um "ping" periódico. Se o driver do mouse
-//      travar em um loop infinito, o Monitor detecta o silêncio e reinicia o driver.
-//
-// 4. Interface Gráfica de Saúde:
-//    - Exportar esses dados para uma ferramenta tipo "Gerenciador de Dispositivos"
-//      no RedstoneOS GUI.
-//
-// 5. Histórico de Pânico de Hardware:
-//    - Salvar o log de erros de saúde em uma partição de crash-dump para análise
-//      após o reboot.
+/// Retorna informações completas de monitoramento.
+pub fn get_monitor_info(id: DeviceId) -> Option<DeviceMonitor> {
+    MONITORS.lock().iter().find(|m| m.device_id == id).cloned()
+}
+
+/// Reseta as estatísticas de um dispositivo.
+///
+/// Chamado após recuperação bem-sucedida.
+pub fn reset_stats(id: DeviceId) {
+    let mut monitors = MONITORS.lock();
+
+    if let Some(m) = monitors.iter_mut().find(|m| m.device_id == id) {
+        m.state = HealthState::Healthy;
+        m.error_count = 0;
+        m.critical_errors = 0;
+        m.last_error = None;
+        crate::kinfo!("(Monitor) Estatísticas resetadas para ID:", id.0);
+    }
+}
+
+/// Marca dispositivo como morto (isolado).
+pub fn mark_dead(id: DeviceId) {
+    let mut monitors = MONITORS.lock();
+
+    if let Some(m) = monitors.iter_mut().find(|m| m.device_id == id) {
+        m.state = HealthState::Dead;
+    } else {
+        let mut new_monitor = DeviceMonitor::new(id);
+        new_monitor.state = HealthState::Dead;
+        monitors.push(new_monitor);
+    }
+
+    crate::kerror!("(Monitor) Dispositivo marcado como DEAD:", id.0);
+}
+
+/// Retorna lista de todos os dispositivos com problemas.
+pub fn get_unhealthy_devices() -> Vec<(DeviceId, HealthState)> {
+    MONITORS
+        .lock()
+        .iter()
+        .filter(|m| m.state != HealthState::Healthy)
+        .map(|m| (m.device_id, m.state))
+        .collect()
+}
+
+/// Retorna contagem de dispositivos por estado de saúde.
+pub fn get_health_summary() -> HealthSummary {
+    let monitors = MONITORS.lock();
+
+    HealthSummary {
+        healthy: monitors
+            .iter()
+            .filter(|m| m.state == HealthState::Healthy)
+            .count(),
+        degraded: monitors
+            .iter()
+            .filter(|m| m.state == HealthState::Degraded)
+            .count(),
+        failing: monitors
+            .iter()
+            .filter(|m| m.state == HealthState::Failing)
+            .count(),
+        dead: monitors
+            .iter()
+            .filter(|m| m.state == HealthState::Dead)
+            .count(),
+        total: monitors.len(),
+    }
+}
+
+/// Sumário de saúde do sistema.
+#[derive(Debug, Clone)]
+pub struct HealthSummary {
+    pub healthy: usize,
+    pub degraded: usize,
+    pub failing: usize,
+    pub dead: usize,
+    pub total: usize,
+}

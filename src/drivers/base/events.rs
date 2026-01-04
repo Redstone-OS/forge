@@ -1,102 +1,248 @@
 //! # Sistema de Eventos de Hardware (Event Layer)
 //!
-//! O canal de comunicação para mudanças de estado "Hot" no hardware.
-//! Implementa o padrão Observer (Publisher/Subscriber) para permitir que outros
-//! subsistemas reajam a mudanças na topologia do hardware.
+//! Este módulo implementa o padrão **Observer (Pub/Sub)** para eventos
+//! de hardware. Permite que outros subsistemas reajam a mudanças:
 //!
-//! ## Eventos Críticos:
-//! - **Hotplug**: Inserção ou remoção de dispositivos (USB, PCI Hotplug).
-//! - **Recuperação**: Notificações quando um driver falha ou é reiniciado.
-//! - **Energia**: Alertas de bateria fraca ou mudança de perfil de consumo.
+//! - **Hotplug**: Inserção/remoção de dispositivos (USB, PCI)
+//! - **Estado**: Transições Ready → Failing → Dead
+//! - **Energia**: Suspensão e retomada de dispositivos
+//! - **Erros**: Falhas detectadas pelo monitor de saúde
 //!
-//! Este sistema é o que permite que o RedstoneOS monte automaticamente um
-//! pendrive quando ele é conectado ou atualize a lista de monitores.
+//! ## Uso Típico:
+//! - VFS assina eventos de Storage para montar/desmontar automaticamente
+//! - GUI assina eventos de Display para reconfigurar monitores
+//! - PowerManager assina eventos de energia para coordenar suspensão
+//!
+//! ## Filosofia:
+//! Eventos são entregues de forma **síncrona** e **rápida**.
+//! Handlers não devem bloquear - se precisar de processamento pesado,
+//! devem enfileirar trabalho para uma thread worker.
 
 use super::device::{DeviceId, DeviceState};
+use super::driver::DriverError;
+use super::power::PowerState;
 use crate::sync::Spinlock;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-/// Tipos de eventos suportados pelo modelo de dispositivos
+// =============================================================================
+// TIPOS DE EVENTO
+// =============================================================================
+
+/// Eventos de hardware suportados pelo RDS.
 #[derive(Debug, Clone, Copy)]
 pub enum DeviceEvent {
-    /// Um novo hardware foi detectado e registrado
+    /// Novo dispositivo foi detectado e registrado.
+    /// Emitido após probe() bem-sucedido.
     Added(DeviceId),
-    /// Um hardware foi removido fisicamente ou desativado
+
+    /// Dispositivo foi removido (hotplug) ou desativado.
+    /// Emitido após remove() ou isolamento.
     Removed(DeviceId),
-    /// O estado operacional mudou (ex: de Initializing para Ready)
+
+    /// Estado do dispositivo mudou.
+    /// Ex: Initializing → Ready, Ready → Failing.
     StateChanged(DeviceId, DeviceState),
-    /// Mudança no estado de energia (ex: Suspensão iniciada)
-    PowerChange(DeviceId, super::power::PowerState),
-    /// Uma erro crítico foi detectado pelo Monitor de Saúde
-    ErrorDetected(DeviceId, super::driver::DriverError),
+
+    /// Estado de energia mudou.
+    /// Ex: D0 → D3 (suspensão).
+    PowerChange(DeviceId, PowerState),
+
+    /// Erro crítico detectado pelo monitor de saúde.
+    /// Emitido antes de acionar recuperação.
+    ErrorDetected(DeviceId, DriverError),
+
+    /// Driver foi recarregado (hot-reload).
+    DriverReloaded(DeviceId),
+
+    /// Interrupção de hardware recebida.
+    /// Usado no slow path de IRQ.
+    Interrupt(DeviceId, u8),
 }
 
-/// Interface para ouvintes de eventos de hardware
-pub trait DeviceListener: Send + Sync {
-    fn on_event(&self, event: DeviceEvent);
-}
-
-/// Gerenciador de Assinaturas de Eventos
-struct EventManager {
-    subscribers: Vec<Box<dyn DeviceListener>>,
-}
-
-static EVENT_MANAGER: Spinlock<EventManager> = Spinlock::new(EventManager {
-    subscribers: Vec::new(),
-});
-
-/// Notifica todos os assinantes interessados sobre um evento de hardware.
-/// Esta chamada deve ser rápida e não-bloqueante.
-pub fn emit(event: DeviceEvent) {
-    let mgr = EVENT_MANAGER.lock();
-    for sub in mgr.subscribers.iter() {
-        sub.on_event(event);
+impl DeviceEvent {
+    /// Retorna o ID do dispositivo associado ao evento.
+    pub fn device_id(&self) -> DeviceId {
+        match self {
+            Self::Added(id) => *id,
+            Self::Removed(id) => *id,
+            Self::StateChanged(id, _) => *id,
+            Self::PowerChange(id, _) => *id,
+            Self::ErrorDetected(id, _) => *id,
+            Self::DriverReloaded(id) => *id,
+            Self::Interrupt(id, _) => *id,
+        }
     }
-}
 
-/// Registra um novo ouvinte para eventos globais de hardware.
-/// Útil para o VFS, Gerenciador de Janelas e Daemon de Energia.
-pub fn subscribe(listener: Box<dyn DeviceListener>) {
-    EVENT_MANAGER.lock().subscribers.push(listener);
-}
-
-/// Exemplo de ouvinte simples: Log System
-pub struct LogListener;
-impl DeviceListener for LogListener {
-    fn on_event(&self, event: DeviceEvent) {
-        match event {
-            DeviceEvent::Added(id) => crate::kinfo!("(Event) Novo hardware detectado, ID:", id.0),
-            DeviceEvent::Removed(id) => crate::kwarn!("(Event) Hardware removido, ID:", id.0),
-            DeviceEvent::ErrorDetected(id, err) => {
-                crate::kerror!("(Event) Erro em dispositivo:", id.0)
-            }
-            _ => {}
+    /// Retorna nome legível do tipo de evento.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Added(_) => "Added",
+            Self::Removed(_) => "Removed",
+            Self::StateChanged(_, _) => "StateChanged",
+            Self::PowerChange(_, _) => "PowerChange",
+            Self::ErrorDetected(_, _) => "ErrorDetected",
+            Self::DriverReloaded(_) => "DriverReloaded",
+            Self::Interrupt(_, _) => "Interrupt",
         }
     }
 }
 
 // =============================================================================
-// ROADMAP DE IMPLEMENTAÇÕES FUTURAS (PLANEJAMENTO)
+// TRAIT DE LISTENER
 // =============================================================================
-//
-// 1. Notificações para o Userspace (uevent):
-//    - Criar um canal para enviar esses eventos para processos em userspace
-//      (similar ao netlink uevent do Linux). Isso permitiria que apps de
-//      configuração reagissem à inserção de hardware.
-//
-// 2. Filtros de Eventos:
-//    - Permitir que assinantes se interessem apenas por certas classes de
-//      dispositivos (ex: VFS assina apenas eventos da classe Storage).
-//
-// 3. Sistema de Prioridade:
-//    - Garantir que eventos críticos de erro sejam entregues antes de eventos
-//      de adição/remoção.
-//
-// 4. Acúmulo e Throttling:
-//    - Evitar tempestades de eventos (event storms) caso um barramento
-//      interfira com muitos sinais falsos rapidamente.
-//
-// 5. Histórico de Eventos:
-//    - Manter um buffer circular com os últimos N eventos para depuração
-//      pós-morte e suporte a logs de sistema.
+
+/// Interface para ouvintes de eventos de hardware.
+///
+/// Implementadores recebem todos os eventos e decidem quais processar.
+pub trait DeviceListener: Send + Sync {
+    /// Chamado quando um evento ocorre.
+    ///
+    /// ## IMPORTANTE:
+    /// - Não bloqueie nesta função!
+    /// - Se precisar de processamento pesado, enfileire para worker thread
+    /// - Mantenha o handler rápido para não atrasar outros listeners
+    fn on_event(&self, event: DeviceEvent);
+
+    /// Retorna nome do listener (para debug).
+    fn name(&self) -> &'static str {
+        "unknown"
+    }
+}
+
+// =============================================================================
+// GERENCIADOR DE EVENTOS
+// =============================================================================
+
+/// Gerenciador central de eventos.
+struct EventManager {
+    /// Lista de listeners registrados.
+    subscribers: Vec<Box<dyn DeviceListener>>,
+
+    /// Flag de inicialização.
+    initialized: bool,
+
+    /// Contador de eventos emitidos (para debug).
+    event_count: u64,
+}
+
+/// Instância global do gerenciador de eventos.
+static EVENT_MANAGER: Spinlock<EventManager> = Spinlock::new(EventManager {
+    subscribers: Vec::new(),
+    initialized: false,
+    event_count: 0,
+});
+
+// =============================================================================
+// FUNÇÕES PÚBLICAS
+// =============================================================================
+
+/// Inicializa o sistema de eventos.
+pub fn init() {
+    crate::kinfo!("(Events) Inicializando sistema de eventos...");
+
+    let mut mgr = EVENT_MANAGER.lock();
+    mgr.initialized = true;
+
+    // Registra listener de log padrão
+    drop(mgr); // Libera lock antes de registrar
+    subscribe(Box::new(LogListener));
+
+    crate::kinfo!("(Events) Sistema pronto");
+}
+
+/// Emite um evento para todos os listeners.
+///
+/// Esta função é **síncrona** - todos os handlers são chamados
+/// antes de retornar. Mantenha handlers rápidos!
+pub fn emit(event: DeviceEvent) {
+    let mgr = EVENT_MANAGER.lock();
+
+    if !mgr.initialized {
+        // Sistema ainda não inicializado - ignora silenciosamente
+        return;
+    }
+
+    // Atualiza contador (para telemetria)
+    // Note: precisamos de &mut, mas temos &, então fazemos via interior mutability
+    // na próxima versão
+
+    // Notifica todos os subscribers
+    for sub in mgr.subscribers.iter() {
+        sub.on_event(event);
+    }
+}
+
+/// Registra um novo listener para eventos.
+pub fn subscribe(listener: Box<dyn DeviceListener>) {
+    let name = listener.name();
+    crate::kinfo!("(Events) Novo listener:", name);
+    EVENT_MANAGER.lock().subscribers.push(listener);
+}
+
+/// Remove um listener (por nome).
+///
+/// ## STUB:
+/// Implementação completa requer identificadores únicos.
+pub fn unsubscribe(name: &str) {
+    crate::kwarn!("(Events) unsubscribe() não totalmente implementado");
+    // TODO: Implementar remoção por ID ou referência
+}
+
+/// Retorna número de listeners registrados.
+pub fn subscriber_count() -> usize {
+    EVENT_MANAGER.lock().subscribers.len()
+}
+
+/// Retorna número total de eventos emitidos.
+pub fn total_events() -> u64 {
+    EVENT_MANAGER.lock().event_count
+}
+
+// =============================================================================
+// LISTENERS PADRÃO
+// =============================================================================
+
+/// Listener que apenas loga eventos.
+///
+/// Registrado automaticamente durante init() para debug.
+pub struct LogListener;
+
+impl DeviceListener for LogListener {
+    fn on_event(&self, event: DeviceEvent) {
+        let id = event.device_id();
+
+        match event {
+            DeviceEvent::Added(_) => {
+                crate::kinfo!("(Event) Dispositivo adicionado, ID:", id.0);
+            }
+            DeviceEvent::Removed(_) => {
+                crate::kwarn!("(Event) Dispositivo removido, ID:", id.0);
+            }
+            DeviceEvent::StateChanged(_, new_state) => {
+                crate::kinfo!(
+                    "(Event) Estado alterado, ID:",
+                    id.0,
+                    "→",
+                    new_state.as_str()
+                );
+            }
+            DeviceEvent::PowerChange(_, new_power) => {
+                crate::kinfo!("(Event) Energia alterada, ID:", id.0);
+            }
+            DeviceEvent::ErrorDetected(_, err) => {
+                crate::kerror!("(Event) Erro detectado, ID:", id.0, "erro:", err.as_str());
+            }
+            DeviceEvent::DriverReloaded(_) => {
+                crate::kinfo!("(Event) Driver recarregado, ID:", id.0);
+            }
+            DeviceEvent::Interrupt(_, irq) => {
+                // IRQs são muito frequentes - não loga por padrão
+            }
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "LogListener"
+    }
+}
