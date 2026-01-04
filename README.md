@@ -1,20 +1,18 @@
-# Forge Kernel
+# ⚒️ Forge Kernel
 
 <div align="center">
 
-![Versão](https://img.shields.io/badge/versão-0.1.5-blue.svg)
+![Versão](https://img.shields.io/badge/versão-0.2.0-blue.svg)
 ![Licença](https://img.shields.io/badge/licença-MIT-green.svg)
 ![Rust](https://img.shields.io/badge/rust-nightly-orange.svg)
-![Arch](https://img.shields.io/badge/arch-x86__64-purple.svg)
-![Arch](https://img.shields.io/badge/arm64-purple.svg)
-![Arch](https://img.shields.io/badge/riscv64-purple.svg)
+![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20%7C%20riscv64-purple.svg)
 ![Status](https://img.shields.io/badge/status-Alpha-red.svg)
 
-**O Núcleo Microkernel de Alta Performance do Redstone OS**
+**Kerner de Alta Performance do RedstoneOS**
 
-*Escrito em Rust puro seguindo padrões Industriais e Militares de confiabilidade*
+*Escrito em Rust puro seguindo padrões Industriais de confiabilidade*
 
-[🚀 Quick Start](#-quick-start) • [📚 Docs](#-documentação-técnica) • [🏛️ Arquitetura](#️-arquitetura) • [💾 RFS](#-sistema-de-arquivos-rfs--layout) • [🤝 Contribuir](#-contribuir)
+[🚀 Quick Start](#-quick-start) • [📚 Documentação](#-documentação-técnica) • [🏛️ Arquitetura](#️-arquitetura) • [🔌 RDS](#-redstone-drive-system-rds) • [🛡️ Segurança](#️-segurança)
 
 </div>
 
@@ -22,125 +20,170 @@
 
 ## 📖 Visão Geral
 
-**Forge** é a implementação de referência do kernel para o **Redstone OS**. Projetado como um **microkernel** moderno, ele serve como a fundação segura sobre a qual todo o sistema operacional opera.
+O **Forge** é o kernel do **RedstoneOS**, um sistema operacional moderno projetado para segurança, modularidade e performance. Implementado inteiramente em Rust, o Forge combina um design **kernel pragmático** com uma arquitetura em camadas que isola hardware, subsistemas e interface de sistema.
 
-### 🛡️ Regras de Ouro (Padrão Industrial)
+### 🎯 Objetivos do Projeto
 
-O desenvolvimento do Forge segue diretrizes estritas para garantir robustez inigualável:
+| Objetivo | Descrição |
+|----------|-----------|
+| **Segurança** | Modelo OCAP (Object-Capability) - sem root, sem UID/GID |
+| **Confiabilidade** | Falha de driver ≠ falha do sistema |
+| **Modularidade** | Subsistemas desacoplados com interfaces bem definidas |
+| **Performance** | Zero-copy IPC, syscalls rápidas via MSR |
+| **Portabilidade** | HAL abstrata suportando x86_64, aarch64 e riscv64 |
 
-1.  **Zero Panic Policy**: O kernel não deve entrar em pânico em operação normal. O uso de `unwrap()` é proibido fora da inicialização.
-2.  **ABI Imutável**: Estruturas de comunicação (como `BootInfo` e mensagens IPC) são congeladas por versão.
-3.  **Crash ≠ Reboot**: A falha de um driver ou serviço nunca derruba o sistema. O kernel apenas reinicia o componente falho.
-4.  **Single Source of Truth**: Hardware é definido uma única vez na HAL (`arch/`).
+### 🛡️ Regras de Ouro
+
+O desenvolvimento do Forge segue diretrizes estritas:
+
+1. **Zero Panic Policy**: O kernel não deve entrar em pânico em operação normal
+2. **ABI Imutável**: Estruturas de comunicação são congeladas por versão
+> **Nota:** ABI ainda pode mudar enquanto o sistema estiver em **alpha**.  
+3. **Crash ≠ Reboot**: Falha de driver nunca derruba o sistema
+4. **Single Source of Truth**: Hardware definido uma única vez na HAL
+
+---
+
+## 🏛️ Arquitetura
+
+O Forge implementa uma arquitetura em **4 camadas** bem definidas:
+
+```mermaid
+
+---
+config:
+  theme: redux
+---
+flowchart TD
+    USERSPACE["Userspace (Ring 3)"]
+    SYSCALL["Syscall<br/>Única porta de entrada<br/>Valida tudo"]
+
+    USERSPACE -->|syscall| SYSCALL
+
+    subgraph KERNEL["Kernel Core"]
+        CORE["Core<br/>Boot, objects, time, SMP, debug"]
+        SCHED["Sched<br/>Tasks, context switch, runqueues"]
+        MM["MM<br/>PMM, VMM, HHDM, heap"]
+        IPC["IPC<br/>Ports, channels, shared memory"]
+        FS["FS<br/>VFS, FAT, InitRAMFS, DevFS"]
+        SECURITY["Security<br/>OCAP, capabilities, CSpace, audit"]
+    end
+
+    SYSCALL -->|handles| CORE
+    SYSCALL --> SCHED
+    SYSCALL --> MM
+    SYSCALL --> IPC
+    SYSCALL --> FS
+    SYSCALL --> SECURITY
+
+    subgraph LOWLEVEL["ARCH & DRIVERS"]
+        ARCH["Arch<br/>HAL: CPU, GDT, IDT, APIC, paging"]
+        DRIVERS["Drivers<br/>RDS: base, bus, storage, network, display"]
+    end
+
+    CORE -->|traits| ARCH
+    SCHED --> ARCH
+    MM --> ARCH
+    IPC --> ARCH
+    FS --> ARCH
+    SECURITY --> ARCH
+
+    CORE --> DRIVERS
+    SCHED --> DRIVERS
+    MM --> DRIVERS
+    IPC --> DRIVERS
+    FS --> DRIVERS
+    SECURITY --> DRIVERS
+
+
+```
+
+### Camadas do Sistema
+
+| Camada | Módulos | Responsabilidade |
+|--------|---------|------------------|
+| **L0** | `arch`, `drivers` | Hardware Abstraction Layer e Redstone Drive System |
+| **L1** | `klib`, `sync`, `sys` | Primitivas do kernel (estruturas, sincronização, tipos) |
+| **L2** | `core`, `mm`, `sched` | Subsistemas centrais (boot, memória, escalonamento) |
+| **L3** | `ipc`, `fs`, `security`, `module` | Serviços do kernel |
+| **L4** | `syscall` | Interface com userspace |
 
 ---
 
 ## 📚 Documentação Técnica
 
-Mantemos uma documentação detalhada para cada subsistema do kernel na pasta `doc/`.
+Documentação detalhada para cada subsistema está disponível em `doc/`:
 
 | Módulo | Documentação | Descrição |
 |:-------|:-------------|:----------|
-| **Architecture** | [🏛️ Architecture & HAL](doc/ARCHITECTURE_HAL.md) | Camada de Abstração de Hardware, Boot, Interrupções e Context Switch. |
-| **Core** | [⚙️ Kernel Core](doc/KERNEL_CORE.md) | Inicialização (`main.rs`), SMP, Power Management e Debugging. |
-| **Memory** | [🧠 Memory Management](doc/MEMORY_MANAGEMENT.md) | PMM, VMM (HHDM), Heap e Alocadores. |
-| **Sched** | [⚡ Scheduler](doc/SCHEDULER.md) | Ciclo de vida de Tasks, Algoritmo Round-Robin e Troca de Contexto. |
-| **Syscalls** | [📞 Syscall Interface](doc/SYSCALLS.md) | ABI completa, números de syscall (`RAX`), erros e convenções. |
-| **IPC** | [💬 IPC System](doc/IPC_SYSTEM.md) | Ports, Channels, Shared Memory e Message Passing. |
-| **FS** | [💾 Filesystem](doc/FILESYSTEM.md) | Virtual File System (VFS), Inodes e Drivers de FS. |
-| **Drivers** | [🔌 Drivers Model](doc/DRIVERS.md) | Modelo de dispositivos, PCI e inicialização de hardware. |
-| **Modules** | [📦 Module System](doc/MODULE_SYSTEM.md) | Carregamento dinâmico de drivers (`.ko`), assinaturas e sandbox. |
-| **Security** | [🔒 Security Model](doc/SECURITY_MODEL.md) | Capabilities (OCAP), ACLs e isolamento. |
-| **Sync** | [🚦 Synchronization](doc/SYNC_PRIMITIVES.md) | Mutex, Spinlock, Atomics e RCU. |
-| **Sys** | [🧱 System Definitions](doc/SYS_DEFINITIONS.md) | Tipos fundamentais (`Pid`, `Tid`) e definições compartilhadas. |
-| **Klib** | [🧰 Kernel Library](doc/KERNEL_LIBRARY.md) | Estruturas de dados `no_std` (Bitmap, Lists, Trees). |
+| **HAL** | [🏛️ ARCH.md](doc/ARCH.md) | Hardware Abstraction Layer, CPU traits, portabilidade |
+| **Core** | [⚙️ CORE.md](doc/CORE.md) | Boot sequence, SMP, time, work queues, debug |
+| **Drivers** | [🔌 DRIVERS.md](doc/DRIVERS.md) | Redstone Drive System (RDS), recovery, hot-reload |
+| **Memory** | [🧠 MM.md](doc/MM.md) | PMM, VMM, HHDM, Heap, alocadores |
+| **Scheduler** | [⚡ SCHED.md](doc/SCHED.md) | Tasks, round-robin, context switch |
+| **Filesystem** | [📂 FS.md](doc/FS.md) | VFS, FAT, InitRAMFS, syscalls de FS |
+| **Syscalls** | [📞 SYSCALL.md](doc/SYSCALL.md) | ABI completa, números, convenções |
+| **IPC** | [💬 IPC.md](doc/IPC.md) | Ports, channels, shared memory |
+| **Security** | [🛡️ SECURITY.md](doc/SECURITY.md) | OCAP, capabilities, audit, sandbox |
+| **Sync** | [🔄 SYNC.md](doc/SYNC.md) | Spinlock, mutex, RwLock, RCU |
+| **Sys** | [📋 SYS.md](doc/SYS.md) | Tipos fundamentais, erros, ELF |
+| **Klib** | [📚 KLIB.md](doc/KLIB.md) | Biblioteca interna no_std |
+| **Module** | [📦 MODULE.md](doc/MODULE.md) | Sistema de módulos carregáveis |
 
 ---
 
-## 🏛️ Arquitetura do Sistema
+## 🔌 Redstone Drive System (RDS)
 
-O Redstone OS adota um modelo **Micro-Modular Pragmático**.
+O RDS é o framework unificado de gerenciamento de hardware do Forge. Diferente de abordagens tradicionais, o RDS implementa **controle centralizado** com recuperação automática de falhas.
 
-### Diagrama de Camadas
+### Filosofia
 
-```mermaid
-graph TD
-    subgraph Ring 0 - Kernel Space
-        K[Forge Kernel]
-        MM[Memory Manager]
-        Sched[Scheduler]
-        IPC[IPC Core]
-    end
+> *"Os drivers não são donos da casa, são hóspedes. A base é o síndico que define as regras."*
 
-    subgraph Ring 3 - User Space
-        Sys[System Services]
-        S_FS[RFS Service]
-        S_Net[Network Stack]
-        S_Drv[Drivers Isolados]
-    end
-
-    subgraph Runtime Sandbox
-        App1[App Container]
-        App2[App Container]
-    end
-
-    K -->|Handoff| Sys
-    Sys -->|IPC| S_FS
-    Sys -->|IPC| K
-    App1 -->|Syscall| K
-```
-
-### O Modelo de Serviços
-Ao contrário de kernels monolíticos (Linux/Windows), drivers não rodam com privilégio total.
-*   **Drivers são Processos**: Se o driver de vídeo travar, o kernel mata o processo e o reinicia. A tela pisca, mas o sistema não dá Tela Azul.
-*   **IPC Tipado**: A comunicação entre serviços é feita via mensagens tipadas e validadas pelo kernel.
-
----
-
-## 💾 Sistema de Arquivos (RFS) & Layout
-
-O Redstone OS introduz o **RFS (Redstone File System)** e um layout de diretórios moderno.
-
-### Redstone File System (RFS)
-Um FS de próxima geração focado em integridade e "viagem no tempo", sem a complexidade de hardware do ZFS.
-
-| Recurso | Descrição |
-|---------|-----------|
-| **Copy-on-Write (COW)** | Dados nunca são sobrescritos. Novas escritas vão para novos blocos. |
-| **Integridade Total** | Checksum em dados e metadados. Bit-rot é detectado e curado automaticamente. |
-| **Snapshots Instantâneos** | Estado do sistema congelado em milissegundos sem custo de espaço inicial. |
-| **Rollback Atômico** | Atualização falhou? O sistema reverte para o snapshot anterior automaticamente. |
-
-### Hierarquia de Diretórios (Target Layout)
-
-Nada de bagunça em `/`. Cada diretório tem um contrato claro:
+### Categorias de Drivers
 
 ```bash
-/
-├── system/   # IMUTÁVEL. Kernel, drivers e serviços base. (Read-Only)
-├── runtime/  # VOLÁTIL. Sockets, locks, PIDs. Limpo no boot (tmpfs).
-├── state/    # PERSISTENTE. Config logs e metadados de serviços.
-├── data/     # DADOS. Arquivos do usuário, bancos de dados.
-├── users/    # HOME. Dados isolados por usuário.
-├── apps/     # CONTAINERS. Aplicações instaladas (Sandboxed).
-└── snapshots/# HISTÓRICO. Acesso direto a versões passadas do sistema.
+drivers/
+├── base/       # 🏛️ Infraestrutura central (DriverManager, recovery)
+├── bus/        # 🚌 PCI, USB, VirtIO, ACPI, ISA
+├── storage/    # 💾 AHCI, NVMe, VirtIO-Blk, Ramdisk
+├── network/    # 🌐 Intel e1000, Realtek, VirtIO-Net
+├── display/    # 📺 Framebuffer, GPU, VirtIO-GPU
+├── input/      # ⌨️ PS/2, HID, VirtIO-Input
+├── sound/      # 🔊 HD Audio, AC97, VirtIO-Sound
+├── system/     # ⚙️ Timer, INT controller, power
+└── comm/       # 📡 Serial, I2C, SPI
 ```
+
+### Recursos do RDS
+
+- **Recuperação Automática**: Retry → Rebind → Reset → Fallback
+- **Driver Zone**: Memória isolada para drivers
+- **DMA Pool Centralizado**: Controle de quem aloca o quê
+- **Hot Reload**: Atualizar drivers sem reiniciar
+- **Fallback Progressivo**: nvidia → vesa → framebuffer → texto
 
 ---
 
-## ⚡ Escalonador & Tarefas
+## 🛡️ Segurança
 
-O Forge utiliza um scheduler **Round-Robin Preemptivo** com suporte a **Prioridades Dinâmicas**.
+O Forge implementa um modelo **Object-Capability (OCAP)**, abandonando completamente UID/GID e o conceito de superusuário.
 
-### 1. Modelo de Tarefa (Task Class)
-*   **Kernel Task (Ring 0)**: Executa código privilegiado.
-*   **User Task (Ring 3)**: Isolada, interage via Syscalls.
-*   **Service Task**: Prioridade alta, gerencia recursos críticos.
+### Princípios OCAP
 
-### 2. Context Switch
-A troca de contexto é feita manipulando diretamente o **Stack Pointer (RSP)**.
-*   A stack do kernel (`kstack`) é **Pinned** na memória.
-*   Interrupções salvam o estado na stack da tarefa interrompida.
+| Princípio | Descrição |
+|-----------|-----------|
+| **Sem Root** | Nenhuma entidade tem poder absoluto |
+| **Posse é Poder** | Se você tem o token, você tem acesso |
+| **Least Privilege** | Apenas o mínimo necessário |
+| **Delegação Explícita** | Acesso só pode ser passado com direito de TRANSFER |
+| **Revogável** | Capabilities podem ser revogadas a qualquer momento |
+
+### Capability Rights
+
+```rust
+READ | WRITE | EXECUTE | DUPLICATE | TRANSFER | GRANT | REVOKE | WAIT | SIGNAL
+```
 
 ---
 
@@ -148,30 +191,193 @@ A troca de contexto é feita manipulando diretamente o **Stack Pointer (RSP)**.
 
 ```bash
 forge/
-├── doc/                # 📚 DOCUMENTAÇÃO TÉCNICA (Indexada acima)
+├── doc/                    # 📚 Documentação técnica
+│   ├── ARCH.md            # HAL e portabilidade
+│   ├── CORE.md            # Subsistema core
+│   ├── DRIVERS.md         # Documentação do RDS
+│   ├── FS.md              # Sistemas de arquivos
+│   ├── KLIB.md            # Biblioteca do kernel
+│   ├── SECURITY.md        # Segurança
+│   ├── SYNC.md            # Sincronização
+│   ├── SYS.md             # Tipos do sistema
+│   └── ...
+│
 ├── src/
-│   ├── arch/           # Hardware Abstraction Layer (HAL)
-│   ├── core/           # Lógica Central (Logging, Panic, Entry)
-│   ├── drivers/        # Drivers de Boot & Device Model
-│   ├── fs/             # Virtual File System (VFS)
-│   ├── ipc/            # Inter-Process Communication (Ports, SHM)
-│   ├── klib/           # Estuturas de Dados no_std
-│   ├── mm/             # Gerenciamento de Memória (PMM, VMM, Heap)
-│   ├── module/         # Carregamento de Drivers Dinâmicos (.ko)
-│   ├── sched/          # Scheduler e Tasks
-│   ├── security/       # Capabilities & Segurança
-│   ├── sys/            # Definições de Sistema (Constantes, ABI)
-│   ├── syscall/        # Interface Kernel <-> User
-│   └── main.rs         # Entry Point (_start)
-├── Cargo.toml          # Dependências
-├── linker.ld           # Layout de Memória
-└── x86_64.json         # Target Spec
+│   ├── arch/              # 🏛️ HAL (x86_64, aarch64, riscv64)
+│   │   ├── aarch64/       # AArch64
+│   │   ├── riscv64/       # RISC-V
+│   │   ├── traits/        # Traits
+│   │   ├── x86_64/        # x86_64
+│   │   ├── mod.rs         # HAL
+│   │   └── test.rs        # HAL tests
+│   │
+│   ├── core/              # ⚙️ Boot, SMP, time, work, debug
+│   │   ├── boot/          # Ponto de entrada, Panic, initcalls
+│   │   ├── debug/         # Logging, status, oops
+│   │   ├── smp/           # Multiprocessamento
+│   │   ├── time/          # Clocks, timers
+│   │   ├── work/          # Filas de trabalho
+│   │   ├── power/         # Shutdown, reboot
+│   │   └── object/        # Handles do kernel
+│   │
+│   ├── drivers/           # 🔌 Redstone Drive System
+│   │   ├── base/          # DriverManager, recovery
+│   │   ├── bus/           # PCI, USB, VirtIO
+│   │   ├── storage/       # AHCI, NVMe, Ramdisk
+│   │   ├── network/       # Ethernet, WiFi
+│   │   ├── display/       # Framebuffer, GPU
+│   │   ├── input/         # HID, PS/2
+│   │   ├── sound/         # Audio drivers
+│   │   ├── system/        # Timer, interrupts
+│   │   └── comm/          # Serial, I2C
+│   │
+│   ├── klib/              # 📚 Kernel Library (no_std)
+│   │   ├── primitives/    # align, bits, mem
+│   │   ├── collections/   # bitmap, intrusive list
+│   │   ├── hash/          # FNV hasher
+│   │   └── cstr/          # C-string utils
+│   │
+│   ├── sync/              # 🔄 Sincronização
+│   │   ├── spinlock/      # Interrupt-safe
+│   │   ├── mutex/         # Sleep-capable
+│   │   ├── rwlock/        # Read-Write
+│   │   ├── semaphore/     # Resource counting
+│   │   ├── condvar/       # Condition variables
+│   │   ├── rcu/           # Read-Copy-Update
+│   │   └── atomic/        # Atomic wrappers
+│   │
+│   ├── sys/               # 📋 System types
+│   │   ├── types.rs       # Pid, Tid, Uid, Gid
+│   │   ├── error.rs       # KernelError
+│   │   └── elf.rs         # ELF64 loader
+│   │
+│   ├── mm/                # 🧠 Gerenciamento de memória
+│   ├── sched/             # ⚡ Scheduler
+│   ├── ipc/               # 💬 IPC
+│   ├── fs/                # 📂 Filesystem
+│   ├── security/          # 🛡️ OCAP Security
+│   ├── module/            # 📦 Loadable modules
+│   ├── syscall/           # 📞 System calls
+│   │
+│   ├── lib.rs             # Biblioteca do kernel
+│   └── main.rs            # Ponto de entrada
+│
+├── Cargo.toml             # Dependencies & profiles
+├── linker.ld              # Layout de memória
+├── x86_64-redstone.json   # Target
+└── CHANGELOG.md           # Histórico de versões
 ```
+
+---
+
+## 🚀 Quick Start
+
+### Requisitos
+
+- Rust nightly (via rustup)
+- QEMU (para emulação)
+- Anvil (ferramenta de build do RedstoneOS)
+
+### Build
+
+```bash
+# Usando Anvil (recomendado)
+cd ../anvil
+
+# Windows
+.\run.bat
+
+# Linux
+./run.sh
+
+# Ou diretamente com cargo
+cargo build --release --target x86_64-redstone.json
+```
+
+### Executar
+
+```bash
+# Via Anvil TUI
+# Selecione "Build" → "Release" → "Run QEMU"
+
+# Ou diretamente
+qemu-system-x86_64 \
+    -bios /path/to/OVMF.fd \
+    -drive format=raw,file=dist/redstone.img \
+    -serial stdio \
+    -m 256M
+```
+
+---
+
+## 📊 Status do Projeto
+
+### Subsistemas
+
+| Componente | Status | Descrição |
+|------------|--------|-----------|
+| **arch/x86_64** | ✅ Funcional | GDT, IDT, APIC, paginação, syscalls |
+| **arch/aarch64** | 🔄 Stub | Estrutura básica |
+| **arch/riscv64** | 🔄 Stub | Estrutura básica |
+| **core/boot** | ✅ Funcional | Inicialização completa |
+| **core/debug** | ✅ Funcional | Serial logging |
+| **core/smp** | ⚠️ Básico | Bringup, per-CPU |
+| **core/time** | ✅ Funcional | Clocks, timers |
+| **drivers/base** | 🚧 Em Desenvolvimento | DriverManager |
+| **drivers/storage** | 🚧 Em Desenvolvimento | VirtIO-Blk, Ramdisk |
+| **fs/vfs** | ✅ Funcional | Routing, file handles |
+| **fs/rfs** | 🔄 Stub | Estrutura básica |
+| **fs/fat** | 🚧 Em Desenvolvimento | Read-only FAT32 |
+| **fs/initramfs** | ✅ Funcional | TAR parser |
+| **ipc** | ⚠️ Básico | Ports, channels |
+| **klib** | ⚠️ Básico | Bitmap, align, C-strings |
+| **mm** | ✅ Funcional | PMM, VMM, HHDM, Heap |
+| **module** | 🔄 Estrutura | Estrutura básica |
+| **sched** | ✅ Funcional | Round-robin preemptivo |
+| **security** | 🔄 Estrutura | OCAP framework |
+| **sync** | ⚠️ Básico | Spinlock, Mutex, RwLock, RCU |
+| **syscall** | 🚧 Em Desenvolvimento | ~40 syscalls |
+
+### Arquiteturas
+
+| Feature | x86_64 | aarch64 | riscv64 |
+|---------|--------|---------|---------|
+| Boot | ✅ | 🔄 | 🔄 |
+| Syscalls | ✅ | 🔄 | 🔄 |
+| Interrupts | ✅ | 🔄 | 🔄 |
+| SMP | ⚠️ | 🆕 | 🆕 |
+| VMM | ✅ | 🆕 | 🆕 |
+
+**Legenda**: ✅ Produção | ⚠️ Básico | 🔄 Stub | 🆕 Planejado
+
+---
+
+## 🤝 Contribuir
+
+1. Fork o repositório
+2. Crie uma branch (`git checkout -b feature/nova-feature`)
+3. Commit suas mudanças (`git commit -am 'Adiciona nova feature'`)
+4. Push para a branch (`git push origin feature/nova-feature`)
+5. Abra um Pull Request
+
+### Guidelines
+
+- Siga as convenções de código Rust
+- Documente funções públicas
+- Evite `unwrap()` fora de código de inicialização
+
+---
+
+## 📜 Licença
+
+Este projeto está licenciado sob a licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
 
 ---
 
 <div align="center">
 
 **Redstone OS Team** • *Construindo o Futuro, Byte a Byte*
+
+*Versão 0.2.0 — Janeiro 2026*
 
 </div>
