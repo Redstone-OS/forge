@@ -1,37 +1,66 @@
-//! # Wi-Fi Driver Subsystem
+//! # WiFi Drivers
 //!
-//! Este módulo gerencia adaptadores de rede sem fio (WLAN).
+//! Este módulo conterá drivers para adaptadores WiFi (802.11).
+//!
+//! ## Complexidade:
+//! WiFi é significativamente mais complexo que Ethernet:
+//! - Gerenciamento de BSS/IBSS
+//! - Scanning de redes
+//! - Autenticação (WPA2, etc)
+//! - Criptografia (AES, etc)
+//! - Roaming
+//! - Power management
+//!
+//! ## Subsistemas Necessários:
+//! - cfg80211 (configuração wireless)
+//! - mac80211 (MAC layer)
+//! - Supplicant (WPA)
+//!
+//! ## Drivers Futuros:
+//! - Intel iwlwifi
+//! - Realtek RTL8xxx
+//! - Qualcomm/Atheros ath9k/ath10k
+//!
+//! ## STUB:
+//! WiFi será implementado em fases posteriores.
+//! Este módulo define apenas a estrutura básica.
 
-use crate::drivers::base::device::{Device, DeviceState};
-use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
-use alloc::sync::Arc;
+use super::traits::*;
+use crate::sync::Spinlock;
 
-pub struct WifiDriver;
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
 
-impl Driver for WifiDriver {
-    fn name(&self) -> &'static str {
-        "Generic Wi-Fi Driver Subsystem"
-    }
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
 
-    fn device_type(&self) -> DeviceType {
-        DeviceType::Network
-    }
+// =============================================================================
+// FUNÇÕES PÚBLICAS
+// =============================================================================
 
-    fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        // STUB: Inicialização de WiFi (802.11)
-        // 1. Descoberta de chips (Intel AC, Broadcom, Atheros)
-        // 2. Carregamento de firmware
-        // 3. Scan de Redes (SSID)
-        // 4. Autenticação (WPA2/WPA3)
-        Ok(())
-    }
+/// Inicializa subsistema WiFi.
+pub fn init() {
+    crate::kinfo!("(WiFi) Inicializando subsistema WiFi...");
+    crate::kwarn!("(WiFi) WiFi não implementado nesta versão");
 
-    fn remove(&self, dev: &mut Device) -> Result<(), DriverError> {
-        dev.state = DeviceState::Disconnected;
-        Ok(())
-    }
+    *INITIALIZED.lock() = true;
 }
 
-pub fn init() {
-    crate::drivers::base::register_driver(Arc::new(WifiDriver) as Arc<dyn Driver>);
+/// Desliga subsistema WiFi.
+pub fn shutdown() {
+    crate::kinfo!("(WiFi) Shutdown");
+}
+
+/// Verifica se WiFi está disponível.
+pub fn is_available() -> bool {
+    false // Sempre false por enquanto
+}
+
+/// Escaneia redes WiFi disponíveis.
+///
+/// ## STUB:
+/// Sempre retorna lista vazia.
+pub fn scan_networks() -> alloc::vec::Vec<WifiNetwork> {
+    crate::kwarn!("(WiFi) scan_networks() não implementado");
+    alloc::vec::Vec::new()
 }

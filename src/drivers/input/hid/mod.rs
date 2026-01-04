@@ -1,58 +1,65 @@
-//! # Human Interface Device (HID) Subsystem
+//! # HID - Human Interface Device
 //!
-//! Este módulo gerencia dispositivos de interface humana, fornecendo
-//! parsing universal de relatórios HID. Ele não lida com o transporte físico
-//! (USB, BT, I2C), mas sim com a semântica dos dados.
+//! Este módulo implementa o parser HID universal, usado para interpretar
+//! dados de dispositivos USB HID, I2C HID e Bluetooth HID.
 //!
-//! ## Arquitetura:
-//! - **usage**: Definições de Usage Pages e Usages (Keyboard, Mouse, etc).
-//! - **report**: Parser de descritores de relatório.
-//! - **types**: Coleções e campos internos.
+//! ## O que é HID?
+//! HID é um protocolo padronizado para dispositivos de entrada que descreve
+//! o formato dos dados através de um "Report Descriptor".
+//!
+//! ## Report Descriptor:
+//! Cada dispositivo HID fornece um descriptor que descreve:
+//! - Tipo de dados (botões, eixos, etc)
+//! - Tamanho dos campos
+//! - Range de valores
+//! - Usages (o que cada campo significa)
+//!
+//! ## Fluxo:
+//! 1. Dispositivo conecta
+//! 2. Host lê Report Descriptor
+//! 3. Parser interpreta descriptor
+//! 4. Parser decodifica reports de entrada
+//! 5. Eventos são gerados para o sistema
+//!
+//! ## STUB:
+//! Parser básico implementado. Suporte completo pendente.
 
 pub mod report;
-pub mod types;
-pub mod usage;
+pub mod types; // Tipos HID
+pub mod usage; // Usage Pages e Usages // Report parser
 
-use crate::drivers::base::device::{Device, DeviceState};
-use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
-use alloc::sync::Arc;
+// Re-exports
+pub use report::parse_report;
+pub use types::*;
 
-pub struct HidSubsystem;
+use crate::sync::Spinlock;
+use alloc::vec::Vec;
 
-impl HidSubsystem {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
 
-impl Driver for HidSubsystem {
-    fn name(&self) -> &'static str {
-        "Universal HID Subsystem"
-    }
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
 
-    fn device_type(&self) -> DeviceType {
-        DeviceType::Input
-    }
+// =============================================================================
+// FUNÇÕES PÚBLICAS
+// =============================================================================
 
-    fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
-        // O subsistema HID é um driver de "classe". Ele é chamado quando
-        // um dispositivo de barramento (USB/I2C/Bluetooth) é identificado como HID.
-
-        crate::kinfo!("(Input/HID) Dispositivo HID detectado. Iniciando enumeração lógica.");
-
-        // 1. O barramento deve fornecer o Report Descriptor via dados privados do dispositivo.
-        // 2. Criamos um HidReportParser para entender a estrutura dos dados.
-        // 3. Mapeamos os bits para eventos de Input do RedstoneOS.
-
-        Ok(())
-    }
-
-    fn remove(&self, dev: &mut Device) -> Result<(), DriverError> {
-        dev.state = DeviceState::Disconnected;
-        Ok(())
-    }
-}
-
+/// Inicializa o parser HID.
 pub fn init() {
-    crate::drivers::base::register_driver(Arc::new(HidSubsystem::new()));
+    crate::kinfo!("(HID) Inicializando parser HID...");
+
+    *INITIALIZED.lock() = true;
+
+    crate::kinfo!("(HID) Parser inicializado");
+}
+
+/// Desliga o parser HID.
+pub fn shutdown() {
+    crate::kinfo!("(HID) Shutdown");
+}
+
+/// Verifica se HID está inicializado.
+pub fn is_initialized() -> bool {
+    *INITIALIZED.lock()
 }

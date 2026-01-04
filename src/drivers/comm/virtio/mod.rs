@@ -1,30 +1,81 @@
 //! # VirtIO Console Driver
 //!
-//! Implementação de comunicação serial virtual simplificada para ambientes
-//! virtualizados (QEMU, Cloud).
+//! Driver para **VirtIO Console** - console serial paravirtualizado
+//! para QEMU, KVM e outros hypervisors.
+//!
+//! ## Características:
+//! - Alta performance (sem emulação de hardware)
+//! - Múltiplas portas de console
+//! - Suporte a resize de terminal
+//! - Controle de fluxo
+//!
+//! ## Vs Serial:
+//! O VirtIO Console é mais eficiente que emular um UART 16550,
+//! mas requer suporte do guest OS. O serial tradicional funciona
+//! sem drivers especiais.
+//!
+//! ## Uso:
+//! - Console principal do guest
+//! - Debug output
+//! - Comunicação host-guest
+//!
+//! ## STUB:
+//! Este driver não está implementado. O serial tradicional (UART)
+//! é suficiente para debug e é mais simples de manter.
 
-use crate::drivers::base::device::{Device, DeviceState};
-use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
-use alloc::sync::Arc;
+use crate::sync::Spinlock;
 
-pub struct VirtioConsoleDriver;
+// =============================================================================
+// CONSTANTES
+// =============================================================================
 
-impl Driver for VirtioConsoleDriver {
-    fn name(&self) -> &'static str {
-        "VirtIO Console Driver"
-    }
+/// Tipo de dispositivo VirtIO Console (Device ID 3).
+pub const VIRTIO_CONSOLE_DEVICE_ID: u16 = 3;
 
-    fn device_type(&self) -> DeviceType {
-        DeviceType::Serial
-    }
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
 
-    fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        // TODO: Implementar handshake VirtIO Console
-        crate::kdebug!("(VirtIO-Console) Probing dispositivo...");
-        Ok(())
-    }
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
+
+// =============================================================================
+// FUNÇÕES PÚBLICAS
+// =============================================================================
+
+/// Inicializa o driver VirtIO Console.
+pub fn init() {
+    crate::kinfo!("(VirtIO Console) Inicializando driver...");
+
+    // Busca dispositivo VirtIO Console
+    // TODO: Integrar com VirtIO bus
+
+    crate::kwarn!("(VirtIO Console) Driver não implementado (usando UART)");
+
+    *INITIALIZED.lock() = true;
 }
 
-pub fn init() {
-    crate::drivers::base::register_driver(Arc::new(VirtioConsoleDriver));
+/// Desliga o driver.
+pub fn shutdown() {
+    crate::kinfo!("(VirtIO Console) Shutdown");
+}
+
+/// Verifica se VirtIO Console está disponível.
+pub fn is_available() -> bool {
+    false
+}
+
+/// Escreve para o console VirtIO.
+///
+/// ## STUB:
+/// Não implementado.
+pub fn write(_data: &[u8]) -> Result<usize, ()> {
+    Err(())
+}
+
+/// Lê do console VirtIO.
+///
+/// ## STUB:
+/// Não implementado.
+pub fn read(_buffer: &mut [u8]) -> Result<usize, ()> {
+    Err(())
 }

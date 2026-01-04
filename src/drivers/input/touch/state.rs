@@ -1,40 +1,97 @@
-//! # Touchpad Global State
+//! # Touch State Management
 //!
-//! Gerenciamento do estado estático e instâncias globais para o driver de touchpad.
+//! Gerenciamento de estado para dispositivos de toque.
 
-use super::hid::{FingerData, HidDescriptor, TouchpadState, TouchpadType};
-use super::i2c::I2cController;
-use crate::sync::Spinlock;
+use super::super::traits::*;
 
-/// Estado global de movimento e botões
-pub static TOUCHPAD_STATE: Spinlock<TouchpadState> = Spinlock::new(TouchpadState {
-    finger_count: 0,
-    fingers: [FingerData {
-        contact_id: 0,
-        tip: false,
-        in_range: false,
-        x: 0,
-        y: 0,
-        pressure: 0,
-    }; 5],
-    button_left: false,
-    button_right: false,
-    cursor_x: 640,
-    cursor_y: 400,
-    delta_x: 0,
-    delta_y: 0,
-    screen_width: 1280,
-    screen_height: 800,
-});
+// =============================================================================
+// GESTURES
+// =============================================================================
 
-/// Controlador I2C ativo
-pub static I2C: Spinlock<Option<I2cController>> = Spinlock::new(None);
+/// Tipos de gestos detectáveis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gesture {
+    /// Toque simples.
+    Tap,
+    /// Toque duplo.
+    DoubleTap,
+    /// Toque longo (press and hold).
+    LongPress,
+    /// Scroll de dois dedos.
+    TwoFingerScroll,
+    /// Pinch (zoom).
+    Pinch,
+    /// Spread (zoom out).
+    Spread,
+    /// Swipe de N dedos.
+    Swipe(u8),
+    /// Rotação.
+    Rotate,
+}
 
-/// Endereço I2C do dispositivo detectado
-pub static TOUCHPAD_ADDR: Spinlock<u8> = Spinlock::new(0);
+/// Resultado de detecção de gesto.
+#[derive(Debug, Clone)]
+pub struct GestureEvent {
+    /// Tipo de gesto.
+    pub gesture: Gesture,
+    /// Posição central.
+    pub x: i32,
+    pub y: i32,
+    /// Delta (para scroll/swipe).
+    pub delta_x: i32,
+    pub delta_y: i32,
+    /// Escala (para pinch).
+    pub scale: f32,
+    /// Ângulo (para rotate).
+    pub angle: f32,
+}
 
-/// Descriptor HID carregado do hardware
-pub static HID_DESC: Spinlock<Option<HidDescriptor>> = Spinlock::new(None);
+// =============================================================================
+// DETECTOR DE GESTOS
+// =============================================================================
 
-/// Fabricante detectado
-pub static TOUCHPAD_TYPE: Spinlock<TouchpadType> = Spinlock::new(TouchpadType::Unknown);
+/// Detector de gestos.
+pub struct GestureDetector {
+    /// Contatos anteriores (para calcular deltas).
+    prev_contacts: [Option<TouchContact>; 10],
+    /// Timestamp do último tap.
+    last_tap_time: u64,
+    /// Posição do último tap.
+    last_tap_pos: (i32, i32),
+    /// Distância inicial entre dois dedos (para pinch).
+    initial_distance: f32,
+}
+
+impl GestureDetector {
+    /// Cria novo detector.
+    pub fn new() -> Self {
+        Self {
+            prev_contacts: [None; 10],
+            last_tap_time: 0,
+            last_tap_pos: (0, 0),
+            initial_distance: 0.0,
+        }
+    }
+
+    /// Processa estado atual e detecta gestos.
+    ///
+    /// ## STUB:
+    /// Detecção básica.
+    pub fn detect(&mut self, state: &TouchState) -> Option<GestureEvent> {
+        // TODO: Implementar detecção real de gestos
+        None
+    }
+
+    /// Calcula distância entre dois contatos.
+    fn distance(c1: &TouchContact, c2: &TouchContact) -> f32 {
+        let dx = (c1.x - c2.x) as f32;
+        let dy = (c1.y - c2.y) as f32;
+        (dx * dx + dy * dy).sqrt()
+    }
+}
+
+impl Default for GestureDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
