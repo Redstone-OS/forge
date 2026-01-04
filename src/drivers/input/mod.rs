@@ -205,7 +205,16 @@ pub fn get_keyboard_state() -> KeyboardState {
 
 /// Obtém o estado atual do ponteiro (mouse/touchpad).
 pub fn get_pointer_state() -> PointerState {
-    ps2::mouse_get_state()
+    let s = ps2::mouse_get_state();
+    PointerState {
+        x: s.x,
+        y: s.y,
+        delta_x: s.delta_x,
+        delta_y: s.delta_y,
+        buttons: s.buttons,
+        scroll_y: 0,
+        scroll_x: 0,
+    }
 }
 
 /// Obtém o estado atual do touch.

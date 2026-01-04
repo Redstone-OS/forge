@@ -113,7 +113,7 @@ impl PciAddress {
 // =============================================================================
 
 /// Lista de dispositivos PCI descobertos.
-static PCI_DEVICES: Spinlock<Vec<PciDevice>> = Spinlock::new(Vec::new());
+pub static PCI_DEVICES: Spinlock<Vec<PciDevice>> = Spinlock::new(Vec::new());
 
 /// Flag indicando se ECAM (PCIe) está disponível.
 static ECAM_AVAILABLE: Spinlock<bool> = Spinlock::new(false);

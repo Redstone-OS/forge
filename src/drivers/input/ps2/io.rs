@@ -118,3 +118,22 @@ pub fn is_mouse_data() -> bool {
 pub fn has_data() -> bool {
     (read_status() & 0x01) != 0
 }
+
+/// Realiza o self-test do controlador (comando 0xAA)
+pub fn self_test() -> bool {
+    if !send_command(0xAA) {
+        return false;
+    }
+    if !wait_read() {
+        return false;
+    }
+    read_data() == 0x55
+}
+
+/// Desabilita interrupções do controlador
+pub fn disable_interrupts() {
+    if let Some(cfg) = read_config() {
+        let new_cfg = cfg & !0x03; // Desabilita IRQ 1 e IRQ 12
+        write_config(new_cfg);
+    }
+}

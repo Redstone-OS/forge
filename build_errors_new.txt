@@ -1,0 +1,721 @@
+warning: target json file contains unused fields: no-compiler-rt
+
+warning: `rdsmath` (lib) generated 1 warning
+warning: `gfx_types` (lib) generated 1 warning (1 duplicate)
+    Checking forge v0.2.0 (D:\Github\RedstoneOS\forge)
+warning: unused import: `crate::sync::Spinlock`
+  --> src\drivers\base\context.rs:27:5
+   |
+27 | use crate::sync::Spinlock;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `alloc::sync::Arc`
+  --> src\drivers\base\async_probe.rs:26:5
+   |
+26 | use alloc::sync::Arc;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::device::DeviceId`
+  --> src\drivers\base\deps.rs:24:5
+   |
+24 | use super::device::DeviceId;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::string::String`
+  --> src\drivers\base\deps.rs:26:5
+   |
+26 | use alloc::string::String;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `DeviceId`
+  --> src\drivers\base\fallback.rs:26:29
+   |
+26 | use super::device::{Device, DeviceId, DeviceState};
+   |                             ^^^^^^^^
+
+warning: unused import: `DeviceId`
+  --> src\drivers\bus\pci\mod.rs:39:44
+   |
+39 | use crate::drivers::base::device::{Device, DeviceId};
+   |                                            ^^^^^^^^
+
+warning: unused import: `super::types::*`
+  --> src\drivers\bus\virtio\transport.rs:13:5
+   |
+13 | use super::types::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `VirtioAddress`, `VirtioTransportType`
+  --> src\drivers\bus\virtio\transport.rs:14:13
+   |
+14 | use super::{VirtioAddress, VirtioTransportType};
+   |             ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::types::*`
+  --> src\drivers\bus\virtio\virtqueue.rs:28:5
+   |
+28 | use super::types::*;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `DmaDirection`, `self`
+  --> src\drivers\bus\virtio\virtqueue.rs:29:33
+   |
+29 | use crate::drivers::base::dma::{self, DmaBuffer, DmaDirection};
+   |                                 ^^^^             ^^^^^^^^^^^^
+
+warning: unused import: `crate::sync::Spinlock`
+  --> src\drivers\bus\virtio\virtqueue.rs:30:5
+   |
+30 | use crate::sync::Spinlock;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::vec::Vec`
+  --> src\drivers\bus\acpi\mod.rs:29:5
+   |
+29 | use alloc::vec::Vec;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `super::device::UsbDevice`
+ --> src\drivers\bus\usb\host.rs:5:5
+  |
+5 | use super::device::UsbDevice;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::bus::pci`
+  --> src\drivers\bus\usb\ehci\mod.rs:14:5
+   |
+14 | use crate::drivers::bus::pci;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::structs::*`
+ --> src\drivers\bus\usb\xhci\controller.rs:7:5
+  |
+7 | use super::structs::*;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::types::*`
+ --> src\drivers\bus\usb\xhci\controller.rs:8:5
+  |
+8 | use super::types::*;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `super::structs::*`
+ --> src\drivers\bus\usb\xhci\device.rs:5:5
+  |
+5 | use super::structs::*;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::types::*`
+ --> src\drivers\bus\usb\xhci\device.rs:6:5
+  |
+6 | use super::types::*;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `super::regs::*`
+ --> src\drivers\bus\usb\xhci\port.rs:5:5
+  |
+5 | use super::regs::*;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `super::types::*`
+ --> src\drivers\bus\usb\xhci\ring.rs:6:5
+  |
+6 | use super::types::*;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::bus::pci`
+  --> src\drivers\bus\usb\xhci\mod.rs:32:5
+   |
+32 | use crate::drivers::bus::pci;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::bus::usb::types::*`
+  --> src\drivers\bus\usb\mass_storage\mod.rs:34:5
+   |
+34 | use crate::drivers::bus::usb::types::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BusType`, `Bus`
+  --> src\drivers\bus\usb\mod.rs:49:33
+   |
+49 | use crate::drivers::base::bus::{Bus, BusType};
+   |                                 ^^^  ^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+  --> src\drivers\bus\usb\mod.rs:53:5
+   |
+53 | use alloc::sync::Arc;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sync::Spinlock`
+  --> src\drivers\bus\mod.rs:68:5
+   |
+68 | use crate::sync::Spinlock;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::system::traits::*`
+  --> src\drivers\system\int_ctrl\mod.rs:13:5
+   |
+13 | use crate::drivers::system::traits::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::system::traits::*`
+  --> src\drivers\system\pwr_ctrl\mod.rs:15:5
+   |
+15 | use crate::drivers::system::traits::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+  --> src\drivers\system\timer\hpet.rs:15:5
+   |
+15 | use alloc::sync::Arc;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::system::traits::*`
+  --> src\drivers\system\timer\tsc.rs:12:5
+   |
+12 | use crate::drivers::system::traits::*;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `DeviceState`
+ --> src\drivers\display\gpu\amd\mod.rs:6:44
+  |
+6 | use crate::drivers::base::device::{Device, DeviceState};
+  |                                            ^^^^^^^^^^^
+
+warning: unused import: `PixelFormat`
+ --> src\drivers\display\gpu\generic\lfb.rs:7:30
+  |
+7 | use gfx_types::{DisplayInfo, PixelFormat};
+  |                              ^^^^^^^^^^^
+
+warning: unused import: `PixelFormat`
+ --> src\drivers\display\gpu\generic\ops.rs:6:17
+  |
+6 | use gfx_types::{PixelFormat, Rect};
+  |                 ^^^^^^^^^^^
+
+warning: unused import: `self::lfb::LfbController`
+  --> src\drivers\display\gpu\generic\mod.rs:10:5
+   |
+10 | use self::lfb::LfbController;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `DeviceState`
+ --> src\drivers\display\gpu\intel\mod.rs:6:44
+  |
+6 | use crate::drivers::base::device::{Device, DeviceState};
+  |                                            ^^^^^^^^^^^
+
+warning: unused import: `DeviceState`
+ --> src\drivers\display\gpu\nvidia\mod.rs:6:44
+  |
+6 | use crate::drivers::base::device::{Device, DeviceState};
+  |                                            ^^^^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+  --> src\drivers\display\mod.rs:48:5
+   |
+48 | use alloc::sync::Arc;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::usage::*`
+ --> src\drivers\input\hid\report.rs:9:5
+  |
+9 | use super::usage::*;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::vec::Vec`
+  --> src\drivers\input\hid\mod.rs:36:5
+   |
+36 | use alloc::vec::Vec;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::string::String`
+  --> src\drivers\input\traits.rs:11:5
+   |
+11 | use alloc::string::String;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+  --> src\drivers\network\ethernet\e1000.rs:27:5
+   |
+27 | use alloc::sync::Arc;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::base::bus::BusType`
+  --> src\drivers\network\mod.rs:48:5
+   |
+48 | use crate::drivers::base::bus::BusType;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::base::driver::DeviceType`
+  --> src\drivers\network\mod.rs:50:5
+   |
+50 | use crate::drivers::base::driver::DeviceType;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::string::String`
+  --> src\drivers\sound\traits.rs:15:5
+   |
+15 | use alloc::string::String;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+  --> src\drivers\sound\mod.rs:46:5
+   |
+46 | use alloc::sync::Arc;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::vec::Vec`
+  --> src\drivers\storage\traits.rs:18:5
+   |
+18 | use alloc::vec::Vec;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+  --> src\drivers\storage\mod.rs:46:5
+   |
+46 | use alloc::sync::Arc;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::drivers::base::driver::Driver`
+  --> src\drivers\storage\mod.rs:44:5
+   |
+44 | use crate::drivers::base::driver::Driver;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `name`
+   --> src\drivers\base\events.rs:187:20
+    |
+187 | pub fn unsubscribe(name: &str) {
+    |                    ^^^^ help: if this is intentional, prefix it with an underscore: `_name`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `new_power`
+   --> src\drivers\base\events.rs:230:41
+    |
+230 |             DeviceEvent::PowerChange(_, new_power) => {
+    |                                         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_new_power`
+
+warning: unused variable: `irq`
+   --> src\drivers\base\events.rs:239:39
+    |
+239 |             DeviceEvent::Interrupt(_, irq) => {
+    |                                       ^^^ help: if this is intentional, prefix it with an underscore: `_irq`
+
+warning: unused variable: `owner`
+   --> src\drivers\base\memory.rs:341:48
+    |
+341 | pub fn validate_access(addr: u64, size: usize, owner: DeviceId) -> bool {
+    |                                                ^^^^^ help: if this is intentional, prefix it with an underscore: `_owner`
+
+warning: unused variable: `deps_str`
+   --> src\drivers\base\deps.rs:271:13
+    |
+271 |         let deps_str = if deps.is_empty() {
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_deps_str`
+
+error[E0505]: cannot move out of `dev` because it is borrowed
+   --> src\drivers\base\mod.rs:324:42
+    |
+303 | pub fn register_device(mut dev: Device) -> Arc<Spinlock<Device>> {
+    |                        ------- binding `dev` declared here
+...
+310 |     let dev_name = dev.name_as_str();
+    |                    --- borrow of `dev` occurs here
+...
+324 |     let dev_arc = Arc::new(Spinlock::new(dev));
+    |                                          ^^^ move out of `dev` occurs here
+    |
+   ::: src\core\debug\klog.rs:209:62
+    |
+209 |         $crate::core::debug::klog::SerialPrint::serial_print(&$val);
+    |                                                              ----- borrow later used here
+    |
+note: if `Device` implemented `Clone`, you could clone the value
+   --> src\drivers\base\device.rs:152:1
+    |
+152 | pub struct Device {
+    | ^^^^^^^^^^^^^^^^^ consider implementing `Clone` for this type
+    |
+   ::: src\drivers\base\mod.rs:310:20
+    |
+310 |     let dev_name = dev.name_as_str();
+    |                    --- you could clone this value
+
+error[E0502]: cannot borrow `dev` as mutable because it is also borrowed as immutable
+   --> src\drivers\base\mod.rs:483:29
+    |
+479 |         if let Some(driver) = &dev.driver {
+    |                                --- immutable borrow occurs here
+...
+483 |             driver.shutdown(&mut dev);
+    |                    -------- ^^^^^^^^ mutable borrow occurs here
+    |                    |
+    |                    immutable borrow later used by call
+
+warning: unused variable: `id`
+   --> src\drivers\base\mod.rs:509:27
+    |
+509 | pub(crate) fn get_context(id: DeviceId) -> Option<&'static DriverContext> {
+    |                           ^^ help: if this is intentional, prefix it with an underscore: `_id`
+
+warning: variable does not need to be mutable
+  --> src\drivers\bus\pci\mod.rs:95:13
+   |
+95 |         let mut buf = [0u8; 16];
+   |             ----^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` on by default
+
+warning: unused variable: `device`
+   --> src\drivers\bus\pci\mod.rs:376:33
+    |
+376 | fn get_device_name(vendor: u16, device: u16) -> &'static str {
+    |                                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_device`
+
+warning: unused variable: `offset`
+   --> src\drivers\bus\virtio\transport.rs:122:24
+    |
+122 |     fn read_reg(&self, offset: u64) -> u32 {
+    |                        ^^^^^^ help: if this is intentional, prefix it with an underscore: `_offset`
+
+warning: unused variable: `offset`
+   --> src\drivers\bus\virtio\transport.rs:129:25
+    |
+129 |     fn write_reg(&self, offset: u64, value: u32) {
+    |                         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_offset`
+
+warning: unused variable: `value`
+   --> src\drivers\bus\virtio\transport.rs:129:38
+    |
+129 |     fn write_reg(&self, offset: u64, value: u32) {
+    |                                      ^^^^^ help: if this is intentional, prefix it with an underscore: `_value`
+
+warning: unused variable: `features`
+   --> src\drivers\bus\virtio\transport.rs:162:37
+    |
+162 |     fn write_driver_features(&self, features: u64) {
+    |                                     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_features`
+
+warning: unused variable: `queue_index`
+   --> src\drivers\bus\virtio\transport.rs:166:28
+    |
+166 |     fn select_queue(&self, queue_index: u16) {
+    |                            ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_queue_index`
+
+warning: unused variable: `size`
+   --> src\drivers\bus\virtio\transport.rs:175:30
+    |
+175 |     fn set_queue_size(&self, size: u16) {
+    |                              ^^^^ help: if this is intentional, prefix it with an underscore: `_size`
+
+warning: unused variable: `desc`
+   --> src\drivers\bus\virtio\transport.rs:179:33
+    |
+179 |     fn set_queue_address(&self, desc: u64, avail: u64, used: u64) {
+    |                                 ^^^^ help: if this is intentional, prefix it with an underscore: `_desc`
+
+warning: unused variable: `avail`
+   --> src\drivers\bus\virtio\transport.rs:179:44
+    |
+179 |     fn set_queue_address(&self, desc: u64, avail: u64, used: u64) {
+    |                                            ^^^^^ help: if this is intentional, prefix it with an underscore: `_avail`
+
+warning: unused variable: `used`
+   --> src\drivers\bus\virtio\transport.rs:179:56
+    |
+179 |     fn set_queue_address(&self, desc: u64, avail: u64, used: u64) {
+    |                                                        ^^^^ help: if this is intentional, prefix it with an underscore: `_used`
+
+warning: unused variable: `queue_index`
+   --> src\drivers\bus\virtio\transport.rs:187:22
+    |
+187 |     fn notify(&self, queue_index: u16) {
+    |                      ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_queue_index`
+
+warning: unused variable: `offset`
+   --> src\drivers\bus\virtio\transport.rs:191:27
+    |
+191 |     fn read_config(&self, offset: usize) -> u32 {
+    |                           ^^^^^^ help: if this is intentional, prefix it with an underscore: `_offset`
+
+warning: unused variable: `offset`
+   --> src\drivers\bus\virtio\transport.rs:196:28
+    |
+196 |     fn write_config(&self, offset: usize, value: u32) {
+    |                            ^^^^^^ help: if this is intentional, prefix it with an underscore: `_offset`
+
+warning: unused variable: `value`
+   --> src\drivers\bus\virtio\transport.rs:196:43
+    |
+196 |     fn write_config(&self, offset: usize, value: u32) {
+    |                                           ^^^^^ help: if this is intentional, prefix it with an underscore: `_value`
+
+warning: unused variable: `total_size`
+   --> src\drivers\bus\virtio\virtqueue.rs:153:13
+    |
+153 |         let total_size = desc_size + avail_size + used_size;
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_total_size`
+
+warning: variable does not need to be mutable
+   --> src\drivers\bus\virtio\virtqueue.rs:162:13
+    |
+162 |         let mut free_list: Vec<u16> = (0..size).collect();
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `dev`
+   --> src\drivers\bus\virtio\mod.rs:224:28
+    |
+224 |     fn reset_device(&self, dev: &mut Device) -> bool {
+    |                            ^^^ help: if this is intentional, prefix it with an underscore: `_dev`
+
+warning: unused variable: `addr`
+   --> src\drivers\bus\acpi\mod.rs:197:15
+    |
+197 | fn parse_rsdp(addr: u64) -> Option<ParsedRsdp> {
+    |               ^^^^ help: if this is intentional, prefix it with an underscore: `_addr`
+
+warning: unused variable: `info`
+   --> src\drivers\bus\acpi\mod.rs:206:15
+    |
+206 | fn parse_rsdt(info: &mut AcpiInfo, addr: u64) {
+    |               ^^^^ help: if this is intentional, prefix it with an underscore: `_info`
+
+warning: unused variable: `addr`
+   --> src\drivers\bus\acpi\mod.rs:206:36
+    |
+206 | fn parse_rsdt(info: &mut AcpiInfo, addr: u64) {
+    |                                    ^^^^ help: if this is intentional, prefix it with an underscore: `_addr`
+
+warning: unused variable: `info`
+   --> src\drivers\bus\acpi\mod.rs:212:15
+    |
+212 | fn parse_xsdt(info: &mut AcpiInfo, addr: u64) {
+    |               ^^^^ help: if this is intentional, prefix it with an underscore: `_info`
+
+warning: unused variable: `addr`
+   --> src\drivers\bus\acpi\mod.rs:212:36
+    |
+212 | fn parse_xsdt(info: &mut AcpiInfo, addr: u64) {
+    |                                    ^^^^ help: if this is intentional, prefix it with an underscore: `_addr`
+
+warning: unused variable: `trb`
+  --> src\drivers\bus\usb\xhci\ring.rs:69:31
+   |
+69 |     pub fn enqueue(&mut self, trb: Trb) -> bool {
+   |                               ^^^ help: if this is intentional, prefix it with an underscore: `_trb`
+
+warning: unused variable: `setup`
+  --> src\drivers\bus\usb\xhci\transfer.rs:16:5
+   |
+16 |     setup: &UsbSetupPacket,
+   |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_setup`
+
+warning: unused variable: `start_block`
+   --> src\drivers\bus\usb\mass_storage\mod.rs:140:5
+    |
+140 |     start_block: u64,
+    |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_block`
+
+warning: unused variable: `count`
+   --> src\drivers\bus\usb\mass_storage\mod.rs:141:5
+    |
+141 |     count: u32,
+    |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_count`
+
+warning: unused variable: `buffer`
+   --> src\drivers\bus\usb\mass_storage\mod.rs:142:5
+    |
+142 |     buffer: &mut [u8],
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_buffer`
+
+warning: unused variable: `start_block`
+   --> src\drivers\bus\usb\mass_storage\mod.rs:160:5
+    |
+160 |     start_block: u64,
+    |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_block`
+
+warning: unused variable: `count`
+   --> src\drivers\bus\usb\mass_storage\mod.rs:161:5
+    |
+161 |     count: u32,
+    |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_count`
+
+warning: unused variable: `buffer`
+   --> src\drivers\bus\usb\mass_storage\mod.rs:162:5
+    |
+162 |     buffer: &[u8],
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_buffer`
+
+warning: unnecessary `unsafe` block
+   --> src\drivers\system\int_ctrl\mod.rs:130:5
+    |
+130 |     unsafe {
+    |     ^^^^^^ unnecessary `unsafe` block
+    |
+    = note: `#[warn(unused_unsafe)]` on by default
+
+warning: unnecessary `unsafe` block
+   --> src\drivers\system\int_ctrl\mod.rs:143:5
+    |
+143 |     unsafe {
+    |     ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+   --> src\drivers\system\pwr_ctrl\mod.rs:108:22
+    |
+108 |         let status = unsafe { crate::arch::x86_64::ports::inb(0x64) };
+    |                      ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+  --> src\drivers\system\speaker\mod.rs:55:19
+   |
+55 |     let current = unsafe { inb(SPEAKER_PORT) };
+   |                   ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+  --> src\drivers\system\speaker\mod.rs:62:19
+   |
+62 |     let current = unsafe { inb(SPEAKER_PORT) };
+   |                   ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+  --> src\drivers\system\timer\pit.rs:72:15
+   |
+72 |     let low = unsafe { crate::arch::x86_64::ports::inb(PIT_CHANNEL0) };
+   |               ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+  --> src\drivers\system\timer\pit.rs:73:16
+   |
+73 |     let high = unsafe { crate::arch::x86_64::ports::inb(PIT_CHANNEL0) };
+   |                ^^^^^^ unnecessary `unsafe` block
+
+warning: unused variable: `start`
+   --> src\drivers\system\timer\mod.rs:137:9
+    |
+137 |     let start = tsc::read_tsc();
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_start`
+
+warning: unused variable: `frequency_hz`
+  --> src\drivers\system\traits.rs:72:28
+   |
+72 |     fn set_periodic(&self, frequency_hz: u32) -> bool {
+   |                            ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_frequency_hz`
+
+warning: unused variable: `ticks`
+  --> src\drivers\system\traits.rs:77:27
+   |
+77 |     fn set_oneshot(&self, ticks: u64) -> bool {
+   |                           ^^^^^ help: if this is intentional, prefix it with an underscore: `_ticks`
+
+warning: unnecessary `unsafe` block
+  --> src\drivers\display\bochs\mod.rs:47:9
+   |
+47 |         unsafe {
+   |         ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+  --> src\drivers\display\bochs\mod.rs:54:9
+   |
+54 |         unsafe {
+   |         ^^^^^^ unnecessary `unsafe` block
+
+error[E0505]: cannot move out of `dev` because it is borrowed
+   --> src\drivers\display\mod.rs:115:18
+    |
+103 | pub fn register_device(dev: DisplayDeviceRef) {
+    |                        --- binding `dev` declared here
+104 |     let name = dev.name();
+    |                --- borrow of `dev` occurs here
+...
+115 |     devices.push(dev);
+    |                  ^^^ move out of `dev` occurs here
+    |
+   ::: src\core\debug\klog.rs:183:62
+    |
+183 |         $crate::core::debug::klog::SerialPrint::serial_print(&$val);
+    |                                                              ----- borrow later used here
+    |
+help: clone the value to increment its reference count
+    |
+104 |     let name = dev.clone().name();
+    |                   ++++++++
+
+warning: unused variable: `min`
+   --> src\drivers\input\hid\report.rs:138:29
+    |
+138 |                         let min = value as u16;
+    |                             ^^^ help: if this is intentional, prefix it with an underscore: `_min`
+
+warning: unused variable: `state`
+  --> src\drivers\input\touch\state.rs:80:30
+   |
+80 |     pub fn detect(&mut self, state: &TouchState) -> Option<GestureEvent> {
+   |                              ^^^^^ help: if this is intentional, prefix it with an underscore: `_state`
+
+warning: unused variable: `vdev`
+   --> src\drivers\network\virtio\mod.rs:199:17
+    |
+199 |     if let Some(vdev) = crate::drivers::bus::virtio::find_by_type(VirtioDeviceType::Network) {
+    |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_vdev`
+
+warning: unused variable: `direction`
+   --> src\drivers\sound\traits.rs:394:21
+    |
+394 |     fn drain(&self, direction: StreamDirection) -> Result<(), SoundError> {
+    |                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_direction`
+
+warning: unused variable: `buffer`
+   --> src\drivers\sound\traits.rs:417:20
+    |
+417 |     fn read(&self, buffer: &mut [u8]) -> Result<usize, SoundError> {
+    |                    ^^^^^^ help: if this is intentional, prefix it with an underscore: `_buffer`
+
+error[E0505]: cannot move out of `dev` because it is borrowed
+   --> src\drivers\sound\mod.rs:138:18
+    |
+131 | pub fn register_device(dev: SoundDeviceRef) {
+    |                        --- binding `dev` declared here
+132 |     let name = dev.name();
+    |                --- borrow of `dev` occurs here
+...
+138 |     devices.push(dev);
+    |                  ^^^ move out of `dev` occurs here
+    |
+   ::: src\core\debug\klog.rs:183:62
+    |
+183 |         $crate::core::debug::klog::SerialPrint::serial_print(&$val);
+    |                                                              ----- borrow later used here
+    |
+help: clone the value to increment its reference count
+    |
+132 |     let name = dev.clone().name();
+    |                   ++++++++
+
+error[E0515]: cannot return value referencing temporary value
+   --> src\drivers\sound\mod.rs:224:5
+    |
+224 | //     SOUND_DEVICES
+225 | ||         .lock()
+    | ||_______________- temporary value created here
+226 | |          .iter()
+227 | |          .map(|d| {
+...   |
+241 | |          .leak()
+242 | |          .to_vec()
+    | |__________________^ returns a value referencing data owned by the current function
+
+Some errors have detailed explanations: E0502, E0505, E0515.
+For more information about an error, try `rustc --explain E0502`.
+warning: `forge` (lib) generated 102 warnings (1 duplicate)
+error: could not compile `forge` (lib) due to 5 previous errors; 102 warnings emitted

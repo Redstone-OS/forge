@@ -79,7 +79,7 @@ impl Driver for Ps2Driver {
         // Testa controlador
         if !io::self_test() {
             crate::kerror!("(PS/2) Falha no self-test do 8042");
-            return Err(DriverError::HardwareError);
+            return Err(DriverError::HardwareFault);
         }
 
         // Inicializa teclado (porta 1)
@@ -93,7 +93,7 @@ impl Driver for Ps2Driver {
             crate::kwarn!("(PS/2) Mouse não detectado");
         }
 
-        dev.set_state(DeviceState::Running);
+        dev.set_state(DeviceState::Ready);
         Ok(())
     }
 

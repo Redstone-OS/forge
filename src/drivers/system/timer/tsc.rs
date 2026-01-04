@@ -112,32 +112,10 @@ fn check_invariant_tsc() -> bool {
     // CPUID 0x80000007, EDX bit 8
     #[cfg(target_arch = "x86_64")]
     {
-        // Verificar se extended CPUID está disponível
-        let max_ext: u32;
-        unsafe {
-            core::arch::asm!(
-                "cpuid",
-                inout("eax") 0x80000000u32 => max_ext,
-                lateout("ebx") _,
-                lateout("ecx") _,
-                lateout("edx") _,
-                options(nostack, nomem)
-            );
-        }
-
-        if max_ext >= 0x80000007 {
-            let edx: u32;
-            unsafe {
-                core::arch::asm!(
-                    "cpuid",
-                    inout("eax") 0x80000007u32 => _,
-                    lateout("ebx") _,
-                    lateout("ecx") _,
-                    lateout("edx") edx,
-                    options(nostack, nomem)
-                );
-            }
-            return (edx & (1 << 8)) != 0;
+        let res = unsafe { core::arch::x86_64::__cpuid(0x80000000) };
+        if res.eax >= 0x80000007 {
+            let res = unsafe { core::arch::x86_64::__cpuid(0x80000007) };
+            return (res.edx & (1 << 8)) != 0;
         }
     }
     false

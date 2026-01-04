@@ -58,7 +58,7 @@ pub mod storage; // Storage (discos, SSD, ramdisks)
 /// Orquestra a inicialização de todo o subsistema de drivers do RedstoneOS.
 /// Esta função deve ser chamada cedo no boot (entry.rs) para garantir que
 /// o hardware esteja disponível para os serviços do kernel.
-pub fn init() {
+pub fn init(fb_info: crate::core::boot::handoff::FramebufferInfo) {
     // 1. Inicializa o Modelo Base (RDM)
     crate::kinfo!("(Drivers) Iniciando Orquestração de Hardware...");
     base::init();
@@ -77,7 +77,7 @@ pub fn init() {
 
     // 5. Inicializa Drivers de Display
     crate::kinfo!("(Drivers) Inicializando Display...");
-    display::init();
+    display::init(fb_info);
 
     // 6. Inicializa Drivers de Rede
     crate::kinfo!("(Drivers) Inicializando Rede...");

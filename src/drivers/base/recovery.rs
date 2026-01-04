@@ -20,7 +20,6 @@
 //! - Erros transientes → mais paciência
 //! - Erros críticos → escalação rápida
 
-use super::context::{apply_recovery_policy, RecoveryPolicy};
 use super::device::{Device, DeviceId, DeviceState};
 use super::driver::DriverError;
 use crate::sync::Spinlock;
@@ -258,9 +257,7 @@ impl RecoveryManager {
     /// Desanexa e anexa o driver novamente.
     fn perform_rebind(&self, dev_arc: Arc<Spinlock<Device>>) {
         let mut dev = dev_arc.lock();
-        let name = dev.name_as_str();
-
-        crate::kinfo!("(Recovery) Rebind para:", name);
+        crate::kinfo!("(Recovery) Rebind para:", dev.name_as_str());
 
         // 1. Remove driver atual
         if let Some(driver) = dev.driver.take() {
@@ -280,10 +277,8 @@ impl RecoveryManager {
     /// Reseta o hardware fisicamente.
     fn perform_bus_reset(&self, dev_arc: Arc<Spinlock<Device>>) {
         let mut dev = dev_arc.lock();
-        let name = dev.name_as_str();
         let bus_type = dev.bus_type;
-
-        crate::kwarn!("(Recovery) RESET DE HARDWARE para:", name);
+        crate::kwarn!("(Recovery) RESET DE HARDWARE para:", dev.name_as_str());
 
         // 1. Busca o barramento
         if let Some(bus) = super::bus::find_by_type(bus_type) {
@@ -313,10 +308,9 @@ impl RecoveryManager {
     /// Tenta carregar driver alternativo.
     fn perform_fallback(&self, dev_arc: Arc<Spinlock<Device>>) {
         let dev = dev_arc.lock();
-        let name = dev.name_as_str();
         let dev_type = dev.device_type;
 
-        crate::kwarn!("(Recovery) FALLBACK para:", name);
+        crate::kwarn!("(Recovery) FALLBACK para:", dev.name_as_str());
 
         // Delega para o sistema de fallback
         drop(dev); // Libera lock antes de chamar outro módulo
@@ -326,9 +320,7 @@ impl RecoveryManager {
     /// Isola o dispositivo permanentemente.
     fn perform_isolation(&self, dev_arc: Arc<Spinlock<Device>>) {
         let mut dev = dev_arc.lock();
-        let name = dev.name_as_str();
-
-        crate::kerror!("(Recovery) ISOLAMENTO PERMANENTE:", name);
+        crate::kerror!("(Recovery) ISOLAMENTO PERMANENTE:", dev.name_as_str());
 
         // 1. Remove driver
         if let Some(driver) = dev.driver.take() {
@@ -352,7 +344,7 @@ impl RecoveryManager {
         // 5. Emite evento
         super::events::emit(super::events::DeviceEvent::Removed(dev.id));
 
-        crate::kerror!("(Recovery) Dispositivo isolado:", name);
+        crate::kerror!("(Recovery) Dispositivo isolado:", dev.name_as_str());
     }
 
     /// Reseta o registro de um dispositivo (após recuperação bem-sucedida).

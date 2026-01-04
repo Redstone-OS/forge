@@ -90,6 +90,9 @@ pub enum DeviceType {
 
     /// Tipo desconhecido (dispositivo ainda não identificado)
     Unknown,
+
+    /// Dispositivos de infraestrutura de sistema (Relógios, Controladores de interrupção, etc)
+    System,
 }
 
 impl DeviceType {
@@ -110,6 +113,7 @@ impl DeviceType {
             Self::Security => "Security",
             Self::Generic => "Generic",
             Self::Unknown => "Unknown",
+            Self::System => "System",
         }
     }
 }
@@ -178,6 +182,12 @@ pub enum DriverError {
     /// Operações devem ser adiadas.
     /// Recovery: Aguardar reload completar.
     Unloading,
+
+    /// Falha física detectada no hardware.
+    HardwareFault,
+
+    /// Erro de hardware genérico.
+    HardwareError,
 }
 
 impl DriverError {
@@ -214,6 +224,8 @@ impl DriverError {
             Self::ResourceConflict => "ResourceConflict",
             Self::Cancelled => "Cancelled",
             Self::Unloading => "Unloading",
+            Self::HardwareFault => "HardwareFault",
+            Self::HardwareError => "HardwareError",
         }
     }
 }
@@ -312,7 +324,9 @@ pub trait Driver: Send + Sync {
     /// - Garantir que o hardware pare de gerar IRQs
     /// - Garantir que DMA pare antes de liberar buffers
     /// - Não falhar se possível (melhor esforço)
-    fn remove(&self, dev: &mut Device) -> Result<(), DriverError>;
+    fn remove(&self, _dev: &mut Device) -> Result<(), DriverError> {
+        Ok(())
+    }
 
     // =========================================================================
     // GERENCIAMENTO DE ENERGIA (OPCIONAL)

@@ -5,7 +5,7 @@
 
 use crate::drivers::base::device::{Device, DeviceState};
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
-use crate::drivers::bus::pci::device::PciDeviceInfo;
+use crate::drivers::bus::pci::device::PciDevice;
 use alloc::sync::Arc;
 
 pub struct IntelGpuDriver;
@@ -30,7 +30,7 @@ impl Driver for IntelGpuDriver {
     }
 
     fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
-        let pci_info = match dev.get_data::<PciDeviceInfo>() {
+        let pci_info = match dev.get_data::<PciDevice>() {
             Some(info) => info,
             None => return Err(DriverError::NotSupported),
         };
@@ -43,15 +43,17 @@ impl Driver for IntelGpuDriver {
         crate::kinfo!("(GPU) Intel HD/UHD Graphics detectada.");
 
         // 1. Mapear MMIO (GTTMMADR no BAR0)
-        let mmio_base = pci_info
-            .get_bar_address(0)
-            .ok_or(DriverError::HardwareFault)?;
+        let mmio_base = pci_info.bar_address(0);
+        if mmio_base == 0 {
+            return Err(DriverError::HardwareFault);
+        }
         crate::kdebug!("  -> MMIO Base:", mmio_base);
 
         // 2. Mapear GTT e Framebuffer (GMADR no BAR2)
-        let fb_base = pci_info
-            .get_bar_address(2)
-            .ok_or(DriverError::HardwareFault)?;
+        let fb_base = pci_info.bar_address(2);
+        if fb_base == 0 {
+            return Err(DriverError::HardwareFault);
+        }
         crate::kdebug!("  -> Framebuffer Base:", fb_base);
 
         // 3. Inicialização de baixo nível (Pipes e Planes)

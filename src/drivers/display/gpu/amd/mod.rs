@@ -5,7 +5,7 @@
 
 use crate::drivers::base::device::{Device, DeviceState};
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
-use crate::drivers::bus::pci::device::PciDeviceInfo;
+use crate::drivers::bus::pci::device::PciDevice;
 use alloc::sync::Arc;
 
 pub struct AmdGpuDriver;
@@ -20,7 +20,7 @@ impl Driver for AmdGpuDriver {
     }
 
     fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
-        let pci_info = match dev.get_data::<PciDeviceInfo>() {
+        let pci_info = match dev.get_data::<PciDevice>() {
             Some(info) => info,
             None => return Err(DriverError::NotSupported),
         };
@@ -33,15 +33,17 @@ impl Driver for AmdGpuDriver {
         crate::kinfo!("(GPU) AMD Radeon detectada.");
 
         // 1. BAR0/BAR1: VRAM (Acesso ao Framebuffer grande)
-        let vram_base = pci_info
-            .get_bar_address(0)
-            .ok_or(DriverError::HardwareFault)?;
+        let vram_base = pci_info.bar_address(0);
+        if vram_base == 0 {
+            return Err(DriverError::HardwareFault);
+        }
         crate::kdebug!("  -> VRAM (BAR0):", vram_base);
 
         // 2. BAR2: MMIO (Registros de controle)
-        let mmio_base = pci_info
-            .get_bar_address(2)
-            .ok_or(DriverError::HardwareFault)?;
+        let mmio_base = pci_info.bar_address(2);
+        if mmio_base == 0 {
+            return Err(DriverError::HardwareFault);
+        }
         crate::kdebug!("  -> MMIO (BAR2):", mmio_base);
 
         // 3. Inicialização via AtomBIOS ou PSP (Platform Security Processor)

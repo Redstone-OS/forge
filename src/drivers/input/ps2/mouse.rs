@@ -61,7 +61,7 @@ mod mouse_cmd {
 }
 
 /// Inicializa o mouse PS/2
-pub fn init() {
+pub fn init() -> bool {
     // 1. Habilitar porta auxiliar
     io::send_command(commands::ENABLE_AUX);
 
@@ -79,6 +79,7 @@ pub fn init() {
     crate::arch::x86_64::interrupts::pic_enable_irq(12);
 
     crate::kinfo!("(Input) PS/2 Mouse initialized");
+    true
 }
 
 /// Handler de interrupção (IRQ 12)

@@ -24,6 +24,7 @@
 use super::device::DeviceId;
 use crate::sync::Spinlock;
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 
 // =============================================================================

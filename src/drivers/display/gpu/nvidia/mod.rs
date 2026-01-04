@@ -5,7 +5,7 @@
 
 use crate::drivers::base::device::{Device, DeviceState};
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
-use crate::drivers::bus::pci::device::PciDeviceInfo;
+use crate::drivers::bus::pci::device::PciDevice;
 use alloc::sync::Arc;
 
 pub struct NvidiaGpuDriver;
@@ -26,7 +26,7 @@ impl Driver for NvidiaGpuDriver {
     }
 
     fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
-        let pci_info = match dev.get_data::<PciDeviceInfo>() {
+        let pci_info = match dev.get_data::<PciDevice>() {
             Some(info) => info,
             None => return Err(DriverError::NotSupported),
         };
@@ -39,15 +39,17 @@ impl Driver for NvidiaGpuDriver {
         crate::kinfo!("(GPU) NVIDIA Graphics detectada.");
 
         // 1. BAR0: MMIO (Registros de controle)
-        let mmio_base = pci_info
-            .get_bar_address(0)
-            .ok_or(DriverError::HardwareFault)?;
+        let mmio_base = pci_info.bar_address(0);
+        if mmio_base == 0 {
+            return Err(DriverError::HardwareFault);
+        }
         crate::kdebug!("  -> MMIO (BAR0):", mmio_base);
 
         // 2. BAR1/BAR3: VRAM (Acesso ao Framebuffer)
-        let vram_base = pci_info
-            .get_bar_address(1)
-            .ok_or(DriverError::HardwareFault)?;
+        let vram_base = pci_info.bar_address(1);
+        if vram_base == 0 {
+            return Err(DriverError::HardwareFault);
+        }
         crate::kdebug!("  -> VRAM (BAR1):", vram_base);
 
         // 3. Handshake com o GSP (em GPUs modernas como Turing/Ampere)

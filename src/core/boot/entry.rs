@@ -41,8 +41,8 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
 
     // 2.5. Inicialização de Vídeo (Framebuffer)
-    // Inicializamos agora que o HHDM está pronto para mapear o FB corretamente
-    crate::drivers::display::init(boot_info.framebuffer);
+    // Movido para dentro de drivers::init() para manter centralizado
+    // crate::drivers::display::init(boot_info.framebuffer);
 
     // Debug console (desativado por padrão, ver core::debug::console)
 
@@ -66,7 +66,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::fs::vfs::init();
 
     // 6.6 Inicializar Sistema de Drivers (PCI, USB, Block, Input)
-    crate::drivers::init();
+    crate::drivers::init(boot_info.framebuffer);
 
     // 6.7 Inicializar e Montar FAT se houver disco
     crate::kinfo!("'Inicializando FAT'");
