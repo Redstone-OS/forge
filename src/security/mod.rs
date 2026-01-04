@@ -1,93 +1,81 @@
 //! # Security Subsystem
 //!
-//! Segurança baseada em Capabilities (não ACLs).
+//! Sistema de segurança baseado em Object-Capabilities (OCAP).
 //!
 //! ## Filosofia
 //!
 //! ```text
-//! ╔═══════════════════════════════════════════════════════════╗
-//! ║  CAPABILITY-BASED SECURITY                                ║
-//! ║                                                           ║
-//! ║  • Acesso via TOKEN, não identidade                       ║
-//! ║  • Sem "root" ou superusuário global                      ║
-//! ║  • Least privilege por design                             ║
-//! ║  • Delegação explícita via transfer                       ║
-//! ╚═══════════════════════════════════════════════════════════╝
+//! ┌──────────────────────────────────────────────────────────────┐
+//! │  CAPABILITY-BASED SECURITY                                   │
+//! │                                                              │
+//! │  • Acesso via TOKEN, não identidade                          │
+//! │  • Sem "root" ou superusuário global                         │
+//! │  • Least privilege por design                                │
+//! │  • Delegação explícita via transfer                          │
+//! │  • Revogação a qualquer momento                              │
+//! └──────────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! ## Modelo
+//! ## Módulos:
+//!
+//! | Módulo       | Descrição                              | Status |
+//! |--------------|----------------------------------------|--------|
+//! | `capability` | CSpace, Rights, CapHandle              | Func   |
+//! | `audit`      | Logging de eventos de segurança        | WIP    |
+//! | `sandbox`    | Isolamento via namespaces              | WIP    |
+//!
+//! ## Modelo de Acesso:
 //!
 //! ```text
-//! Process A                    Process B
-//! ┌─────────┐                  ┌─────────┐
-//! │ CSpace  │                  │ CSpace  │
-//! │ ┌─────┐ │    transfer      │ ┌─────┐ │
-//! │ │Cap 1│ │ ───────────────► │ │Cap 1│ │
-//! │ └─────┘ │                  │ └─────┘ │
-//! │ ┌─────┐ │                  │         │
-//! │ │Cap 2│ │                  │         │
-//! │ └─────┘ │                  │         │
-//! └─────────┘                  └─────────┘
+//! Process → CSpace → Capability → Object
+//!                        ↓
+//!                    Rights Check
+//!                        ↓
+//!                 Allow / Deny + Audit
 //! ```
-//!
-//! ## Rights
-//!
-//! | Right     | Descrição                          |
-//! |-----------|------------------------------------|
-//! | READ      | Ler conteúdo                       |
-//! | WRITE     | Modificar conteúdo                 |
-//! | EXECUTE   | Executar código                    |
-//! | DUPLICATE | Criar cópia da capability          |
-//! | TRANSFER  | Enviar via IPC                     |
-//! | GRANT     | Criar capability derivada          |
 
-// =============================================================================
-// CAPABILITIES
-// =============================================================================
-
-/// Sistema de capabilities
-pub mod capability;
-
-pub use capability::{CSpace, CapHandle, CapRights, CapType, Capability};
-
-// =============================================================================
-// CREDENTIALS
-// =============================================================================
-
-/// Credenciais de processo
-pub mod credentials;
-
-pub use credentials::Credentials;
-
-// =============================================================================
-// SANDBOX
-// =============================================================================
-
-/// Namespaces e isolamento
-pub mod sandbox;
-
-pub use sandbox::Sandbox;
-
-// =============================================================================
-// AUDIT
-// =============================================================================
-
-/// Logging de segurança
 pub mod audit;
+pub mod capability;
+pub mod sandbox;
+pub mod traits;
+
+// Re-exports principais
+pub use audit::{AuditEvent, AuditResult};
+pub use capability::{CSpace, CapError, CapHandle, CapRights, CapType, Capability};
+pub use sandbox::{Container, Namespace, NamespaceType};
 
 // =============================================================================
-// INITIALIZATION
+// INICIALIZAÇÃO
 // =============================================================================
 
-/// Inicializa subsistema de segurança
+/// Inicializa o subsistema de segurança.
 pub fn init() {
-    crate::kinfo!("(Security) Inicializando capabilities...");
-    // Inicializar CSpace global do kernel
-    crate::kinfo!("(Security) Segurança inicializada");
+    crate::kinfo!("(Security) Inicializando subsistema de segurança...");
+
+    // Inicializar audit logger
+    audit::init();
+
+    crate::kinfo!("(Security) Modelo OCAP ativo");
+}
+
+/// Desliga o subsistema (flush de logs, etc).
+pub fn shutdown() {
+    crate::kinfo!("(Security) Shutdown do subsistema...");
+    audit::flush();
 }
 
 // =============================================================================
-// TESTS
+// CONVENIÊNCIA
+// =============================================================================
+
+/// Loga evento de auditoria.
+#[inline]
+pub fn audit_log(event: AuditEvent, result: AuditResult) {
+    audit::log(event, result);
+}
+
+// =============================================================================
+// TESTES
 // =============================================================================
 
 #[cfg(feature = "self_test")]

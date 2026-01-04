@@ -1,11 +1,20 @@
-//! Capability Module
+//! # Capability Module
 //!
-//! Exposes Capability primitives and Rights.
+//! Sistema de Object-Capabilities.
+//!
+//! ## Componentes:
+//! - `Capability`: Token de acesso
+//! - `CapType`: Tipo de objeto referenciado
+//! - `CapRights`: Direitos concedidos
+//! - `CSpace`: Tabela de capabilities por processo
+//! - `CapHandle`: Handle opaco para userspace
 
-pub mod cap;
-pub mod cspace;
-pub mod rights; // It was in the directory listing
+mod cap;
+mod cspace;
+mod revocation;
+mod rights;
 
 pub use cap::{CapHandle, CapType, Capability};
 pub use cspace::{CSpace, CapError};
+pub use revocation::RevocationTree;
 pub use rights::CapRights;
