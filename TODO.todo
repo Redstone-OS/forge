@@ -1,9 +1,0 @@
-[ ] Remover +soft-float do target x86_64
-    when: FPU inicializada no early boot
-    requires:
-      - CR0.TS configurado
-      - x87 estado salvo/restaurado no context switch
-    affects:
-      - target.json
-      - scheduler
-      - context.rs
