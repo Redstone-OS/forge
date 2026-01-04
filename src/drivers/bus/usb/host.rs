@@ -1,42 +1,152 @@
 //! # USB Host Controller Interface
 //!
-//! Define a abstração para controladores host (xHCI, EHCI, etc).
+//! Trait e tipos para host controllers USB.
 
-use super::types::{UsbDeviceDescriptor, UsbSpeed};
-use alloc::vec::Vec;
+use super::device::UsbDevice;
+use super::types::*;
 
-/// Interface que todo controlador USB deve implementar para ser gerenciado pelo UsbBus
+// =============================================================================
+// TRAIT DE HOST CONTROLLER
+// =============================================================================
+
+/// Interface que todo host controller USB deve implementar.
+///
+/// ## STUB:
+/// Métodos têm implementações padrão que emitem warnings.
 pub trait UsbHostController: Send + Sync {
-    /// Nome do controlador (ex: "xHCI Controller 0")
+    /// Retorna nome do controller.
     fn name(&self) -> &'static str;
 
-    /// Escaneia as portas do controlador em busca de mudanças de estado
-    fn poll_ports(&self) -> Vec<UsbPortEvent>;
+    /// Retorna número de portas root.
+    fn port_count(&self) -> u8;
 
-    /// Realiza o ciclo de vida inicial de um dispositivo detectado
-    /// Retorna o DeviceDescriptor se o endereçamento e handshake inicial funcionarem.
-    fn setup_device(&self, port_id: u8) -> Result<UsbDeviceDescriptor, UsbError>;
+    /// Verifica status de uma porta.
+    fn port_status(&self, port: u8) -> PortStatus;
 
-    /// Envia uma transferência USB (Control, Bulk, Interrupt, Iso)
-    fn transfer(&self, request: UsbTransferRequest) -> Result<(), UsbError>;
+    /// Realiza reset de uma porta.
+    fn port_reset(&self, port: u8) -> bool;
+
+    /// Habilita uma porta.
+    fn port_enable(&self, port: u8);
+
+    /// Desabilita uma porta.
+    fn port_disable(&self, port: u8);
+
+    /// Aloca um slot/address para novo dispositivo.
+    fn allocate_address(&self) -> Option<u8>;
+
+    /// Libera um endereço.
+    fn free_address(&self, address: u8);
+
+    /// Executa uma control transfer.
+    fn control_transfer(
+        &self,
+        address: u8,
+        setup: &UsbSetupPacket,
+        data: Option<&mut [u8]>,
+    ) -> Result<usize, UsbError>;
+
+    /// Executa uma bulk transfer.
+    fn bulk_transfer(
+        &self,
+        address: u8,
+        endpoint: u8,
+        data: &mut [u8],
+        direction: UsbDirection,
+    ) -> Result<usize, UsbError>;
+
+    /// Executa uma interrupt transfer.
+    fn interrupt_transfer(
+        &self,
+        address: u8,
+        endpoint: u8,
+        data: &mut [u8],
+        direction: UsbDirection,
+    ) -> Result<usize, UsbError>;
+
+    /// Realiza reset do controller.
+    fn reset(&self) -> bool;
+
+    /// Desliga o controller.
+    fn shutdown(&self);
 }
 
-#[derive(Debug)]
-pub enum UsbError {
-    Timeout,
-    Babble,
-    Stall,
-    HardwareError,
-    NoMemory,
-}
+// =============================================================================
+// STATUS DE PORTA
+// =============================================================================
 
-#[derive(Debug)]
-pub struct UsbPortEvent {
-    pub port_id: u8,
+/// Status de uma porta USB.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PortStatus {
+    /// Dispositivo conectado.
     pub connected: bool,
-    pub speed: UsbSpeed,
+
+    /// Porta habilitada.
+    pub enabled: bool,
+
+    /// Reset em andamento.
+    pub resetting: bool,
+
+    /// Velocidade do dispositivo (se conectado).
+    pub speed: Option<UsbSpeed>,
+
+    /// Houve mudança de conexão.
+    pub connect_change: bool,
+
+    /// Houve mudança de enable.
+    pub enable_change: bool,
+
+    /// Porta em overcurrent.
+    pub overcurrent: bool,
 }
 
-pub struct UsbTransferRequest {
-    // TODO: Definir campos para transferências universais
+// =============================================================================
+// ERROS USB
+// =============================================================================
+
+/// Erros de operações USB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsbError {
+    /// Dispositivo não respondeu (timeout).
+    Timeout,
+
+    /// Dispositivo enviou STALL.
+    Stall,
+
+    /// Erro de CRC ou bitstuff.
+    DataError,
+
+    /// Buffer muito pequeno.
+    BufferTooSmall,
+
+    /// Dispositivo não existe.
+    NoDevice,
+
+    /// Endpoint inválido.
+    InvalidEndpoint,
+
+    /// Transfer cancelada.
+    Cancelled,
+
+    /// Erro do host controller.
+    HostError,
+
+    /// Erro desconhecido.
+    Unknown,
+}
+
+impl UsbError {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Timeout => "Timeout",
+            Self::Stall => "Stall",
+            Self::DataError => "Data Error",
+            Self::BufferTooSmall => "Buffer Too Small",
+            Self::NoDevice => "No Device",
+            Self::InvalidEndpoint => "Invalid Endpoint",
+            Self::Cancelled => "Cancelled",
+            Self::HostError => "Host Error",
+            Self::Unknown => "Unknown",
+        }
+    }
 }

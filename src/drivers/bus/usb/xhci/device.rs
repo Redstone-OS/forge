@@ -1,125 +1,63 @@
-use super::controller::XhciController;
-use super::regs;
-use super::ring::Ring;
-use super::structs::Trb;
-use super::types::{UsbDevice, UsbSpeed};
-use crate::drivers::usb::mass_storage;
-use crate::mm::translate_addr;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+//! # xHCI Device Management
+//!
+//! Alocação de slots e gerenciamento de contextos de dispositivos.
 
-impl XhciController {
-    pub fn enable_slot(&mut self) -> Option<u8> {
-        let mut trb = Trb::new();
-        trb.set_type(regs::trb_type::ENABLE_SLOT);
-        let resp = self.send_command(trb)?;
-        Some((resp.control >> 24) as u8)
-    }
+use super::structs::*;
+use super::types::*;
 
-    pub fn address_device(&mut self, slot_id: u8, port: u8, speed: UsbSpeed) -> bool {
-        // 1. Alocar buffers para Input Context e Output Device Context (4KB alinhado)
-        let mut input_vec: Vec<u8> = Vec::with_capacity(4096 + 64);
-        for _ in 0..input_vec.capacity() {
-            input_vec.push(0);
-        }
-        let input_ptr_raw = input_vec.as_ptr() as u64;
-        let input_virt = (input_ptr_raw + 63) & !63;
+/// Aloca um slot para um novo dispositivo.
+///
+/// ## STUB:
+/// Não envia comando real.
+pub fn allocate_slot() -> Option<u8> {
+    crate::kwarn!("(xHCI Device) allocate_slot() stub");
 
-        let mut output_vec: Vec<u8> = Vec::with_capacity(4096 + 64);
-        for _ in 0..output_vec.capacity() {
-            output_vec.push(0);
-        }
-        let output_ptr_raw = output_vec.as_ptr() as u64;
-        let output_virt = (output_ptr_raw + 63) & !63;
+    // TODO:
+    // 1. Enviar Enable Slot Command
+    // 2. Aguardar completion no Event Ring
+    // 3. Retornar slot ID
 
-        // 2. Registrar no DCBAA
-        let slot_phys = translate_addr(output_virt).expect("Output Context Phys");
-        unsafe {
-            let entry = (self.dcbaa_virt + (slot_id as u64 * 8)) as *mut u64;
-            entry.write_volatile(slot_phys);
-        }
+    None
+}
 
-        // 3. ICC (Input Control Context) - Flags de adição A0 e A1
-        unsafe {
-            let add_flags = (input_virt + 4) as *mut u32;
-            add_flags.write_volatile(0x03); // A0 (Slot) e A1 (EP0)
-        }
+/// Libera um slot.
+pub fn free_slot(_slot_id: u8) {
+    crate::kwarn!("(xHCI Device) free_slot() stub");
 
-        // 4. Slot Context (Offset 32)
-        let slot_ctx = input_virt + 32;
-        let speed_val = match speed {
-            UsbSpeed::Low => 2,
-            UsbSpeed::Full => 1,
-            UsbSpeed::High => 3,
-            UsbSpeed::Super => 4,
-            _ => 1,
-        };
-        unsafe {
-            let d0 = slot_ctx as *mut u32;
-            d0.write_volatile((1 << 27) | (speed_val << 20)); // Context Entries = 1, Speed
-            let d1 = (slot_ctx + 4) as *mut u32;
-            d1.write_volatile((port as u32) << 16); // Port Num
-        }
+    // TODO: Enviar Disable Slot Command
+}
 
-        // 5. EP0 Context (Offset 32 + context_size)
-        let ep0_ctx = slot_ctx + self.context_size as u64;
-        let ep0_ring = Ring::new_default().expect("EP0 Ring");
-        let ep0_phys = ep0_ring.phys_addr().as_u64();
+/// Atribui endereço a um dispositivo.
+///
+/// ## STUB:
+/// Não envia comando real.
+pub fn address_device(_slot_id: u8, _port: u8, _speed: u8) -> Option<u8> {
+    crate::kwarn!("(xHCI Device) address_device() stub");
 
-        let mps = match speed {
-            UsbSpeed::Super => 512,
-            UsbSpeed::High => 64,
-            _ => 8,
-        };
+    // TODO:
+    // 1. Preparar Input Context
+    // 2. Enviar Address Device Command
+    // 3. Aguardar completion
+    // 4. Retornar device address
 
-        unsafe {
-            let d0 = ep0_ctx as *mut u32;
-            d0.write_volatile(3 << 1); // CErr = 3
-            let d1 = (ep0_ctx + 4) as *mut u32;
-            d1.write_volatile((4 << 3) | (mps << 16)); // Type=Control, MPS
-            let d2 = (ep0_ctx + 8) as *mut u32;
-            d2.write_volatile((ep0_phys as u32) | 1); // DCS=1
-            let d3 = (ep0_ctx + 12) as *mut u32;
-            d3.write_volatile((ep0_phys >> 32) as u32);
-        }
+    None
+}
 
-        // 6. Enviar comando ADDRESS_DEVICE
-        let mut trb = Trb::new();
-        trb.set_param_ptr(translate_addr(input_virt).expect("Input Context Phys"));
-        trb.control = (slot_id as u32) << 24;
-        trb.set_type(regs::trb_type::ADDRESS_DEVICE);
+/// Configura endpoints de um dispositivo.
+pub fn configure_endpoints(_slot_id: u8, _endpoints: &[EndpointConfig]) -> bool {
+    crate::kwarn!("(xHCI Device) configure_endpoints() stub");
 
-        if self.send_command(trb).is_some() {
-            // Criar e salvar dispositivo
-            let mut device = UsbDevice::new(slot_id, port, speed);
-            device.rings[1] = Some(ep0_ring); // Salvar anel EP0
-            self.devices.push(device);
-            self.mem_keepalive.push(input_vec);
-            self.mem_keepalive.push(output_vec);
-            true
-        } else {
-            false
-        }
-    }
+    // TODO: Enviar Configure Endpoint Command
 
-    pub fn enumerate_device(&mut self, slot_id: u8) {
-        let device_index = self.devices.iter().position(|d| d.slot_id == slot_id);
-        if let Some(index) = device_index {
-            self.devices[index].device_class = 0x08; // Forçar Mass Storage para teste
+    false
+}
 
-            if self.devices[index].device_class == 0x08 {
-                let driver = mass_storage::UsbMassStorage::new(slot_id, 1, 2, 0, 0);
-                if driver.initialize().is_ok() {
-                    mass_storage::register_device(Arc::new(driver));
-                }
-            }
-        }
-    }
-
-    pub fn disable_slot(&mut self, slot_id: u8) -> bool {
-        let mut trb = Trb::new();
-        trb.control = (slot_id as u32) << 24;
-        trb.set_type(regs::trb_type::DISABLE_SLOT);
-        self.send_command(trb).is_some()
-    }
+/// Configuração de endpoint.
+#[derive(Debug, Clone)]
+pub struct EndpointConfig {
+    pub endpoint_num: u8,
+    pub direction_in: bool,
+    pub transfer_type: u8,
+    pub max_packet_size: u16,
+    pub interval: u8,
 }

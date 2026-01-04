@@ -1,107 +1,103 @@
-//! # xHCI (eXtensible Host Controller Interface)
+//! # xHCI - eXtensible Host Controller Interface (USB 3.0+)
 //!
-//! Driver para controladores USB 3.0+.
-//! Este módulo implementa a trait UsbHostController para o USB Core.
+//! Este módulo implementa o driver do **xHCI**, o host controller padrão
+//! para USB 3.0 e superior. É o controller mais complexo mas também
+//! mais capaz.
+//!
+//! ## Características:
+//! - Suporta todas as velocidades USB (Low, Full, High, Super, Super+)
+//! - Command Ring para enviar comandos ao controller
+//! - Event Ring para receber respostas
+//! - Transfer Rings por endpoint
+//! - Slots para cada dispositivo
+//!
+//! ## Estruturas Principais:
+//! - **DCBAA**: Device Context Base Address Array
+//! - **Command Ring**: Fila de comandos
+//! - **Event Ring**: Fila de eventos/completions
+//! - **Transfer Ring**: Fila de transfers por endpoint
+//!
+//! ## STUB:
+//! Estruturas básicas definidas. Implementação real incompleta.
 
-pub mod controller;
-pub mod device;
-pub mod global;
-pub mod port;
-pub mod regs;
-pub mod ring;
-pub mod structs;
-pub mod transfer;
-pub mod types;
+pub mod controller; // Controller principal
+pub mod device; // Device slots
+pub mod port; // Gerenciamento de portas
+pub mod regs; // Registradores xHCI
+pub mod ring; // Transfer/Command/Event rings
+pub mod structs; // TRBs e contextos
+pub mod transfer; // Operações de transfer
+pub mod types; // Tipos e constantes
 
-use self::controller::XhciController;
-use super::super::base::device::{Device, DeviceState};
-use super::super::base::driver::{DeviceType, Driver, DriverError};
-use super::host::{UsbDeviceDescriptor, UsbError, UsbHostController, UsbPortEvent};
-use super::types::UsbSpeed as UniversalSpeed;
+use crate::drivers::bus::pci;
 use crate::sync::Spinlock;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
-/// Wrapper para integrar o xHCI com o RDM e UsbBus
-pub struct XhciDriver;
+// Re-exports
+pub use controller::XhciController;
+pub use types::*;
 
-impl Driver for XhciDriver {
-    fn name(&self) -> &'static str {
-        "xHCI USB 3.0 Host Driver"
-    }
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
 
-    fn device_type(&self) -> DeviceType {
-        DeviceType::Controller
-    }
+/// Lista de controllers xHCI.
+static XHCI_CONTROLLERS: Spinlock<Vec<Arc<XhciController>>> = Spinlock::new(Vec::new());
 
-    fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
-        // 1. Verificar se é um controlador USB habilitado via PCI
-        // TODO: Validar Class/Subclass se necessário
+/// Flag de inicialização.
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
 
-        let pci_info = match dev.get_data::<crate::drivers::bus::pci::device::PciDeviceInfo>() {
-            Some(info) => info,
-            None => return Err(DriverError::NotSupported),
-        };
+// =============================================================================
+// FUNÇÕES DE INICIALIZAÇÃO
+// =============================================================================
 
-        crate::kinfo!("(xHCI) Probing controlador em PCI:", dev.bus_address);
+/// Inicializa todos os controllers xHCI detectados.
+pub fn init() {
+    crate::kinfo!("(xHCI) Inicializando controllers xHCI...");
 
-        // 2. Inicializar o controlador (isso requer transformar PciDeviceInfo em PciDevice ou similar)
-        // Por enquanto, usamos a lógica existente.
+    let host_controllers = super::HOST_CONTROLLERS.lock();
 
-        // let xhci = XhciController::new(pci_info).ok_or(DriverError::HardwareFault)?;
-        // let host_adapter = Arc::new(XhciHostAdapter { inner: Spinlock::new(xhci) });
+    for hc in host_controllers.iter() {
+        if hc.controller_type != super::HostControllerType::Xhci {
+            continue;
+        }
 
-        // 3. Registrar no UsbBus
-        // super::register_hcd(host_adapter);
+        crate::kinfo!("(xHCI) Inicializando controller em", hc.mmio_base);
 
-        Ok(())
-    }
-}
-
-pub struct XhciHostAdapter {
-    pub inner: Spinlock<XhciController>,
-}
-
-impl UsbHostController for XhciHostAdapter {
-    fn name(&self) -> &'static str {
-        "xHCI Host Controller"
-    }
-
-    fn poll_ports(&self) -> Vec<UsbPortEvent> {
-        let xhci = self.inner.lock();
-        let mut events = Vec::new();
-        for i in 1..=xhci.max_ports {
-            if let Some(port) = xhci.read_port_status(i) {
-                if port.connected {
-                    events.push(UsbPortEvent {
-                        port_id: i,
-                        connected: true,
-                        speed: match port.speed {
-                            super::xhci::types::UsbSpeed::Low => UniversalSpeed::LowSpeed,
-                            super::xhci::types::UsbSpeed::Full => UniversalSpeed::FullSpeed,
-                            super::xhci::types::UsbSpeed::High => UniversalSpeed::HighSpeed,
-                            super::xhci::types::UsbSpeed::Super => UniversalSpeed::SuperSpeed,
-                            super::xhci::types::UsbSpeed::SuperPlus => {
-                                UniversalSpeed::SuperSpeedPlus
-                            }
-                        },
-                    });
-                }
+        match XhciController::new(hc.mmio_base, hc.irq) {
+            Some(controller) => {
+                let arc = Arc::new(controller);
+                XHCI_CONTROLLERS.lock().push(arc);
+            }
+            None => {
+                crate::kerror!("(xHCI) Falha ao inicializar controller");
             }
         }
-        events
     }
 
-    fn setup_device(&self, port_id: u8) -> Result<UsbDeviceDescriptor, UsbError> {
-        // TODO: Migrar lógica de address_device e read_descriptor para cá
-        Err(UsbError::HardwareError)
-    }
+    let count = XHCI_CONTROLLERS.lock().len();
+    *INITIALIZED.lock() = count > 0;
 
-    fn transfer(&self, _request: super::host::UsbTransferRequest) -> Result<(), UsbError> {
-        Ok(())
+    crate::kinfo!("(xHCI) Inicializados", count, "controllers");
+}
+
+/// Desliga todos os controllers xHCI.
+pub fn shutdown() {
+    crate::kinfo!("(xHCI) Shutdown...");
+
+    let controllers = XHCI_CONTROLLERS.lock();
+    for ctrl in controllers.iter() {
+        ctrl.shutdown();
     }
 }
 
-pub fn init() {
-    crate::kdebug!("(xHCI) Registrando driver de hardware no RDM...");
-    crate::drivers::base::register_driver(Arc::new(XhciDriver));
+/// Retorna número de controllers xHCI.
+pub fn controller_count() -> usize {
+    XHCI_CONTROLLERS.lock().len()
+}
+
+/// Retorna referência ao primeiro controller.
+pub fn get_primary_controller() -> Option<Arc<XhciController>> {
+    XHCI_CONTROLLERS.lock().first().cloned()
 }

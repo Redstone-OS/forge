@@ -1,93 +1,134 @@
-//! # Transferências xHCI
+//! # xHCI Transfer Operations
 //!
-//! Lógica para envio de comandos e transferências de dados (Bulk, Control).
+//! Operações de transferência USB via xHCI.
 
-use super::controller::XhciController;
-use super::regs;
-use super::structs::{SetupPacket, Trb};
+use super::structs::Trb;
+use super::types::*;
+use crate::drivers::bus::usb::host::UsbError;
+use crate::drivers::bus::usb::types::*;
 
-impl XhciController {
-    /// Envia um comando para o Command Ring e aguarda resposta
-    pub(super) fn send_command(&mut self, trb: Trb) -> Option<Trb> {
-        let mut cmd_ring = self.command_ring.take()?;
+/// Executa uma Control Transfer.
+///
+/// ## STUB:
+/// Não executa realmente.
+pub fn control_transfer(
+    _slot_id: u8,
+    setup: &UsbSetupPacket,
+    _data: Option<&mut [u8]>,
+) -> Result<usize, UsbError> {
+    crate::kwarn!("(xHCI Transfer) control_transfer() stub");
 
-        // Enfileirar TRB
-        cmd_ring.enqueue(trb);
-        let crcr = cmd_ring.phys_addr().as_u64() | (if cmd_ring.cycle() { 1 } else { 0 });
-        self.write_op64(regs::op::CRCR, crcr);
-        self.command_ring = Some(cmd_ring);
+    // TODO:
+    // 1. Preparar Setup Stage TRB
+    // 2. Se tem dados, preparar Data Stage TRB
+    // 3. Preparar Status Stage TRB
+    // 4. Enfileirar no Transfer Ring do endpoint 0
+    // 5. Ring doorbell
+    // 6. Aguardar completion no Event Ring
 
-        // Notificar controlador (Doorbell 0)
-        self.ring_doorbell(0, 0);
+    Err(UsbError::Unknown)
+}
 
-        // Polling no Event Ring
-        for _ in 0..10_000_000 {
-            if let Some(ref mut evt_ring) = self.event_ring {
-                if let Some(event) = evt_ring.dequeue() {
-                    let ptr = evt_ring.dequeue_ptr();
-                    self.update_erdp(ptr);
+/// Executa uma Bulk Transfer.
+///
+/// ## STUB:
+/// Não executa realmente.
+pub fn bulk_transfer(
+    _slot_id: u8,
+    _endpoint: u8,
+    _data: &mut [u8],
+    _direction: UsbDirection,
+) -> Result<usize, UsbError> {
+    crate::kwarn!("(xHCI Transfer) bulk_transfer() stub");
 
-                    if event.trb_type() == regs::trb_type::COMMAND_COMPLETION {
-                        let code = (event.status >> 24) & 0xFF;
-                        if code == regs::completion_code::SUCCESS as u32 {
-                            return Some(event);
-                        } else {
-                            crate::core::debug::display::log_hex(
-                                "(xHCI) Comando FALHOU. Code:",
-                                code as u64,
-                            );
-                            return None;
-                        }
-                    }
-                }
-            }
-            core::hint::spin_loop();
-        }
-        crate::core::debug::display::log("(xHCI) Erro: Comando TIMEOUT.");
-        None
+    // TODO:
+    // 1. Preparar Normal TRBs (pode precisar de vários para dados grandes)
+    // 2. Enfileirar no Transfer Ring do endpoint
+    // 3. Ring doorbell
+    // 4. Aguardar completion
+
+    Err(UsbError::Unknown)
+}
+
+/// Executa uma Interrupt Transfer.
+///
+/// ## STUB:
+/// Não executa realmente.
+pub fn interrupt_transfer(
+    _slot_id: u8,
+    _endpoint: u8,
+    _data: &mut [u8],
+    _direction: UsbDirection,
+) -> Result<usize, UsbError> {
+    crate::kwarn!("(xHCI Transfer) interrupt_transfer() stub");
+
+    Err(UsbError::Unknown)
+}
+
+/// Cria TRB de Setup Stage.
+pub fn create_setup_trb(setup: &UsbSetupPacket, transfer_type: u8, cycle: bool) -> Trb {
+    let mut trb = Trb::new();
+
+    // Parameter: setup packet (8 bytes)
+    trb.parameter = unsafe { core::mem::transmute_copy(setup) };
+
+    // Status: TRT (Transfer Type) e length=8
+    trb.status = 8 | ((transfer_type as u32) << 16);
+
+    // Control: TRB type = Setup, IDT=1 (Immediate Data)
+    trb.set_type(TRB_TYPE_SETUP);
+    trb.control |= 1 << 6; // IDT
+    trb.set_cycle(cycle);
+
+    trb
+}
+
+/// Cria TRB de Data Stage.
+pub fn create_data_trb(buffer_ptr: u64, length: u32, direction_in: bool, cycle: bool) -> Trb {
+    let mut trb = Trb::new();
+
+    trb.parameter = buffer_ptr;
+    trb.status = length;
+
+    trb.set_type(TRB_TYPE_DATA);
+    if direction_in {
+        trb.control |= 1 << 16; // DIR = 1 (IN)
+    }
+    trb.set_cycle(cycle);
+
+    trb
+}
+
+/// Cria TRB de Status Stage.
+pub fn create_status_trb(direction_in: bool, cycle: bool) -> Trb {
+    let mut trb = Trb::new();
+
+    trb.set_type(TRB_TYPE_STATUS);
+
+    // Para control read, status é OUT (device → host)
+    // Para control write, status é IN (host → device)
+    if !direction_in {
+        trb.control |= 1 << 16; // DIR = 1 (IN)
     }
 
-    /// Executa uma transferência de controle (Setup + Data + Status)
-    pub fn control_transfer(
-        &mut self,
-        _slot_id: u8,
-        _setup: SetupPacket,
-        _data: Option<&mut [u8]>,
-    ) -> bool {
-        crate::core::debug::display::log("(xHCI) Executando Control Transfer...");
-        true
+    trb.control |= 1 << 5; // IOC (Interrupt on Completion)
+    trb.set_cycle(cycle);
+
+    trb
+}
+
+/// Cria TRB Normal (para Bulk/Interrupt).
+pub fn create_normal_trb(buffer_ptr: u64, length: u32, ioc: bool, cycle: bool) -> Trb {
+    let mut trb = Trb::new();
+
+    trb.parameter = buffer_ptr;
+    trb.status = length;
+
+    trb.set_type(TRB_TYPE_NORMAL);
+    if ioc {
+        trb.control |= 1 << 5; // IOC
     }
+    trb.set_cycle(cycle);
 
-    pub fn bulk_transfer(
-        &mut self,
-        slot_id: u8,
-        endpoint_id: u8, // EP ID (1-31)
-        data: &mut [u8],
-        direction_in: bool,
-    ) -> bool {
-        // Obter anel de transferência para este endpoint
-        // TODO: Atualmente simplificado assumindo que os anéis já existem ou usando um fallback
-        // Para fins de DEPURAÇÃO em hardware real, vamos logar a tentativa
-        // crate::core::debug::display::log_hex("(xHCI) Bulk Transfer EP:", endpoint_id as u64);
-
-        // Criar TRB Normal
-        let phys = crate::mm::translate_addr(data.as_ptr() as u64).unwrap_or(0);
-        if phys == 0 {
-            return false;
-        }
-
-        let mut trb = Trb::new();
-        trb.set_param_ptr(phys);
-        trb.status = (data.len() as u32) & 0x1FFFF;
-        trb.set_type(regs::trb_type::NORMAL);
-        trb.control |= 1 << 5; // IOC (Interrupt On Completion)
-
-        // Enviar via command ring (Atenção: Bulk TRBs deveriam ir para Transfer Rings!)
-        // Como o sistema ainda está em bootstrap, vamos tentar via Command Ring se for o caso
-        // mas a especificação exige Transfer Rings por endpoint.
-
-        // Simulação de sucesso para não travar enquanto o sistema de Transfer Rings por Device não está pronto
-        // No hardware real, isso requer que configure_endpoint tenha sido chamado.
-        true
-    }
+    trb
 }

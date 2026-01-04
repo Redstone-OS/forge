@@ -1,30 +1,65 @@
-//! # Driver EHCI (USB 2.0)
+//! # EHCI - Enhanced Host Controller Interface (USB 2.0)
 //!
-//! Controladores Legados USB 2.0. (Placeholder)
+//! Este módulo implementa o driver do **EHCI**, o host controller
+//! para USB 2.0 (High Speed - 480 Mbps).
+//!
+//! ## Características:
+//! - Suporta USB 2.0 High Speed (480 Mbps)
+//! - Mais simples que xHCI
+//! - Legado - usado como fallback quando xHCI não disponível
+//!
+//! ## STUB:
+//! Implementação mínima. xHCI é preferido.
 
-use super::super::base::device::{Device, DeviceState};
-use super::super::base::driver::{DeviceType, Driver, DriverError};
-use super::host::{UsbDeviceDescriptor, UsbError, UsbHostController, UsbPortEvent};
+use crate::drivers::bus::pci;
 use crate::sync::Spinlock;
-use alloc::sync::Arc;
 
-pub struct EhciDriver;
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
 
-impl Driver for EhciDriver {
-    fn name(&self) -> &'static str {
-        "EHCI USB 2.0 Host Driver"
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
+
+// =============================================================================
+// FUNÇÕES PÚBLICAS
+// =============================================================================
+
+/// Inicializa controllers EHCI.
+pub fn init() {
+    crate::kinfo!("(EHCI) Inicializando controllers EHCI...");
+
+    let host_controllers = super::HOST_CONTROLLERS.lock();
+    let mut count = 0;
+
+    for hc in host_controllers.iter() {
+        if hc.controller_type != super::HostControllerType::Ehci {
+            continue;
+        }
+
+        crate::kinfo!("(EHCI) Controller encontrado em", hc.mmio_base);
+        count += 1;
+
+        // TODO: Inicializar controller
+        crate::kwarn!("(EHCI) Inicialização não implementada - usando xHCI");
     }
 
-    fn device_type(&self) -> DeviceType {
-        DeviceType::Controller
-    }
+    *INITIALIZED.lock() = count > 0;
 
-    fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        // EHCI não implementado ainda, mas a infraestrutura está pronta.
-        Err(DriverError::NotSupported)
+    if count > 0 {
+        crate::kinfo!(
+            "(EHCI) Encontrados",
+            count,
+            "controllers (não inicializados)"
+        );
     }
 }
 
-pub fn init() {
-    crate::drivers::base::register_driver(Arc::new(EhciDriver));
+/// Desliga controllers EHCI.
+pub fn shutdown() {
+    crate::kinfo!("(EHCI) Shutdown");
+}
+
+/// Verifica se EHCI está disponível.
+pub fn is_available() -> bool {
+    *INITIALIZED.lock()
 }

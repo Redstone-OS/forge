@@ -1,126 +1,135 @@
-//! # ACPI Tables Parser
+//! # ACPI Table Definitions
 //!
-//! Responsável por localizar, mapear e validar as tabelas ACPI na memória física.
-//! O ACPI (Advanced Configuration and Power Interface) fornece a descrição do
-//! hardware que não pode ser descoberta dinamicamente (enumeração estática).
+//! Definições de estruturas para tabelas ACPI comuns.
 
-use core::ptr::NonNull;
+use super::AcpiTableHeader;
 
-/// Assinatura do RSDP (Root System Description Pointer)
-const RSDP_SIGNATURE: &[u8; 8] = b"RSD PTR ";
+// =============================================================================
+// SIGNATURES DE TABELAS
+// =============================================================================
 
+/// RSDT - Root System Description Table
+pub const RSDT_SIGNATURE: [u8; 4] = *b"RSDT";
+
+/// XSDT - Extended System Description Table
+pub const XSDT_SIGNATURE: [u8; 4] = *b"XSDT";
+
+/// MADT - Multiple APIC Description Table
+pub const MADT_SIGNATURE: [u8; 4] = *b"APIC";
+
+/// FADT - Fixed ACPI Description Table (também chamada FACP)
+pub const FADT_SIGNATURE: [u8; 4] = *b"FACP";
+
+/// MCFG - PCI Express Memory-Mapped Configuration Space
+pub const MCFG_SIGNATURE: [u8; 4] = *b"MCFG";
+
+/// HPET - High Precision Event Timer
+pub const HPET_SIGNATURE: [u8; 4] = *b"HPET";
+
+/// DSDT - Differentiated System Description Table
+pub const DSDT_SIGNATURE: [u8; 4] = *b"DSDT";
+
+/// SSDT - Secondary System Description Table
+pub const SSDT_SIGNATURE: [u8; 4] = *b"SSDT";
+
+/// BGRT - Boot Graphics Resource Table
+pub const BGRT_SIGNATURE: [u8; 4] = *b"BGRT";
+
+// =============================================================================
+// MCFG - PCI EXPRESS CONFIGURATION
+// =============================================================================
+
+/// MCFG Entry - cada entrada descreve um segmento PCIe
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-pub struct Rsdp {
-    signature: [u8; 8],
-    checksum: u8,
-    oem_id: [u8; 6],
-    revision: u8,
-    rsdt_address: u32,
+pub struct McfgEntry {
+    /// Endereço base do ECAM
+    pub base_address: u64,
+    /// Segmento PCI
+    pub segment: u16,
+    /// Primeiro barramento neste segmento
+    pub start_bus: u8,
+    /// Último barramento neste segmento
+    pub end_bus: u8,
+    /// Reservado
+    pub reserved: u32,
 }
 
+// =============================================================================
+// HPET - HIGH PRECISION EVENT TIMER
+// =============================================================================
+
+/// HPET Table
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-pub struct RsdpExtended {
-    base: Rsdp,
-    length: u32,
-    xsdt_address: u64,
-    extended_checksum: u8,
-    reserved: [u8; 3],
+pub struct HpetTable {
+    pub header: AcpiTableHeader,
+    /// Hardware revision ID
+    pub hardware_rev_id: u8,
+    /// Número de comparadores no bloco
+    pub comparator_count: u8,
+    /// Número do timer
+    pub timer_number: u16,
+    /// Frequência mínima de clock
+    pub min_clock_tick: u16,
+    /// Atributos de página
+    pub page_protection: u8,
+    /// Reservado
+    pub reserved: u8,
+    /// Endereço base do HPET
+    pub base_address: HpetAddress,
+    /// HPET number
+    pub hpet_number: u8,
+    /// Tick mínimo do main counter
+    pub main_counter_min_tick: u16,
+    /// Atributos de proteção
+    pub page_protection_oem: u8,
 }
 
-/// Cabeçalho comum para todas as tabelas ACPI (SDT Header)
+/// Endereço do HPET (Generic Address Structure)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-pub struct SdtHeader {
-    pub signature: [u8; 4],
-    pub length: u32,
-    pub revision: u8,
-    pub checksum: u8,
-    pub oem_id: [u8; 6],
-    pub oem_table_id: [u8; 8],
-    pub oem_revision: u32,
-    pub creator_id: [u8; 4],
-    pub creator_revision: u32,
+pub struct HpetAddress {
+    pub address_space_id: u8,
+    pub register_bit_width: u8,
+    pub register_bit_offset: u8,
+    pub access_size: u8,
+    pub address: u64,
 }
 
-impl SdtHeader {
-    pub fn signature_as_str(&self) -> &str {
-        core::str::from_utf8(&self.signature).unwrap_or("????")
-    }
+// =============================================================================
+// GENERIC ADDRESS STRUCTURE (GAS)
+// =============================================================================
 
-    /// Valida o checksum da tabela
-    pub fn validate(&self) -> bool {
-        let ptr = self as *const _ as *const u8;
-        let mut sum: u8 = 0;
-        for i in 0..self.length {
-            sum = sum.wrapping_add(unsafe { *ptr.add(i as usize) });
-        }
-        sum == 0
-    }
+/// Generic Address Structure - usado em várias tabelas
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+pub struct GenericAddress {
+    /// Address space ID (0=system memory, 1=system I/O)
+    pub address_space_id: u8,
+    /// Largura do registrador em bits
+    pub register_bit_width: u8,
+    /// Offset do bit dentro do registrador
+    pub register_bit_offset: u8,
+    /// Tamanho do acesso (0=undefined, 1=byte, 2=word, 3=dword, 4=qword)
+    pub access_size: u8,
+    /// Endereço
+    pub address: u64,
 }
 
-pub struct AcpiTables {
-    pub rsdt: Option<NonNull<SdtHeader>>,
-    pub xsdt: Option<NonNull<SdtHeader>>,
+// =============================================================================
+// FUNÇÕES AUXILIARES
+// =============================================================================
+
+/// Verifica signature de uma tabela.
+pub fn check_signature(header: &AcpiTableHeader, expected: &[u8; 4]) -> bool {
+    &header.signature == expected
 }
 
-impl AcpiTables {
-    pub const fn new() -> Self {
-        Self {
-            rsdt: None,
-            xsdt: None,
-        }
-    }
-
-    /// Tenta localizar a tabela raiz (XSDT ou RSDT)
-    pub fn init(&mut self, rsdp_addr: u64) {
-        // Mapear RSDP (Isso deve ser feito com cuidado em HHDM)
-        let rsdp = unsafe { &*(rsdp_addr as *const Rsdp) };
-
-        if rsdp.revision >= 2 {
-            let rsdp_ext = unsafe { &*(rsdp_addr as *const RsdpExtended) };
-            crate::kdebug!("(ACPI) Localizado XSDT em:", rsdp_ext.xsdt_address);
-            self.xsdt = NonNull::new(rsdp_ext.xsdt_address as *mut SdtHeader);
-        } else {
-            crate::kdebug!("(ACPI) Localizado RSDT em:", rsdp.rsdt_address as u64);
-            self.rsdt = NonNull::new(rsdp.rsdt_address as *mut SdtHeader);
-        }
-    }
-
-    /// Busca uma tabela específica pela assinatura (ex: "APIC", "FACP")
-    pub fn find_table(&self, signature: &[u8; 4]) -> Option<NonNull<SdtHeader>> {
-        if let Some(xsdt_ptr) = self.xsdt {
-            let xsdt = unsafe { xsdt_ptr.as_ref() };
-            let entries = (xsdt.length - core::mem::size_of::<SdtHeader>() as u32) / 8;
-            let ptr = unsafe {
-                (xsdt_ptr.as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>())
-                    as *const u64
-            };
-
-            for i in 0..entries {
-                let table_ptr = unsafe { *ptr.add(i as usize) as *const SdtHeader };
-                let table = unsafe { &*table_ptr };
-                if &table.signature == signature {
-                    return NonNull::new(table_ptr as *mut SdtHeader);
-                }
-            }
-        } else if let Some(rsdt_ptr) = self.rsdt {
-            let rsdt = unsafe { rsdt_ptr.as_ref() };
-            let entries = (rsdt.length - core::mem::size_of::<SdtHeader>() as u32) / 4;
-            let ptr = unsafe {
-                (rsdt_ptr.as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>())
-                    as *const u32
-            };
-
-            for i in 0..entries {
-                let table_ptr = unsafe { *ptr.add(i as usize) as *const SdtHeader };
-                let table = unsafe { &*table_ptr };
-                if &table.signature == signature {
-                    return NonNull::new(table_ptr as *mut SdtHeader);
-                }
-            }
-        }
-        None
-    }
+/// Valida checksum de uma tabela ACPI.
+///
+/// A soma de todos os bytes deve ser 0 (mod 256).
+pub fn validate_checksum(data: &[u8]) -> bool {
+    let sum: u8 = data.iter().fold(0u8, |acc, &x| acc.wrapping_add(x));
+    sum == 0
 }

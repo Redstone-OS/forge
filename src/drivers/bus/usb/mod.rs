@@ -1,129 +1,216 @@
-//! # Universal Serial Bus (USB) Subsystem
+//! # USB Stack - Universal Serial Bus
 //!
-//! O UsbBus é o barramento lógico que abstrai todos os dispositivos USB conectados.
-//! Ele orquestra os Host Controllers (HCDs), realiza a enumeração universal 
-//! e o pareamento com drivers funcionais (Mass Storage, HID, etc).
+//! Este módulo implementa o stack USB do RedstoneOS. O USB é um barramento
+//! hierárquico versátil usado por milhares de tipos de dispositivos.
+//!
+//! ## Arquitetura:
+//! ```text
+//! ┌─────────────────────────────────────┐
+//! │          USB Device Drivers         │  (HID, Storage, Audio, etc)
+//! ├─────────────────────────────────────┤
+//! │               USB Core              │  (este módulo)
+//! ├────────────┬────────────┬───────────┤
+//! │      xHCI  │   EHCI     │   OHCI    │  (Host Controllers)
+//! ├────────────┴────────────┴───────────┤
+//! │                 PCI                 │  (Transport)
+//! └─────────────────────────────────────┘
+//! ```
+//!
+//! ## Host Controllers:
+//! - **xHCI**: USB 3.x (SuperSpeed, SuperSpeed+) - PRINCIPAL
+//! - **EHCI**: USB 2.0 (High Speed) - Legado
+//! - **OHCI/UHCI**: USB 1.x (Full/Low Speed) - Muito antigo
+//!
+//! ## Tipos de Transfer:
+//! - **Control**: Configuração do dispositivo
+//! - **Bulk**: Dados grandes, não urgentes (storage)
+//! - **Interrupt**: Dados pequenos, periódicos (HID)
+//! - **Isochronous**: Tempo real (áudio, vídeo)
+//!
+//! ## STUB:
+//! Stack parcialmente implementado. xHCI tem estruturas básicas,
+//! drivers de dispositivo são stubs.
 
-pub mod types;
+pub mod device; // Estrutura de dispositivo USB
 pub mod host;
-pub mod xhci;
+pub mod types; // Tipos e constantes USB // Interface de host controller
 
-use alloc::vec::Vec;
-use alloc::sync::Arc;
+// Host Controllers
+pub mod ehci;
+pub mod xhci; // xHCI (USB 3.0+) // EHCI (USB 2.0)
+
+// Device Drivers
+pub mod mass_storage; // USB Mass Storage
+
+// Re-exports
+pub use device::UsbDevice;
+pub use types::*;
+
+use crate::drivers::base::bus::{Bus, BusType};
+use crate::drivers::base::device::Device;
+use crate::drivers::bus::pci;
 use crate::sync::Spinlock;
-use super::super::base::bus::{Bus, BusType, BusAddress};
-use super::super::base::device::{Device, DeviceId, DeviceState};
-use super::super::base::driver::DeviceType;
-use self::host::UsbHostController;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
-/// Gerenciador Universal de USB
-pub struct UsbBus {
-    /// Lista de controladores físicos registrados (xHCI, EHCI)
-    hosts: Spinlock<Vec<Arc<dyn UsbHostController>>>,
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
+
+/// Lista de host controllers detectados.
+static HOST_CONTROLLERS: Spinlock<Vec<HostControllerInfo>> = Spinlock::new(Vec::new());
+
+/// Lista de dispositivos USB conectados.
+static USB_DEVICES: Spinlock<Vec<UsbDevice>> = Spinlock::new(Vec::new());
+
+/// Flag de inicialização.
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
+
+/// Informações de um host controller.
+#[derive(Debug, Clone)]
+pub struct HostControllerInfo {
+    pub controller_type: HostControllerType,
+    pub pci_address: Option<pci::PciAddress>,
+    pub mmio_base: u64,
+    pub irq: u8,
+    pub max_ports: u8,
 }
 
-impl UsbBus {
-    pub const fn new() -> Self {
-        Self {
-            hosts: Spinlock::new(Vec::new()),
-        }
-    }
-
-    /// Registra um novo controlador host no barramento USB
-    pub fn register_host(&self, host: Arc<dyn UsbHostController>) {
-        crate::kinfo!("(USB) Novo Host Controller registrado:", host.name());
-        self.hosts.lock().push(host);
-    }
+/// Tipo de host controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostControllerType {
+    Xhci, // USB 3.0+
+    Ehci, // USB 2.0
+    Ohci, // USB 1.1
+    Uhci, // USB 1.0
 }
 
-impl Bus for UsbBus {
-    fn name(&self) -> &'static str {
-        "Universal Serial Bus (USB) Manager"
-    }
+// =============================================================================
+// FUNÇÕES DE INICIALIZAÇÃO
+// =============================================================================
 
-    fn bus_type(&self) -> BusType {
-        BusType::Usb
-    }
-
-    /// O UsbBus percorre todos os controladores registrados e perfura as portas
-    /// em busca de novos dispositivos.
-    fn scan(&self) -> Vec<Device> {
-        let mut found_devices = Vec::new();
-        let hosts = self.hosts.lock();
-
-        crate::ktrace!("(USB) Iniciando scan em todos os hosts registrados...");
-
-        for host in hosts.iter() {
-            let events = host.poll_ports();
-            
-            for event in events.iter().filter(|e| e.connected) {
-                crate::kinfo!("(USB) Dispositivo detectado na porta:", event.port_id as u64);
-                
-                // Realizar o "Universal Handshake"
-                match host.setup_device(event.port_id) {
-                    Ok(desc) => {
-                        let dev = Device::new(
-                            DeviceId(desc.id_vendor as u64 << 16 | desc.id_product as u64),
-                            "USB-Device",
-                            BusType::Usb,
-                            BusAddress::Usb { hub_addr: 0, port: event.port_id },
-                            self.map_class_to_type(desc.device_class),
-                        );
-
-                        // TODO: Armazenar descriptor nos dados privados do dispositivo
-                        // dev.set_data(desc); 
-                        
-                        found_devices.push(dev);
-                    }
-                    Err(e) => {
-                        crate::kerror!("(USB) Falha ao analisar dispositivo na porta:", event.port_id as u64);
-                        crate::kdebug!("  -> Motivo:", 0xEE); // TODO: log enum
-                    }
-                }
-            }
-        }
-
-        found_devices
-    }
-
-    fn reset_device(&self, _dev: &mut Device) -> bool {
-        // TODO: Localizar o host responsável e resetar a porta correspondente
-        false
-    }
-}
-
-impl UsbBus {
-    /// Mapeia as classes USB para tipos de dispositivos RedstoneOS
-    fn map_class_to_type(&self, class: u8) -> DeviceType {
-        match class {
-            0x00 => DeviceType::Unknown,    // Definido via Interface Descriptor
-            0x03 => DeviceType::Input,      // HID
-            0x08 => DeviceType::Storage,    // Mass Storage
-            0x09 => DeviceType::Controller, // Hub
-            0x01 => DeviceType::Audio,      // Audio
-            0x02 => DeviceType::Network,    // Communication (CDC)
-            0x0E => DeviceType::Display,    // Video
-            _ => DeviceType::Unknown,
-        }
-    }
-}
-
-// Singleton global do barramento USB
-static USB_BUS_INSTANCE: UsbBus = UsbBus::new();
-
-/// Inicializa o subsistema USB central
+/// Inicializa o stack USB.
 pub fn init() {
-    crate::kdebug!("(USB) Inicializando barramento lógico universal...");
-    
-    // 1. Inicializar os drivers de hardware conhecidos (como xHCI)
-    // Eles se registrarão no USB_BUS_INSTANCE automaticamente.
+    crate::kinfo!("(USB) Inicializando USB Stack...");
+
+    // Detecta host controllers via PCI
+    detect_host_controllers();
+
+    // Inicializa xHCI primeiro (mais moderno)
     xhci::init();
 
-    // 2. Registra-se como um barramento disponível no RDM
-    // crate::drivers::base::bus::register(Arc::new(USB_BUS_INSTANCE));
+    // EHCI como fallback
+    ehci::init();
+
+    *INITIALIZED.lock() = true;
+
+    crate::kinfo!("(USB) Stack inicializado");
 }
 
-/// Permite que um driver de hardware (HCD) se registre no barramento central
-pub fn register_hcd(host: Arc<dyn UsbHostController>) {
-    USB_BUS_INSTANCE.register_host(host);
+/// Detecta host controllers USB via PCI.
+fn detect_host_controllers() {
+    let pci_devices = pci::PCI_DEVICES.lock();
+    let mut controllers = HOST_CONTROLLERS.lock();
+
+    for pci_dev in pci_devices.iter() {
+        // USB controllers: class=0x0C, subclass=0x03
+        if pci_dev.class_code != 0x0C || pci_dev.subclass_code != 0x03 {
+            continue;
+        }
+
+        let hc_type = match pci_dev.prog_if {
+            pci::config::PCI_PROG_IF_XHCI => HostControllerType::Xhci,
+            pci::config::PCI_PROG_IF_EHCI => HostControllerType::Ehci,
+            pci::config::PCI_PROG_IF_OHCI => HostControllerType::Ohci,
+            pci::config::PCI_PROG_IF_UHCI => HostControllerType::Uhci,
+            _ => continue,
+        };
+
+        crate::kinfo!(
+            "(USB) Host Controller encontrado:",
+            match hc_type {
+                HostControllerType::Xhci => "xHCI",
+                HostControllerType::Ehci => "EHCI",
+                HostControllerType::Ohci => "OHCI",
+                HostControllerType::Uhci => "UHCI",
+            }
+        );
+
+        // Obtém BAR0 (MMIO base)
+        let mmio_base = pci_dev.bar_address(0);
+
+        controllers.push(HostControllerInfo {
+            controller_type: hc_type,
+            pci_address: Some(pci_dev.address),
+            mmio_base,
+            irq: pci_dev.interrupt_line,
+            max_ports: 0, // Será detectado depois
+        });
+    }
+
+    crate::kinfo!("(USB) Detectados", controllers.len(), "host controllers");
+}
+
+/// Escaneia por dispositivos USB conectados.
+pub fn scan() -> Vec<Device> {
+    crate::kinfo!("(USB) Escaneando dispositivos USB...");
+
+    // TODO: Implementar enumeration real
+    crate::kwarn!("(USB) scan() não totalmente implementado");
+
+    Vec::new()
+}
+
+/// Retorna número de dispositivos USB.
+pub fn device_count() -> usize {
+    USB_DEVICES.lock().len()
+}
+
+/// Desliga o stack USB.
+pub fn shutdown() {
+    crate::kinfo!("(USB) Shutdown do stack USB...");
+
+    xhci::shutdown();
+    ehci::shutdown();
+}
+
+// =============================================================================
+// FUNÇÕES DE REGISTRO DE DISPOSITIVO
+// =============================================================================
+
+/// Registra um novo dispositivo USB descoberto.
+///
+/// Chamado pelo host controller quando um novo dispositivo é conectado.
+pub fn register_device(device: UsbDevice) {
+    crate::kinfo!(
+        "(USB) Novo dispositivo:",
+        device.vendor_id,
+        ":",
+        device.product_id
+    );
+
+    USB_DEVICES.lock().push(device);
+}
+
+/// Remove um dispositivo USB (desconectado).
+pub fn unregister_device(address: u8) {
+    crate::kinfo!("(USB) Dispositivo removido, addr:", address);
+    USB_DEVICES.lock().retain(|d| d.address != address);
+}
+
+// =============================================================================
+// FUNÇÕES DE CONSULTA
+// =============================================================================
+
+/// Retorna lista de host controllers.
+pub fn get_host_controllers() -> Vec<HostControllerInfo> {
+    HOST_CONTROLLERS.lock().clone()
+}
+
+/// Verifica se há algum xHCI disponível.
+pub fn has_xhci() -> bool {
+    HOST_CONTROLLERS
+        .lock()
+        .iter()
+        .any(|hc| hc.controller_type == HostControllerType::Xhci)
 }

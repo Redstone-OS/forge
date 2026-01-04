@@ -1,100 +1,84 @@
-//! # ISA / LPC Bus (Industry Standard Architecture)
+//! # ISA Bus Driver
 //!
-//! O barramento legado para periféricos de baixa velocidade.
-//! Em sistemas modernos, ele é implementado via LPC (Low Pin Count) ou
-//! eSPI, mas emoldurado como ISA para compatibilidade.
+//! Este módulo implementa o suporte ao **ISA (Industry Standard Architecture)**
+//! bus - o barramento legado de PCs x86.
 //!
-//! ## Dispositivos Comuns:
-//! - **UART (16550)**: Portas Seriais (COM1 em 0x3F8).
-//! - **8042 PS/2**: Teclado e Mouse.
-//! - **Real Time Clock (RTC)**: CMOS RAM e Relógio.
-//! - **PC Speaker**: Buzzer do sistema.
-//! - **Floppy Controller**: Controlador de disquete (Opcional).
+//! ## Histórico:
+//! ISA foi o barramento principal de PCs IBM AT (1984). Hoje é obsoleto,
+//! mas muitos dispositivos legados ainda usam suas convenções:
+//! - Portas I/O fixas
+//! - IRQs fixas
+//! - DMA de 8 bits
+//!
+//! ## Dispositivos ISA Típicos:
+//! - Floppy controller (0x3F0-0x3F7)
+//! - Parallel port (0x378-0x37F)
+//! - Game port (0x200-0x207)
+//!
+//! ## Integração:
+//! Na prática, a maioria dos "dispositivos ISA" são tratados como
+//! Platform devices. Este módulo existe para compatibilidade.
 
-pub mod devices;
-
-use super::super::base::bus::{Bus, BusAddress, BusType};
-use super::super::base::device::{Device, DeviceId, DeviceState};
-use super::super::base::driver::DeviceType;
+use crate::drivers::base::bus::{Bus, BusType};
+use crate::drivers::base::device::Device;
 use crate::sync::Spinlock;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-pub struct IsaBus;
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
 
-impl IsaBus {
-    pub const fn new() -> Self {
-        Self
-    }
-}
+static INITIALIZED: Spinlock<bool> = Spinlock::new(false);
+
+// =============================================================================
+// IMPLEMENTAÇÃO DO BUS TRAIT
+// =============================================================================
+
+/// Implementação do barramento ISA.
+pub struct IsaBus;
 
 impl Bus for IsaBus {
     fn name(&self) -> &'static str {
-        "ISA/LPC Legacy Bus"
+        "ISA Legacy Bus"
     }
 
     fn bus_type(&self) -> BusType {
         BusType::Isa
     }
 
-    /// O barramento ISA não é "discoverable" (não há probing automático).
-    /// Retornamos uma lista de dispositivos "bem conhecidos" (well-known)
-    /// conforme a especificação padrão do PC.
     fn scan(&self) -> Vec<Device> {
-        let mut devices = Vec::new();
-
-        crate::kdebug!("(ISA) Instanciando dispositivos legados estáticos...");
-
-        // 1. Serial COM1 (0x3F8)
-        devices.push(Device::new(
-            DeviceId(0x16550_1),
-            "COM1",
-            BusType::Isa,
-            BusAddress::IoPort(0x3F8),
-            DeviceType::Serial,
-        ));
-
-        // 2. PS/2 Controller (0x60, 0x64)
-        devices.push(Device::new(
-            DeviceId(0x8042),
-            "PS2-Controller",
-            BusType::Isa,
-            BusAddress::IoPort(0x60),
-            DeviceType::Controller,
-        ));
-
-        // 3. Real Time Clock (0x70)
-        devices.push(Device::new(
-            DeviceId(0x70),
-            "RTC",
-            BusType::Isa,
-            BusAddress::IoPort(0x70),
-            DeviceType::Timer,
-        ));
-
-        // 4. PC Speaker (0x61)
-        devices.push(Device::new(
-            DeviceId(0x61),
-            "PC-Speaker",
-            BusType::Isa,
-            BusAddress::IoPort(0x61),
-            DeviceType::Generic,
-        ));
-
-        devices
+        // ISA não tem scan dinâmico - dispositivos são conhecidos
+        Vec::new()
     }
 
     fn reset_device(&self, _dev: &mut Device) -> bool {
-        // ISA não suporta reset individual de slot via software.
+        // ISA não suporta reset via bus
         false
+    }
+
+    fn shutdown(&self) {
+        crate::kinfo!("(ISA) Shutdown");
     }
 }
 
-static ISA_BUS_INSTANCE: IsaBus = IsaBus.new();
+/// Retorna referência ao barramento ISA.
+pub fn get_bus() -> Arc<dyn Bus> {
+    Arc::new(IsaBus)
+}
 
-/// Inicializa o subsistema ISA e registra os dispositivos estáticos no RDM
+// =============================================================================
+// FUNÇÕES DE INICIALIZAÇÃO
+// =============================================================================
+
+/// Inicializa o ISA Bus.
 pub fn init() {
-    crate::kinfo!("(ISA) Inicializando barramento legado...");
+    crate::kinfo!("(ISA) Inicializando ISA Bus (legacy)...");
 
-    // Como ISA é estático, o DriverManager chamará o scan e registrará os periféricos.
-    // super::super::base::bus::register(Arc::new(ISA_BUS_INSTANCE));
+    *INITIALIZED.lock() = true;
+
+    // Registra na base
+    crate::drivers::base::bus::register(Arc::new(IsaBus));
+
+    crate::kinfo!("(ISA) Bus inicializado");
 }

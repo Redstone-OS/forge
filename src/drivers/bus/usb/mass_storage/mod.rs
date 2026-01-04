@@ -1,134 +1,203 @@
 //! # USB Mass Storage Driver
 //!
-//! Interface principal do driver de armazenamento USB.
+//! Este módulo implementa o driver de **USB Mass Storage** (classe 0x08),
+//! permitindo acesso a pen drives, HDs externos, etc.
+//!
+//! ## Protocolo:
+//! - **BBB**: Bulk-Only Transport (mais comum)
+//! - **CBI**: Control/Bulk/Interrupt (obsoleto)
+//!
+//! ## SCSI Commands:
+//! USB Mass Storage usa comandos SCSI encapsulados em CBWs.
+//! Comandos principais: INQUIRY, READ(10), WRITE(10), TEST UNIT READY
+//!
+//! ## Arquitetura:
+//! ```text
+//! VFS/Block Layer
+//!        ↓
+//! USB Mass Storage Driver (este módulo)
+//!        ↓
+//! SCSI Command Layer (scsi.rs)
+//!        ↓
+//! USB Bulk Transport (transport.rs)
+//!        ↓
+//! xHCI/EHCI
+//! ```
+//!
+//! ## STUB:
+//! Estruturas e constantes definidas. Implementação incompleta.
 
-pub mod scsi;
-pub mod transport;
+pub mod scsi; // Comandos SCSI
+pub mod transport; // BBB transport
 
-use crate::drivers::block::{BlockDevice, BlockError};
+use crate::drivers::bus::usb::device::UsbDevice;
+use crate::drivers::bus::usb::types::*;
 use crate::sync::Spinlock;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
-use scsi::{InquiryData, ScsiCommand};
-use transport::BulkOnlyTransport;
 
-pub struct UsbMassStorage {
-    transport: BulkOnlyTransport,
-    last_lba: Spinlock<u32>,
-    ready: Spinlock<bool>,
+// =============================================================================
+// CONSTANTES
+// =============================================================================
+
+/// Classe USB para Mass Storage.
+pub const USB_CLASS_MASS_STORAGE: u8 = 0x08;
+
+/// Subclasse SCSI transparent command set.
+pub const USB_SUBCLASS_SCSI: u8 = 0x06;
+
+/// Protocolo Bulk-Only (BBB).
+pub const USB_PROTOCOL_BBB: u8 = 0x50;
+
+// =============================================================================
+// ESTRUTURA DE DISPOSITIVO
+// =============================================================================
+
+/// Representa um dispositivo USB Mass Storage.
+#[derive(Debug, Clone)]
+pub struct MassStorageDevice {
+    /// Endereço USB do dispositivo.
+    pub usb_address: u8,
+
+    /// Endpoint Bulk IN.
+    pub bulk_in_endpoint: u8,
+
+    /// Endpoint Bulk OUT.
+    pub bulk_out_endpoint: u8,
+
+    /// Max packet size dos endpoints bulk.
+    pub max_packet_size: u16,
+
+    /// Max LUN (Logical Unit Number).
+    pub max_lun: u8,
+
+    /// Capacidade em blocos.
+    pub block_count: u64,
+
+    /// Tamanho do bloco em bytes.
+    pub block_size: u32,
+
+    /// Vendor ID do dispositivo.
+    pub vendor_id: u16,
+
+    /// Product ID.
+    pub product_id: u16,
+
+    /// String do produto.
+    pub product_name: Option<alloc::string::String>,
+
+    /// Dispositivo está pronto?
+    pub ready: bool,
 }
 
-impl UsbMassStorage {
-    pub fn new(slot_id: u8, ep_in: u8, ep_out: u8, _vid: u16, _pid: u16) -> Self {
-        Self {
-            transport: BulkOnlyTransport::new(slot_id, ep_in, ep_out),
-            last_lba: Spinlock::new(0),
-            ready: Spinlock::new(false),
-        }
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
+
+/// Lista de dispositivos mass storage detectados.
+static DEVICES: Spinlock<Vec<MassStorageDevice>> = Spinlock::new(Vec::new());
+
+// =============================================================================
+// FUNÇÕES PÚBLICAS
+// =============================================================================
+
+/// Inicializa um dispositivo USB como Mass Storage.
+///
+/// ## STUB:
+/// Não inicializa realmente.
+pub fn probe(usb_dev: &UsbDevice) -> bool {
+    crate::kinfo!(
+        "(USB MSC) Probing device:",
+        usb_dev.vendor_id,
+        ":",
+        usb_dev.product_id
+    );
+
+    // Verifica se é mass storage
+    if !usb_dev.is_mass_storage() {
+        return false;
     }
 
-    pub fn initialize(&self) -> Result<(), BlockError> {
-        crate::core::debug::display::log("(USB-MS) Iniciando descoberta...");
+    crate::kinfo!("(USB MSC) Dispositivo é Mass Storage!");
 
-        // 1. INQUIRY - Identificar dispositivo
-        let mut inq_buf = [0u8; 36];
-        if self
-            .transport
-            .send_command(&ScsiCommand::inquiry(36), Some(&mut inq_buf), true)
-        {
-            let inq = unsafe { &*(inq_buf.as_ptr() as *const InquiryData) };
-            let vendor = core::str::from_utf8(&inq.vendor_id).unwrap_or("Unknown");
-            let product = core::str::from_utf8(&inq.product_id).unwrap_or("Unknown");
-            crate::core::debug::display::log("(USB-MS) Device Identificado:");
-            crate::core::debug::display::log(vendor);
-            crate::core::debug::display::log(product);
-        }
+    // TODO: Implementar
+    // 1. Buscar endpoints Bulk IN e OUT
+    // 2. Enviar GET_MAX_LUN
+    // 3. Enviar INQUIRY
+    // 4. Enviar READ_CAPACITY
+    // 5. Registrar como block device
 
-        // 2. TEST UNIT READY (com retry e Request Sense)
-        let mut success = false;
-        for _ in 0..5 {
-            if self
-                .transport
-                .send_command(&ScsiCommand::test_unit_ready(), None, true)
-            {
-                success = true;
-                break;
-            } else {
-                // Se falhar, pede o Sense para limpar o erro no hardware
-                let mut sense_buf = [0u8; 18];
-                let _ = self.transport.send_command(
-                    &ScsiCommand::request_sense(18),
-                    Some(&mut sense_buf),
-                    true,
-                );
-            }
-            // Pequeno delay para o hardware respirar
-            for _ in 0..100_000 {
-                core::hint::spin_loop();
-            }
-        }
+    crate::kwarn!("(USB MSC) probe() não totalmente implementado");
 
-        if !success {
-            return Err(BlockError::NotReady);
-        }
-
-        // 3. READ CAPACITY
-        let mut cap_data = [0u8; 8];
-        if self
-            .transport
-            .send_command(&ScsiCommand::read_capacity_10(), Some(&mut cap_data), true)
-        {
-            let last_lba = u32::from_be_bytes([cap_data[0], cap_data[1], cap_data[2], cap_data[3]]);
-            *self.last_lba.lock() = last_lba;
-            *self.ready.lock() = true;
-            crate::core::debug::display::log_hex("(USB-MS) Capacidade (LBA):", last_lba as u64);
-            Ok(())
-        } else {
-            Err(BlockError::IoError)
-        }
-    }
+    false
 }
 
-impl BlockDevice for UsbMassStorage {
-    fn read_block(&self, lba: u64, buf: &mut [u8]) -> Result<(), BlockError> {
-        if !*self.ready.lock() {
-            return Err(BlockError::NotReady);
-        }
-        let cmd = ScsiCommand::read_10(lba as u32, 1);
-        if self.transport.send_command(&cmd, Some(buf), true) {
-            Ok(())
-        } else {
-            // Tenta limpar erro se falhar leitura
-            let mut sense_buf = [0u8; 18];
-            let _ = self.transport.send_command(
-                &ScsiCommand::request_sense(18),
-                Some(&mut sense_buf),
-                true,
-            );
-            Err(BlockError::IoError)
-        }
-    }
+/// Lê blocos de um dispositivo.
+///
+/// ## STUB:
+/// Não lê realmente.
+pub fn read_blocks(
+    device_index: usize,
+    start_block: u64,
+    count: u32,
+    buffer: &mut [u8],
+) -> Result<(), MscError> {
+    crate::kwarn!("(USB MSC) read_blocks() stub");
 
-    fn write_block(&self, _lba: u64, _buf: &[u8]) -> Result<(), BlockError> {
-        Err(BlockError::IoError)
-    }
-    fn block_size(&self) -> usize {
-        512
-    }
-    fn total_blocks(&self) -> u64 {
-        *self.last_lba.lock() as u64 + 1
-    }
-    fn is_read_only(&self) -> bool {
-        false
-    }
-    fn flush(&self) -> Result<(), BlockError> {
-        Ok(())
-    }
+    let devices = DEVICES.lock();
+    let _dev = devices.get(device_index).ok_or(MscError::NoDevice)?;
+
+    // TODO: Implementar via SCSI READ(10)
+
+    Err(MscError::NotImplemented)
 }
 
-static DEVICES: Spinlock<Vec<Arc<UsbMassStorage>>> = Spinlock::new(Vec::new());
+/// Escreve blocos em um dispositivo.
+///
+/// ## STUB:
+/// Não escreve realmente.
+pub fn write_blocks(
+    device_index: usize,
+    start_block: u64,
+    count: u32,
+    buffer: &[u8],
+) -> Result<(), MscError> {
+    crate::kwarn!("(USB MSC) write_blocks() stub");
 
-pub fn register_device(device: Arc<UsbMassStorage>) {
-    crate::drivers::block::register_device(device.clone());
-    DEVICES.lock().push(device);
+    let devices = DEVICES.lock();
+    let _dev = devices.get(device_index).ok_or(MscError::NoDevice)?;
+
+    // TODO: Implementar via SCSI WRITE(10)
+
+    Err(MscError::NotImplemented)
+}
+
+/// Retorna número de dispositivos mass storage.
+pub fn device_count() -> usize {
+    DEVICES.lock().len()
+}
+
+/// Retorna informações de um dispositivo.
+pub fn get_device_info(index: usize) -> Option<MassStorageDevice> {
+    DEVICES.lock().get(index).cloned()
+}
+
+// =============================================================================
+// ERROS
+// =============================================================================
+
+/// Erros de Mass Storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MscError {
+    /// Dispositivo não encontrado.
+    NoDevice,
+    /// Erro de USB.
+    UsbError,
+    /// Erro de SCSI.
+    ScsiError,
+    /// Timeout.
+    Timeout,
+    /// Buffer inválido.
+    InvalidBuffer,
+    /// Não implementado.
+    NotImplemented,
 }
