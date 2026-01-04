@@ -1,22 +1,27 @@
-//! Spinlock - bloqueio com busy-wait
+//! # Spinlock
+//!
+//! Bloqueio com busy-wait e desabilitação de interrupções.
+//!
+//! ## Quando Usar
+//!
+//! - Seções críticas MUITO curtas (< 1µs)
+//! - Dentro de handlers de interrupção
+//! - Quando não pode chamar scheduler
+//!
+//! ## Quando NÃO Usar
+//!
+//! - Seções que podem demorar
+//! - Quando pode chamar funções que dormem
+//! - Para proteger I/O lento
 
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Spinlock - usa busy-wait, NÃO pode dormir
+/// Spinlock - bloqueio com busy-wait, interrupt-safe.
 ///
-/// # Quando usar
-///
-/// - Seções críticas MUITO curtas
-/// - Dentro de handlers de interrupção
-/// - Quando não pode chamar scheduler
-///
-/// # Quando NÃO usar
-///
-/// - Seções que podem demorar
-/// - Quando pode chamar funções que dormem
-/// - Para proteger I/O lento
+/// Desabilita interrupções automaticamente para evitar deadlock
+/// quando IRQ handler tenta adquirir o mesmo lock.
 pub struct Spinlock<T> {
     locked: AtomicBool,
     data: UnsafeCell<T>,
@@ -27,7 +32,8 @@ unsafe impl<T: Send> Send for Spinlock<T> {}
 unsafe impl<T: Send> Sync for Spinlock<T> {}
 
 impl<T> Spinlock<T> {
-    /// Cria novo spinlock
+    /// Cria novo spinlock.
+    #[inline]
     pub const fn new(data: T) -> Self {
         Self {
             locked: AtomicBool::new(false),
@@ -35,9 +41,12 @@ impl<T> Spinlock<T> {
         }
     }
 
-    /// Adquire o lock
+    /// Adquire o lock (bloqueia até conseguir).
+    ///
+    /// Desabilita interrupções enquanto o lock está ativo.
+    #[inline]
     pub fn lock(&self) -> SpinlockGuard<'_, T> {
-        // Desabilitar interrupções antes de adquirir
+        // Salvar e desabilitar interrupções
         let interrupts_enabled = crate::arch::Cpu::interrupts_enabled();
         crate::arch::Cpu::disable_interrupts();
 
@@ -47,7 +56,7 @@ impl<T> Spinlock<T> {
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            // Hint para CPU que estamos em spin loop
+            // Hint para CPU otimizar spin loop
             core::hint::spin_loop();
         }
 
@@ -57,7 +66,10 @@ impl<T> Spinlock<T> {
         }
     }
 
-    /// Tenta adquirir sem bloquear
+    /// Tenta adquirir sem bloquear.
+    ///
+    /// Retorna `None` se já está travado.
+    #[inline]
     pub fn try_lock(&self) -> Option<SpinlockGuard<'_, T>> {
         let interrupts_enabled = crate::arch::Cpu::interrupts_enabled();
         crate::arch::Cpu::disable_interrupts();
@@ -80,18 +92,41 @@ impl<T> Spinlock<T> {
         }
     }
 
-    /// Força o desbloqueio do spinlock (USO INTERNO DO SCHEDULER)
+    /// Verifica se está travado (sem adquirir).
+    #[inline]
+    pub fn is_locked(&self) -> bool {
+        self.locked.load(Ordering::Relaxed)
+    }
+
+    /// Força desbloqueio (APENAS USO INTERNO DO SCHEDULER).
     ///
     /// # Safety
     ///
-    /// Extremamente inseguro. Só deve ser usado pelo scheduler ao iniciar
-    /// uma nova task que "herdou" o lock da task anterior mas não tem o Guard.
+    /// Extremamente inseguro. Só deve ser usado pelo scheduler
+    /// ao iniciar nova task que "herdou" lock da anterior.
+    #[inline]
     pub unsafe fn force_unlock(&self) {
         self.locked.store(false, Ordering::Release);
     }
+
+    /// Acesso aos dados sem lock (APENAS PARA INICIALIZAÇÃO).
+    ///
+    /// # Safety
+    ///
+    /// Só usar quando há garantia de acesso único (boot, single-threaded).
+    #[inline]
+    pub unsafe fn get_mut_unchecked(&self) -> &mut T {
+        &mut *self.data.get()
+    }
 }
 
-/// Guard do spinlock - libera ao sair do escopo
+impl<T: Default> Default for Spinlock<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
+/// Guard do spinlock - libera ao sair do escopo.
 pub struct SpinlockGuard<'a, T> {
     lock: &'a Spinlock<T>,
     interrupts_were_enabled: bool,
@@ -100,6 +135,7 @@ pub struct SpinlockGuard<'a, T> {
 impl<T> Deref for SpinlockGuard<'_, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &T {
         // SAFETY: Lock está adquirido
         unsafe { &*self.lock.data.get() }
@@ -107,6 +143,7 @@ impl<T> Deref for SpinlockGuard<'_, T> {
 }
 
 impl<T> DerefMut for SpinlockGuard<'_, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut T {
         // SAFETY: Lock está adquirido
         unsafe { &mut *self.lock.data.get() }
@@ -114,13 +151,17 @@ impl<T> DerefMut for SpinlockGuard<'_, T> {
 }
 
 impl<T> Drop for SpinlockGuard<'_, T> {
+    #[inline]
     fn drop(&mut self) {
         // Liberar lock
         self.lock.locked.store(false, Ordering::Release);
 
-        // Restaurar interrupções se estavam habilitadas
+        // Restaurar interrupções
         if self.interrupts_were_enabled {
             crate::arch::Cpu::enable_interrupts();
         }
     }
 }
+
+// Não permite enviar guard entre threads (contém referência ao lock)
+impl<T> !Send for SpinlockGuard<'_, T> {}

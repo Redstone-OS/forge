@@ -1,4 +1,5 @@
-//! Mutex implementation
+//! # Mutex Module
 
-pub mod mutex;
+mod mutex;
+
 pub use mutex::{Mutex, MutexGuard};

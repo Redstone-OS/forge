@@ -1,16 +1,29 @@
-//! Read-Copy-Update (RCU)
-//! Mecanismo de sincronização otimizado para cenários com muitas leituras e poucas escritas.
+//! # Read-Copy-Update (RCU)
+//!
+//! Sincronização otimizada para cenários com muitas leituras e poucas escritas.
+//!
+//! ## Características
+//!
+//! - Leitura: Lock-free, apenas incrementa refcount
+//! - Escrita: Cria cópia, troca ponteiro atomicamente
+//!
+//! Ideal para configurações globais, listas de processos, etc.
 
 use alloc::sync::Arc;
+use core::ops::Deref;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
-/// Container RCU para dados compartilhados
+/// Container RCU para dados compartilhados.
 pub struct Rcu<T> {
-    // Ponteiro atômico para os dados (gerenciado via Arc internamente, mas mantido como raw ptr)
     inner: AtomicPtr<T>,
 }
 
+// SAFETY: RCU usa operações atômicas para sincronização
+unsafe impl<T: Send + Sync> Send for Rcu<T> {}
+unsafe impl<T: Send + Sync> Sync for Rcu<T> {}
+
 impl<T> Rcu<T> {
+    /// Cria novo container RCU.
     pub fn new(data: T) -> Self {
         let ptr = Arc::into_raw(Arc::new(data)) as *mut T;
         Self {
@@ -18,14 +31,13 @@ impl<T> Rcu<T> {
         }
     }
 
-    /// Leitura RCU (block-free)
+    /// Leitura RCU (lock-free).
+    ///
+    /// Retorna guard que mantém referência aos dados.
     pub fn read(&self) -> RcuReadGuard<T> {
         let ptr = self.inner.load(Ordering::Acquire);
-        // Em um sistema RCU real, precisaríamos de barreiras de memória e rastreamento de "epoch"
-        // para garantir que o ponteiro não seja deletado enquanto lemos.
-        // Aqui, assumimos que Arc + vazamento controlado (ou epoch-based reclamation futura) segura as pontas.
 
-        // Incrementamos refcount do Arc para segurança simples (incur custo de atomicidade, mas é seguro)
+        // Incrementar refcount para manter dados vivos
         unsafe {
             Arc::increment_strong_count(ptr);
         }
@@ -36,30 +48,55 @@ impl<T> Rcu<T> {
         }
     }
 
-    /// Atualização RCU (writer)
-    /// Cria uma nova versão e troca o ponteiro.
+    /// Atualização RCU (writer).
+    ///
+    /// Cria nova versão e troca ponteiro atomicamente.
+    /// Leitores antigos continuam usando versão antiga até terminarem.
     pub fn update(&self, new_data: T) {
         let new_ptr = Arc::into_raw(Arc::new(new_data)) as *mut T;
 
         // Troca atômica do ponteiro
         let old_ptr = self.inner.swap(new_ptr, Ordering::AcqRel);
 
-        // O dado antigo (old_ptr) só pode ser liberado quando todos os leitores terminarem (Grace Period).
-        // TODO: Implementar Grace Period tracking (call_rcu).
-        // Por enquanto, soltamos o Arc, mas se houver leitores eles seguram via increment_strong_count.
+        // Decrementar refcount do antigo
+        // Se não houver mais leitores, será liberado
         unsafe {
             Arc::decrement_strong_count(old_ptr);
         }
     }
+
+    /// Atualiza com função de transformação.
+    pub fn update_with<F>(&self, f: F)
+    where
+        T: Clone,
+        F: FnOnce(&T) -> T,
+    {
+        let current = self.read();
+        let new_data = f(&*current);
+        drop(current);
+        self.update(new_data);
+    }
 }
 
+impl<T> Drop for Rcu<T> {
+    fn drop(&mut self) {
+        let ptr = self.inner.load(Ordering::Acquire);
+        unsafe {
+            Arc::decrement_strong_count(ptr);
+        }
+    }
+}
+
+/// Guard de leitura RCU.
 pub struct RcuReadGuard<'a, T> {
     ptr: &'a T,
     raw: *const T,
 }
 
-impl<T> core::ops::Deref for RcuReadGuard<'_, T> {
+impl<T> Deref for RcuReadGuard<'_, T> {
     type Target = T;
+
+    #[inline]
     fn deref(&self) -> &T {
         self.ptr
     }
@@ -67,9 +104,12 @@ impl<T> core::ops::Deref for RcuReadGuard<'_, T> {
 
 impl<T> Drop for RcuReadGuard<'_, T> {
     fn drop(&mut self) {
-        // Solta referência
+        // Decrementar refcount
         unsafe {
             Arc::decrement_strong_count(self.raw);
         }
     }
 }
+
+// Guards não podem ser enviados entre threads
+impl<T> !Send for RcuReadGuard<'_, T> {}

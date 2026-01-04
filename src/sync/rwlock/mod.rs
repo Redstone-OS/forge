@@ -1,4 +1,5 @@
-//! RwLock implementation
+//! # RwLock Module
 
-pub mod rwlock;
-pub use rwlock::RwLock;
+mod rwlock;
+
+pub use rwlock::{RwLock, RwLockReadGuard, RwLockWriteGuard};

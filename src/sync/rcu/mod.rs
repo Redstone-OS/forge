@@ -1,3 +1,5 @@
-//! RCU implementation
+//! # RCU Module
 
-pub mod rcu;
+mod rcu;
+
+pub use rcu::{Rcu, RcuReadGuard};

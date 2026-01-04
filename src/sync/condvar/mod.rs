@@ -1,3 +1,5 @@
-//! Condition Variable implementation
+//! # CondVar Module
 
-pub mod condvar;
+mod condvar;
+
+pub use condvar::CondVar;

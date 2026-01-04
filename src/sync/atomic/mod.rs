@@ -1,4 +1,5 @@
-//! Atomic implementations
+//! # Atomic Module
 
-pub mod atomic;
-pub use atomic::{AtomicCell, AtomicCounter, AtomicFlag};
+mod atomic;
+
+pub use atomic::{AtomicCell, AtomicCounter, AtomicFlag, AtomicSize};

@@ -1,4 +1,5 @@
-//! Semaphore implementation
+//! # Semaphore Module
 
-pub mod semaphore;
+mod semaphore;
+
 pub use semaphore::Semaphore;
