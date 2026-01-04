@@ -1,15 +1,23 @@
-//! # Hardware-specific GPU Drivers
+//! # Hardware GPU Drivers
 //!
-//! Contém drivers para GPUs físicas de alta performance.
-//! Cada submódulo lida com as particularidades de arquitetura de cada fabricante.
+//! Drivers para GPUs físicas de alta performance.
+//! Cada submódulo lida com as particularidades de cada fabricante.
+//!
+//! ## Fabricantes Suportados:
+//! - **Intel**: HD Graphics, Iris, Arc
+//! - **AMD**: Radeon
+//! - **NVIDIA**: GeForce/Quadro
 
 pub mod amd;
 pub mod generic;
 pub mod intel;
 pub mod nvidia;
 
-/// Inicializa todos os drivers de GPU conhecidos.
+/// Inicializa todos os drivers de GPU.
 pub fn init() {
+    crate::kinfo!("(GPU) Registrando drivers de GPU...");
+
+    // Ordem de prioridade: específicos primeiro, genérico por último
     intel::init();
     nvidia::init();
     amd::init();

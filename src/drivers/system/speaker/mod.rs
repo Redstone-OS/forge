@@ -1,47 +1,99 @@
 //! # PC Speaker Driver
 //!
-//! Driver simples para controlar o alto-falante do sistema (beep).
+//! Driver para o alto-falante do sistema (beep).
+//! Usa PIT Channel 2 para gerar tons.
 
-use crate::drivers::base::device::{Device, DeviceState};
+use crate::arch::x86_64::ports::{inb, outb};
+use crate::drivers::base::device::Device;
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
 use alloc::sync::Arc;
 
+/// Porta de controle do speaker/PIT.
+const SPEAKER_PORT: u16 = 0x61;
+
+/// Driver do PC Speaker.
 pub struct SpeakerDriver;
 
 impl Driver for SpeakerDriver {
     fn name(&self) -> &'static str {
-        "PC Speaker Driver"
+        "pc-speaker"
     }
-
     fn device_type(&self) -> DeviceType {
         DeviceType::System
     }
 
     fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        crate::kinfo!("(System/Speaker) PC Speaker registrado.");
+        crate::kinfo!("(Speaker) PC Speaker registrado");
         Ok(())
     }
 
-    fn remove(&self, dev: &mut Device) -> Result<(), DriverError> {
-        dev.state = DeviceState::Disconnected;
+    fn remove(&self, _dev: &mut Device) -> Result<(), DriverError> {
+        stop();
         Ok(())
     }
 }
 
-/// Toca um som na frequência especificada
-pub fn play(frequency: u32) {
-    // STUB: Configurar PIT Channel 2
-    // 1. Calcular divisor (1193180 / frequency)
-    // 2. Enviar comando para PIT_COMMAND (0xB6)
-    // 3. Enviar divisor para PIT_CHANNEL2 (0x42)
-    // 4. Habilitar bits 0 e 1 da porta 0x61
-}
-
-/// Para o som
-pub fn stop() {
-    // STUB: Desabilitar bits 0 e 1 da porta 0x61
-}
-
+/// Inicializa o driver do speaker.
 pub fn init() {
     crate::drivers::base::register_driver(Arc::new(SpeakerDriver) as Arc<dyn Driver>);
+}
+
+/// Toca um som na frequência especificada.
+///
+/// ## Parâmetros:
+/// - `frequency_hz`: Frequência em Hz (ex: 440 = Lá central)
+pub fn play(frequency_hz: u32) {
+    if frequency_hz == 0 {
+        stop();
+        return;
+    }
+
+    // Configura PIT Channel 2 para a frequência
+    super::timer::pit::configure_speaker(frequency_hz);
+
+    // Habilita speaker (bits 0 e 1 da porta 0x61)
+    let current = unsafe { inb(SPEAKER_PORT) };
+    outb(SPEAKER_PORT, current | 0x03);
+}
+
+/// Para o som.
+pub fn stop() {
+    // Desabilita speaker (bits 0 e 1 da porta 0x61)
+    let current = unsafe { inb(SPEAKER_PORT) };
+    outb(SPEAKER_PORT, current & !0x03);
+}
+
+/// Toca um beep por duração especificada.
+///
+/// ## Parâmetros:
+/// - `frequency_hz`: Frequência em Hz
+/// - `duration_ms`: Duração em milissegundos
+pub fn beep(frequency_hz: u32, duration_ms: u64) {
+    play(frequency_hz);
+    super::timer::delay_ms(duration_ms);
+    stop();
+}
+
+/// Toca beep padrão do sistema (1000Hz, 100ms).
+pub fn system_beep() {
+    beep(1000, 100);
+}
+
+/// Toca sequência de beeps para indicar erro.
+pub fn error_beep() {
+    for _ in 0..3 {
+        beep(800, 200);
+        super::timer::delay_ms(100);
+    }
+}
+
+/// Toca melodia simples de boot.
+pub fn boot_melody() {
+    // C4, E4, G4
+    let notes = [(262, 100), (330, 100), (392, 200)];
+
+    for (freq, dur) in notes.iter() {
+        beep(*freq, *dur as u64);
+        super::timer::delay_ms(50);
+    }
 }

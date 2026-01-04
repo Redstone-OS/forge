@@ -1,73 +1,102 @@
 //! # Ramdisk Driver
 //!
-//! Driver de disco em memória volátil.
+//! Driver de disco em memória volátil. Útil para testes e sistemas
+//! que precisam de armazenamento temporário rápido.
+//!
+//! ## Características:
+//! - Dados em RAM (volátil)
+//! - Performance máxima (sem I/O real)
+//! - Tamanho configurável
+//! - Útil para boot sem disco físico
 
-use super::traits::{BlockDevice, BlockError};
-use crate::drivers::base::device::{Device, DeviceState};
+use crate::drivers::base::device::Device;
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
+use crate::drivers::storage::traits::*;
 use crate::sync::Spinlock;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-/// Tamanho padrão do bloco
 const BLOCK_SIZE: usize = 512;
+const DEFAULT_SIZE_MB: usize = 32;
 
+/// Driver Ramdisk para o RDS.
 pub struct RamdiskDriver {
-    disk: Arc<RamdiskDevice>,
+    size_mb: usize,
 }
 
 impl RamdiskDriver {
     pub fn new(size_mb: usize) -> Self {
-        Self {
-            disk: Arc::new(RamdiskDevice::new(size_mb)),
-        }
+        Self { size_mb }
+    }
+}
+
+impl Default for RamdiskDriver {
+    fn default() -> Self {
+        Self::new(DEFAULT_SIZE_MB)
     }
 }
 
 impl Driver for RamdiskDriver {
     fn name(&self) -> &'static str {
-        "Ramdisk Driver"
+        "ramdisk"
     }
-
     fn device_type(&self) -> DeviceType {
         DeviceType::Storage
     }
 
     fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        // Ramdisk é virtual, não precisa de hardware probe real
-        // Mas registramos sua existência
-        crate::kinfo!("(Storage/Ramdisk) Disco em memória ativo.");
+        crate::kinfo!("(Ramdisk) Criando disco de {}MB", self.size_mb);
+        let device = RamdiskDevice::new(self.size_mb);
+        crate::drivers::storage::register_device(Arc::new(device));
         Ok(())
     }
 
-    fn remove(&self, dev: &mut Device) -> Result<(), DriverError> {
-        dev.state = DeviceState::Disconnected;
+    fn remove(&self, _dev: &mut Device) -> Result<(), DriverError> {
+        crate::drivers::storage::unregister_device("ram0");
         Ok(())
     }
 }
 
-/// O dispositivo de bloco real
+struct RamdiskState {
+    data: Vec<u8>,
+    stats: StorageStats,
+}
+
+/// Dispositivo Ramdisk.
 pub struct RamdiskDevice {
-    data: Spinlock<Vec<u8>>,
     size: usize,
+    state: Spinlock<RamdiskState>,
 }
 
 impl RamdiskDevice {
     pub fn new(size_mb: usize) -> Self {
-        let size_bytes = size_mb * 1024 * 1024;
-        let mut vec = Vec::with_capacity(size_bytes);
-        vec.resize(size_bytes, 0);
+        let size = size_mb * 1024 * 1024;
+        let mut data = Vec::with_capacity(size);
+        data.resize(size, 0);
 
         Self {
-            data: Spinlock::new(vec),
-            size: size_bytes,
+            size,
+            state: Spinlock::new(RamdiskState {
+                data,
+                stats: StorageStats::default(),
+            }),
         }
     }
 }
 
 impl BlockDevice for RamdiskDevice {
     fn name(&self) -> &str {
-        "ramdisk0"
+        "ram0"
+    }
+
+    fn info(&self) -> StorageInfo {
+        StorageInfo {
+            model: alloc::string::String::from("RedstoneOS Ramdisk"),
+            serial: alloc::string::String::from("RAM00001"),
+            firmware: alloc::string::String::from("1.0"),
+            device_type: Some(StorageType::Virtual),
+            interface: Some(StorageInterface::Ramdisk),
+        }
     }
 
     fn block_size(&self) -> usize {
@@ -81,22 +110,50 @@ impl BlockDevice for RamdiskDevice {
     fn read_block(&self, lba: u64, buf: &mut [u8]) -> Result<(), BlockError> {
         let offset = (lba as usize) * BLOCK_SIZE;
         if offset + buf.len() > self.size {
-            return Err(BlockError::InvalidBlock);
+            return Err(BlockError::InvalidLba);
         }
 
-        let data = self.data.lock();
-        buf.copy_from_slice(&data[offset..offset + buf.len()]);
+        let mut state = self.state.lock();
+        buf.copy_from_slice(&state.data[offset..offset + buf.len()]);
+        state.stats.blocks_read += 1;
+        state.stats.bytes_read += buf.len() as u64;
         Ok(())
     }
 
     fn write_block(&self, lba: u64, buf: &[u8]) -> Result<(), BlockError> {
         let offset = (lba as usize) * BLOCK_SIZE;
         if offset + buf.len() > self.size {
-            return Err(BlockError::InvalidBlock);
+            return Err(BlockError::InvalidLba);
         }
 
-        let mut data = self.data.lock();
-        data[offset..offset + buf.len()].copy_from_slice(buf);
+        let mut state = self.state.lock();
+        state.data[offset..offset + buf.len()].copy_from_slice(buf);
+        state.stats.blocks_written += 1;
+        state.stats.bytes_written += buf.len() as u64;
         Ok(())
     }
+
+    fn capabilities(&self) -> StorageCapabilities {
+        StorageCapabilities {
+            writable: true,
+            flush: true,
+            max_transfer_blocks: 256,
+            ..Default::default()
+        }
+    }
+
+    fn get_stats(&self) -> StorageStats {
+        self.state.lock().stats
+    }
+
+    fn reset_stats(&self) {
+        self.state.lock().stats = StorageStats::default();
+    }
+}
+
+/// Registra o driver Ramdisk.
+pub fn init() {
+    crate::kinfo!("(Ramdisk) Registrando driver...");
+    let driver = RamdiskDriver::new(DEFAULT_SIZE_MB);
+    crate::drivers::base::register_driver(Arc::new(driver));
 }

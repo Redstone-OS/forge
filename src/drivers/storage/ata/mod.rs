@@ -1,92 +1,141 @@
-//! # ATA/IDE Legacy Driver
+//! # ATA/IDE Driver
 //!
-//! Driver para controladores de disco ATA (PATA/IDE) em modo PIO.
-//! Essencial para compatibilidade com BIOS antigos e emuladores.
+//! Driver para discos PATA/IDE legados usando PIO mode.
+//! Importante para hardware antigo e QEMU default.
+//!
+//! ## Portas I/O:
+//! - Primary: 0x1F0-0x1F7, Control: 0x3F6
+//! - Secondary: 0x170-0x177, Control: 0x376
 
-pub mod io;
-pub mod pio;
-pub mod ports;
-
-use super::traits::{BlockDevice, BlockError};
-use crate::drivers::base::device::{Device, DeviceState};
+use crate::drivers::base::device::Device;
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
+use crate::drivers::storage::traits::*;
+use crate::sync::Spinlock;
 use alloc::sync::Arc;
 
+// ATA I/O Ports
+const ATA_PRIMARY_BASE: u16 = 0x1F0;
+const ATA_PRIMARY_CTRL: u16 = 0x3F6;
+const ATA_SECONDARY_BASE: u16 = 0x170;
+const ATA_SECONDARY_CTRL: u16 = 0x376;
+
+// ATA Commands
+const ATA_CMD_READ_PIO: u8 = 0x20;
+const ATA_CMD_WRITE_PIO: u8 = 0x30;
+const ATA_CMD_IDENTIFY: u8 = 0xEC;
+
+/// Driver ATA para o RDS.
 pub struct AtaDriver;
 
 impl Driver for AtaDriver {
     fn name(&self) -> &'static str {
-        "Legacy ATA/IDE Driver (PIO)"
+        "ata"
     }
-
     fn device_type(&self) -> DeviceType {
         DeviceType::Storage
     }
 
-    fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        // STUB: Detectar drives no boot (Master/Slave)
-        // 1. Verificar Status na porta 0x1F7
-        // 2. Enviar comando IDENTIFY (0xEC)
-        crate::kinfo!("(Storage/ATA) Buscando dispositivos IDE...");
-
-        // Simulação: Inicializa o drive se encontrado
-        if let Some(drive) = AtaDisk::new(0, false) {
-            crate::kinfo!("(Storage/ATA) Primary Master detectado.");
-            // TODO: Registrar este 'drive' no sistema de arquivos
+    fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
+        // ATA é detectado via portas I/O, não PCI tradicional
+        // Aceita dispositivos de classe IDE (0x01, 0x01)
+        if dev.class_code != 0x01 || dev.subclass_code != 0x01 {
+            return Err(DriverError::NotSupported);
         }
+
+        crate::kinfo!(
+            "(ATA) Controlador IDE: {:04X}:{:04X}",
+            dev.vendor_id,
+            dev.device_id
+        );
+
+        // TODO: Detect drives on primary/secondary channels
 
         Ok(())
     }
 
-    fn remove(&self, dev: &mut Device) -> Result<(), DriverError> {
-        dev.state = DeviceState::Disconnected;
+    fn remove(&self, _dev: &mut Device) -> Result<(), DriverError> {
+        crate::kinfo!("(ATA) Driver removido");
         Ok(())
     }
 }
 
+struct AtaDiskState {
+    enabled: bool,
+    stats: StorageStats,
+}
+
+/// Dispositivo ATA/IDE.
 pub struct AtaDisk {
-    bus: u8, // 0=Primary, 1=Secondary
-    slave: bool,
-    sectors: u64,
+    channel: u8, // 0 = primary, 1 = secondary
+    drive: u8,   // 0 = master, 1 = slave
+    state: Spinlock<AtaDiskState>,
 }
 
 impl AtaDisk {
-    pub fn new(bus: u8, slave: bool) -> Option<Self> {
-        // STUB: Aqui iria a lógica real de IDENTIFY via ports::...
-        Some(Self {
-            bus,
-            slave,
-            sectors: 1024 * 1024, // Fake 512MB
-        })
+    pub fn new(channel: u8, drive: u8) -> Self {
+        Self {
+            channel,
+            drive,
+            state: Spinlock::new(AtaDiskState {
+                enabled: false,
+                stats: StorageStats::default(),
+            }),
+        }
+    }
+
+    fn base_port(&self) -> u16 {
+        if self.channel == 0 {
+            ATA_PRIMARY_BASE
+        } else {
+            ATA_SECONDARY_BASE
+        }
     }
 }
 
 impl BlockDevice for AtaDisk {
     fn name(&self) -> &str {
-        if self.bus == 0 {
-            "hda"
-        } else {
-            "hdb"
+        match (self.channel, self.drive) {
+            (0, 0) => "hda",
+            (0, 1) => "hdb",
+            (1, 0) => "hdc",
+            (1, 1) => "hdd",
+            _ => "hdX",
+        }
+    }
+
+    fn info(&self) -> StorageInfo {
+        StorageInfo {
+            model: alloc::string::String::from("ATA/IDE Disk"),
+            device_type: Some(StorageType::Hdd),
+            interface: Some(StorageInterface::Ata),
+            ..Default::default()
         }
     }
 
     fn block_size(&self) -> usize {
         512
     }
-
     fn total_blocks(&self) -> u64 {
-        self.sectors
-    }
+        0
+    } // TODO: IDENTIFY
 
-    fn read_block(&self, lba: u64, buf: &mut [u8]) -> Result<(), BlockError> {
-        // STUB: Chamar pio::read(lba, buf)
-        // Por enquanto retornamos zeros
-        buf.fill(0);
-        Ok(())
+    fn read_block(&self, _lba: u64, _buf: &mut [u8]) -> Result<(), BlockError> {
+        // TODO: PIO read
+        Err(BlockError::NotReady)
     }
 
     fn write_block(&self, _lba: u64, _buf: &[u8]) -> Result<(), BlockError> {
-        // STUB: Chamar pio::write(lba, buf)
-        Ok(())
+        // TODO: PIO write
+        Err(BlockError::NotReady)
     }
+
+    fn get_stats(&self) -> StorageStats {
+        self.state.lock().stats
+    }
+}
+
+/// Registra o driver ATA.
+pub fn init() {
+    crate::kinfo!("(ATA) Registrando driver...");
+    crate::drivers::base::register_driver(Arc::new(AtaDriver));
 }
