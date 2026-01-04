@@ -48,6 +48,8 @@ impl Driver for VirtioSoundDriver {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 struct VirtioState {
     enabled: bool,
     volume: u8,

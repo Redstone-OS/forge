@@ -31,6 +31,8 @@ use alloc::sync::Arc;
 
 const PCI_CLASS_MASS_STORAGE: u8 = 0x01;
 const PCI_SUBCLASS_SATA: u8 = 0x06;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const PCI_PROGIF_AHCI: u8 = 0x01;
 
 /// Driver AHCI para o RDS.
@@ -71,6 +73,8 @@ impl Driver for AhciDriver {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 struct AhciDiskState {
     enabled: bool,
     stats: StorageStats,

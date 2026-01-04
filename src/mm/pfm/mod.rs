@@ -228,8 +228,12 @@ impl Default for PageFrameManager {
 
 static PFM_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Use OnceCell pattern or lazy init - for now use Option
 static mut PFM_INNER: Option<PageFrameManager> = None;
+// TODO: Revisar no futuro
+#[allow(unused)]
 static PFM_LOCK: Spinlock<()> = Spinlock::new(());
 
 pub fn get() -> &'static Spinlock<PageFrameManager> {

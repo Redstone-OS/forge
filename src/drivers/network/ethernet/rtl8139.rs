@@ -64,6 +64,8 @@ pub const RTL_CONFIG1: u32 = 0x52;
 // ESTRUTURA DO DRIVER
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Driver RTL8139.
 pub struct Rtl8139Device {
     /// Endereço PCI.

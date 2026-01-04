@@ -129,10 +129,8 @@ fn pic_mask(irq: u8) {
         (PIC2_DATA, irq - 8)
     };
 
-    unsafe {
-        let mask = crate::arch::x86_64::ports::inb(port);
-        crate::arch::x86_64::ports::outb(port, mask | (1 << bit));
-    }
+    let mask = crate::arch::x86_64::ports::inb(port);
+    crate::arch::x86_64::ports::outb(port, mask | (1 << bit));
 }
 
 fn pic_unmask(irq: u8) {
@@ -142,10 +140,8 @@ fn pic_unmask(irq: u8) {
         (PIC2_DATA, irq - 8)
     };
 
-    unsafe {
-        let mask = crate::arch::x86_64::ports::inb(port);
-        crate::arch::x86_64::ports::outb(port, mask & !(1 << bit));
-    }
+    let mask = crate::arch::x86_64::ports::inb(port);
+    crate::arch::x86_64::ports::outb(port, mask & !(1 << bit));
 }
 
 fn pic_eoi(irq: u8) {

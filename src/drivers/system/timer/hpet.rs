@@ -67,6 +67,8 @@ impl Driver for HpetDriver {
 }
 
 /// Estado do HPET.
+// TODO: Revisar no futuro
+#[allow(unused)]
 struct HpetState {
     base_addr: Option<u64>,
     period_fs: u64, // Período em femtosegundos

@@ -13,7 +13,7 @@ use crate::drivers::bus::usb::types::*;
 /// Não executa realmente.
 pub fn control_transfer(
     _slot_id: u8,
-    setup: &UsbSetupPacket,
+    _setup: &UsbSetupPacket,
     _data: Option<&mut [u8]>,
 ) -> Result<usize, UsbError> {
     crate::kwarn!("(xHCI Transfer) control_transfer() stub");

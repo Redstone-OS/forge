@@ -17,6 +17,8 @@ use alloc::vec::Vec;
 // CONTROLLER PRINCIPAL
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Controller xHCI.
 pub struct XhciController {
     /// Base MMIO.
@@ -56,7 +58,7 @@ pub struct XhciController {
 /// Estado de um slot.
 // TODO: Revisar no futuro
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SlotState {
     /// Slot está alocado?
     allocated: bool,

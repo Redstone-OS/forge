@@ -46,6 +46,8 @@ pub fn sys_mprotect(_addr: usize, size: usize, _prot: u32) -> SysResult<usize> {
     Err(crate::syscall::SysError::NotSupported)
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 fn convert_prot(prot: u32) -> Protection {
     if prot & (PROT_WRITE | PROT_EXEC) == (PROT_WRITE | PROT_EXEC) {
         Protection::RWX
@@ -60,6 +62,8 @@ fn convert_prot(prot: u32) -> Protection {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 fn convert_flags(flags: u32) -> VmaFlags {
     let mut f = VmaFlags::empty();
     if flags & MAP_SHARED != 0 {
@@ -71,6 +75,8 @@ fn convert_flags(flags: u32) -> VmaFlags {
     f
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 fn infer_intent(prot: u32, flags: u32) -> MemoryIntent {
     if flags & MAP_ANONYMOUS != 0 {
         if prot & PROT_EXEC != 0 {

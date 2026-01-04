@@ -134,6 +134,8 @@ pub fn delay_us(us: u64) {
     }
 
     // Para delays curtos, usa busy-wait com TSC se disponível
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     let start = tsc::read_tsc();
     let _cycles = us * 1000; // Aproximação, precisa calibração
 

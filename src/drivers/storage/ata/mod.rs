@@ -14,14 +14,22 @@ use crate::sync::Spinlock;
 use alloc::sync::Arc;
 
 // ATA I/O Ports
+// TODO: Revisar no futuro
+#[allow(unused)]
 const ATA_PRIMARY_BASE: u16 = 0x1F0;
+#[allow(unused)]
 const ATA_PRIMARY_CTRL: u16 = 0x3F6;
+#[allow(unused)]
 const ATA_SECONDARY_BASE: u16 = 0x170;
+#[allow(unused)]
 const ATA_SECONDARY_CTRL: u16 = 0x376;
 
 // ATA Commands
+#[allow(unused)]
 const ATA_CMD_READ_PIO: u8 = 0x20;
+#[allow(unused)]
 const ATA_CMD_WRITE_PIO: u8 = 0x30;
+#[allow(unused)]
 const ATA_CMD_IDENTIFY: u8 = 0xEC;
 
 /// Driver ATA para o RDS.
@@ -59,6 +67,8 @@ impl Driver for AtaDriver {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 struct AtaDiskState {
     enabled: bool,
     stats: StorageStats,
@@ -83,6 +93,8 @@ impl AtaDisk {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     fn base_port(&self) -> u16 {
         if self.channel == 0 {
             ATA_PRIMARY_BASE

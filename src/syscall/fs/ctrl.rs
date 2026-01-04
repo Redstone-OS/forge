@@ -130,8 +130,12 @@ pub fn sys_access(path_ptr: usize, path_len: usize, mode: u32) -> SysResult<usiz
     let path = path_from_user(path_ptr, path_len)?;
 
     const F_OK: u32 = 0;
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     const X_OK: u32 = 1;
     const W_OK: u32 = 2;
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     const R_OK: u32 = 4;
 
     // Verificar existência

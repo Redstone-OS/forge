@@ -82,17 +82,26 @@ const REG_FIFO_CTRL: u16 = 2; // IIR/FCR
 const REG_LINE_CTRL: u16 = 3; // LCR
 const REG_MODEM_CTRL: u16 = 4; // MCR
 const REG_LINE_STATUS: u16 = 5; // LSR
+#[allow(unused)] // TODO: Revisar no futuro
 const REG_MODEM_STATUS: u16 = 6; // MSR
+#[allow(unused)] // TODO: Revisar no futuro
 const REG_SCRATCH: u16 = 7; // Scratch Register
 
 // Bits do Line Status Register (LSR)
 const LSR_DATA_READY: u8 = 0x01; // Dados disponíveis para leitura
+#[allow(unused)] // TODO: Revisar no futuro
 const LSR_OVERRUN_ERR: u8 = 0x02; // Overrun error
+#[allow(unused)] // TODO: Revisar no futuro
 const LSR_PARITY_ERR: u8 = 0x04; // Parity error
+#[allow(unused)] // TODO: Revisar no futuro
 const LSR_FRAMING_ERR: u8 = 0x08; // Framing error
+#[allow(unused)] // TODO: Revisar no futuro
 const LSR_BREAK_IND: u8 = 0x10; // Break indicator
+#[allow(unused)] // TODO: Revisar no futuro
 const LSR_TX_EMPTY: u8 = 0x20; // THR empty
+#[allow(unused)] // TODO: Revisar no futuro
 const LSR_TX_IDLE: u8 = 0x40; // THR empty & line idle
+#[allow(unused)] // TODO: Revisar no futuro
 const LSR_FIFO_ERR: u8 = 0x80; // Error in received FIFO
 
 // Configuração

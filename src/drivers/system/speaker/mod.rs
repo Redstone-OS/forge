@@ -52,14 +52,14 @@ pub fn play(frequency_hz: u32) {
     super::timer::pit::configure_speaker(frequency_hz);
 
     // Habilita speaker (bits 0 e 1 da porta 0x61)
-    let current = unsafe { inb(SPEAKER_PORT) };
+    let current = { inb(SPEAKER_PORT) };
     outb(SPEAKER_PORT, current | 0x03);
 }
 
 /// Para o som.
 pub fn stop() {
     // Desabilita speaker (bits 0 e 1 da porta 0x61)
-    let current = unsafe { inb(SPEAKER_PORT) };
+    let current = { inb(SPEAKER_PORT) };
     outb(SPEAKER_PORT, current & !0x03);
 }
 

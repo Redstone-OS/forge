@@ -24,10 +24,20 @@ const VBE_DISPI_INDEX_XRES: u16 = 1;
 const VBE_DISPI_INDEX_YRES: u16 = 2;
 const VBE_DISPI_INDEX_BPP: u16 = 3;
 const VBE_DISPI_INDEX_ENABLE: u16 = 4;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const VBE_DISPI_INDEX_BANK: u16 = 5;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const VBE_DISPI_INDEX_VIRT_WIDTH: u16 = 6;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const VBE_DISPI_INDEX_VIRT_HEIGHT: u16 = 7;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const VBE_DISPI_INDEX_X_OFFSET: u16 = 8;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const VBE_DISPI_INDEX_Y_OFFSET: u16 = 9;
 
 // VBE Dispi IDs
@@ -44,17 +54,13 @@ pub struct BochsDriver;
 
 impl BochsDriver {
     fn write_reg(index: u16, data: u16) {
-        unsafe {
-            outw(INDEX_PORT, index);
-            outw(DATA_PORT, data);
-        }
+        outw(INDEX_PORT, index);
+        outw(DATA_PORT, data);
     }
 
     fn read_reg(index: u16) -> u16 {
-        unsafe {
-            outw(INDEX_PORT, index);
-            inw(DATA_PORT)
-        }
+        outw(INDEX_PORT, index);
+        inw(DATA_PORT)
     }
 
     fn check_version() -> bool {

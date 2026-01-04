@@ -33,8 +33,14 @@ pub const LPT2_PORT: u16 = 0x278;
 pub const LPT3_PORT: u16 = 0x3BC;
 
 // Registradores (offset do base)
+// TODO: Revisar no futuro
+#[allow(unused)]
 const REG_DATA: u16 = 0; // Data register
+                         // TODO: Revisar no futuro
+#[allow(unused)]
 const REG_STATUS: u16 = 1; // Status register
+                           // TODO: Revisar no futuro
+#[allow(unused)]
 const REG_CONTROL: u16 = 2; // Control register
 
 // =============================================================================

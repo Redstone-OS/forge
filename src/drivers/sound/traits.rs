@@ -393,6 +393,8 @@ pub trait SoundDevice: Send + Sync {
     }
 
     /// Drena buffers pendentes (espera finalizar).
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     fn drain(&self, direction: StreamDirection) -> Result<(), SoundError> {
         Ok(())
     }
@@ -416,6 +418,8 @@ pub trait SoundDevice: Send + Sync {
     /// ## Retorno:
     /// - Ok(frames): Número de frames lidos
     /// - Err: Erro de leitura
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     fn read(&self, buffer: &mut [u8]) -> Result<usize, SoundError> {
         Err(SoundError::NotSupported)
     }

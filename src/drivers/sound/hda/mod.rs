@@ -198,6 +198,8 @@ impl Default for HdaState {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Dispositivo Intel HDA.
 pub struct IntelHdaDevice {
     /// Vendor ID PCI.
@@ -218,6 +220,8 @@ impl IntelHdaDevice {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Retorna nome do fabricante.
     fn vendor_name(&self) -> &'static str {
         match self.vendor_id {

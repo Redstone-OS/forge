@@ -56,6 +56,8 @@ impl Driver for VirtioBlkDriver {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 struct VirtioDiskState {
     enabled: bool,
     capacity: u64,

@@ -5,6 +5,8 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 struct Port {
     #[allow(dead_code)]
     name: String,

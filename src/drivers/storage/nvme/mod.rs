@@ -68,12 +68,16 @@ impl Driver for NvmeDriver {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 struct NvmeDiskState {
     enabled: bool,
     stats: StorageStats,
 }
 
 /// Dispositivo NVMe (Namespace).
+// TODO: Revisar no futuro
+#[allow(unused)]
 pub struct NvmeDisk {
     controller: u8,
     namespace: u32,

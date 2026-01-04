@@ -8,6 +8,8 @@
 use super::CapHandle;
 use alloc::vec::Vec;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Nó na árvore de derivação.
 struct DerivationNode {
     handle: CapHandle,

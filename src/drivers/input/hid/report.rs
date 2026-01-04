@@ -137,6 +137,8 @@ pub fn parse_descriptor(data: &[u8]) -> Option<HidReportDescriptor> {
                     0x08 => usages.push(value as u16),
                     0x18 => {
                         // Usage Minimum
+                        // TODO: Revisar no futuro
+                        #[allow(unused)]
                         let min = value as u16;
                         // Assume Usage Maximum vem logo depois
                     }

@@ -6,8 +6,12 @@ use crate::mm::PhysAddr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 const CACHE_SIZE: usize = 32;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const MAX_CPUS: usize = 64;
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 pub struct CpuFrameCache {
     frames: [u64; CACHE_SIZE],
     count: usize,

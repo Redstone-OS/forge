@@ -507,6 +507,8 @@ pub fn shutdown_all() {
 // FUNÇÕES INTERNAS
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Gera próximo ID de dispositivo (uso interno).
 fn next_id() -> DeviceId {
     let mut mgr = DRIVER_MANAGER.lock();
@@ -515,6 +517,8 @@ fn next_id() -> DeviceId {
     id
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Busca contexto persistente de um dispositivo (uso interno).
 pub(crate) fn get_context(_id: DeviceId) -> Option<&'static DriverContext> {
     // TODO: Implementar busca no pool de contextos

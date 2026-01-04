@@ -59,6 +59,8 @@ const PCI_SUBCLASS_AUDIO: u8 = 0x01;
 
 /// Intel ICH AC'97 (muito comum em QEMU)
 const VENDOR_INTEL: u16 = 0x8086;
+// TODO: Revisar no futuro
+#[allow(unused)]
 const DEVICE_ICH_AC97: u16 = 0x2415; // 82801AA AC'97
 
 // Registros do Mixer AC'97 (via BAR0)
@@ -223,6 +225,8 @@ impl Default for Ac97State {
     }
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Dispositivo AC'97.
 pub struct Ac97Device {
     /// Vendor ID PCI.

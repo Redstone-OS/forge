@@ -106,6 +106,8 @@ pub struct VirtqUsedElem {
 // VIRTQUEUE
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Representa uma VirtQueue completa.
 pub struct VirtQueue {
     /// Número da queue (índice).

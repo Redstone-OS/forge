@@ -152,6 +152,8 @@ pub trait PowerManaged: Send + Sync {
 // REGISTRO DE ESTADO DE ENERGIA
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Registro de estado de energia de um dispositivo.
 #[derive(Debug, Clone)]
 struct PowerRecord {

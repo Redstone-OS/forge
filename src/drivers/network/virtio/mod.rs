@@ -196,6 +196,8 @@ pub fn init() {
     crate::kinfo!("(VirtIO-Net) Inicializando driver...");
 
     // Busca dispositivos VirtIO-Net
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     if let Some(vdev) = crate::drivers::bus::virtio::find_by_type(VirtioDeviceType::Network) {
         crate::kinfo!("(VirtIO-Net) Dispositivo VirtIO-Net encontrado");
 

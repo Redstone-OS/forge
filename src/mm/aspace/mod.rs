@@ -39,6 +39,8 @@ pub struct AddressSpaceStats {
     pub shared_pages: u64,
 }
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 pub struct AddressSpace {
     pml4: PhysAddr,
     vmas: Vec<VMA>,

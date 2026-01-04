@@ -69,8 +69,8 @@ pub fn read_count() -> u16 {
     outb(PIT_COMMAND, 0b00_00_00_00);
 
     // Lê low byte, depois high byte
-    let low = unsafe { crate::arch::x86_64::ports::inb(PIT_CHANNEL0) };
-    let high = unsafe { crate::arch::x86_64::ports::inb(PIT_CHANNEL0) };
+    let low = crate::arch::x86_64::ports::inb(PIT_CHANNEL0);
+    let high = crate::arch::x86_64::ports::inb(PIT_CHANNEL0);
 
     ((high as u16) << 8) | (low as u16)
 }

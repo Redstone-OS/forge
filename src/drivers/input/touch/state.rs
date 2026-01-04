@@ -50,6 +50,8 @@ pub struct GestureEvent {
 // DETECTOR DE GESTOS
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Detector de gestos.
 pub struct GestureDetector {
     /// Contatos anteriores (para calcular deltas).
@@ -77,11 +79,15 @@ impl GestureDetector {
     ///
     /// ## STUB:
     /// Detecção básica.
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     pub fn detect(&mut self, state: &TouchState) -> Option<GestureEvent> {
         // TODO: Implementar detecção real de gestos
         None
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Calcula distância entre dois contatos.
     fn distance(c1: &TouchContact, c2: &TouchContact) -> f32 {
         let dx = (c1.x - c2.x) as f32;

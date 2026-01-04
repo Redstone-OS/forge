@@ -69,11 +69,15 @@ pub trait TimerDevice: Send + Sync {
     fn read(&self) -> u64;
 
     /// Configura timer em modo periódico.
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     fn set_periodic(&self, frequency_hz: u32) -> bool {
         false
     }
 
     /// Configura timer em modo one-shot.
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     fn set_oneshot(&self, ticks: u64) -> bool {
         false
     }

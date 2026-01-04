@@ -71,6 +71,8 @@ pub trait VirtioTransport: Send + Sync {
 // PCI TRANSPORT
 // =============================================================================
 
+// TODO: Revisar no futuro
+#[allow(unused)]
 /// Transport VirtIO via PCI.
 pub struct VirtioPciTransport {
     /// Dispositivo PCI associado.

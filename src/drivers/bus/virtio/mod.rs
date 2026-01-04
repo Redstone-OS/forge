@@ -221,6 +221,8 @@ impl Bus for VirtioBus {
         scan()
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     fn reset_device(&self, dev: &mut Device) -> bool {
         crate::kwarn!("(VirtIO) reset_device() - usando reset de status");
 

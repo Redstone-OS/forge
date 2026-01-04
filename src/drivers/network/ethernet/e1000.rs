@@ -91,6 +91,8 @@ pub const E1000_RAH: u32 = 0x5404;
 // =============================================================================
 
 /// Driver e1000.
+// TODO: Revisar no futuro
+#[allow(unused)]
 pub struct E1000Device {
     /// Endereço PCI.
     pci_address: PciAddress,
@@ -138,6 +140,8 @@ impl E1000Device {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Lê registrador MMIO.
     fn read_reg(&self, offset: u32) -> u32 {
         unsafe {
@@ -146,6 +150,8 @@ impl E1000Device {
         }
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused)]
     /// Escreve registrador MMIO.
     fn write_reg(&self, offset: u32, value: u32) {
         unsafe {

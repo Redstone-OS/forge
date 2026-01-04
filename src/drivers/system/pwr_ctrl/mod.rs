@@ -107,7 +107,7 @@ fn try_keyboard_reset() -> bool {
 
     // Esperar buffer vazio
     for _ in 0..10000 {
-        let status = unsafe { crate::arch::x86_64::ports::inb(0x64) };
+        let status = crate::arch::x86_64::ports::inb(0x64);
         if (status & 0x02) == 0 {
             break;
         }
