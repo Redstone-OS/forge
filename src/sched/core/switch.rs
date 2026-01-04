@@ -42,7 +42,7 @@ pub unsafe fn prepare_and_switch_to(
     core::pin::Pin::get_unchecked_mut(next.as_mut()).state = TaskState::Running;
 
     // Log de troca
-    crate::ktrace!("(Sched) Mudando para PID:", next.tid.as_u32() as u64);
+    // crate::ktrace!("(Sched) Mudando para PID:", next.tid.as_u32() as u64);
 
     // Aplicar estado de hardware (GDT, CR3)
     next.apply_hardware_state();

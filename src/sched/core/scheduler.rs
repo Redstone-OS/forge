@@ -239,7 +239,7 @@ pub extern "C" fn schedule() {
             drop(current_guard); // Libera lock antes do switch
 
             if super::idle::is_initialized() {
-                crate::ktrace!("(Sched) Retornando para idle task");
+                // crate::ktrace!("(Sched) Retornando para idle task");
                 unsafe { super::idle::switch_to_idle(old_ctx_ptr) };
                 // Retorna aqui quando a task for re-escalonada
                 return;
@@ -255,6 +255,8 @@ pub extern "C" fn schedule() {
 
     // CASO B: Há uma próxima task para rodar
     let next = next_opt.unwrap();
+    #[allow(unused)]
+    // Usado qunado ativa log de trace
     let next_pid = next.tid.as_u32();
 
     if let Some(mut old_task) = current_guard.take() {
@@ -306,7 +308,7 @@ pub extern "C" fn schedule() {
         }
     } else {
         // Nenhuma task atual - primeira execução
-        crate::ktrace!("(Sched) Primeira execução de PID:", next_pid as u64);
+        // crate::ktrace!("(Sched) Primeira execução de PID:", next_pid as u64);
         unsafe { super::switch::prepare_and_switch_to(next, None, current_guard) };
     }
 }

@@ -37,7 +37,7 @@ pub unsafe fn get_idle_context() -> *mut CpuContext {
 /// Entry point da idle task - loop infinito de espera
 #[no_mangle]
 pub extern "C" fn idle_task_entry() -> ! {
-    crate::kinfo!("(Idle) Idle task iniciada (TID 0)");
+    crate::kdebug!("(Idle) Idle task iniciada (TID 0)");
 
     let mut idle_count: u64 = 0;
 
@@ -146,14 +146,14 @@ pub unsafe fn switch_to_idle(old_ctx: *mut CpuContext) {
     if let Some(ref idle_task) = *idle_guard {
         let idle_ctx = &idle_task.context as *const CpuContext;
 
-        crate::ktrace!("(Idle) Retornando para idle task");
+        //crate::kdebug!("(Idle) Retornando para idle task");
 
         // Switch: salva contexto atual em old_ctx, restaura contexto da idle
         drop(idle_guard); // Libera o lock ANTES do switch
         crate::sched::task::context::switch(&mut *old_ctx, &*idle_ctx);
 
         // Retorna aqui quando a task for re-escalonada
-        crate::ktrace!("(Idle) Task retomada do idle");
+        // crate::ktrace!("(Idle) Task retomada do idle");
     } else {
         panic!("(Idle) switch_to_idle: idle task não inicializada!");
     }
