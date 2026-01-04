@@ -23,6 +23,8 @@
 //! A implementação completa requer o sistema de matching de drivers.
 //! Por enquanto, apenas estrutura e logs.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::device::{Device, DeviceId, DeviceState};
 use super::driver::DeviceType;
 use crate::sync::Spinlock;

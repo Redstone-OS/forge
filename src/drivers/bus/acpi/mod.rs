@@ -26,6 +26,8 @@ pub mod madt; // Parser da MADT (APICs)
 pub mod tables; // Definições de estruturas de tabelas // Parser da FADT (Power)
 
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::vec::Vec;
 
 // =============================================================================
@@ -194,6 +196,8 @@ struct ParsedRsdp {
 }
 
 /// Parseia o RSDP.
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 fn parse_rsdp(addr: u64) -> Option<ParsedRsdp> {
     crate::kwarn!("(ACPI) parse_rsdp() stub");
 
@@ -203,12 +207,16 @@ fn parse_rsdp(addr: u64) -> Option<ParsedRsdp> {
 }
 
 /// Parseia a RSDT (32 bits).
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 fn parse_rsdt(info: &mut AcpiInfo, addr: u64) {
     crate::kwarn!("(ACPI) parse_rsdt() stub");
     // TODO: Implementar
 }
 
 /// Parseia a XSDT (64 bits).
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 fn parse_xsdt(info: &mut AcpiInfo, addr: u64) {
     crate::kwarn!("(ACPI) parse_xsdt() stub");
     // TODO: Implementar

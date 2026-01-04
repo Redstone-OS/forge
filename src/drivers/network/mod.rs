@@ -45,8 +45,12 @@ pub mod wifi; // WiFi (futuro) // Media Independent Interface
 // Re-exports
 pub use traits::*;
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::bus::BusType;
 use crate::drivers::base::device::Device;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::driver::DeviceType;
 use crate::sync::Spinlock;
 use alloc::sync::Arc;

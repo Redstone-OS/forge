@@ -85,13 +85,13 @@ impl VirtioSoundDevice {
 }
 
 impl SoundDevice for VirtioSoundDevice {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "VirtIO Sound"
     }
-    fn card_name(&self) -> &str {
+    fn card_name(&self) -> &'static str {
         "virtio:0"
     }
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "VirtIO Sound (Paravirtualized)"
     }
     fn capabilities(&self) -> SoundCapabilities {

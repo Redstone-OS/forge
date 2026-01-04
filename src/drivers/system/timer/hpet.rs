@@ -12,6 +12,8 @@ use crate::drivers::base::device::Device;
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
 use crate::drivers::system::traits::*;
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::sync::Arc;
 
 /// Registros HPET (offsets do base address).

@@ -2,7 +2,11 @@
 //!
 //! Alocação de slots e gerenciamento de contextos de dispositivos.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::structs::*;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::types::*;
 
 /// Aloca um slot para um novo dispositivo.

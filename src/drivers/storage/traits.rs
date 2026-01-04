@@ -15,6 +15,8 @@
 
 use alloc::string::String;
 use alloc::sync::Arc;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::vec::Vec;
 
 // =============================================================================

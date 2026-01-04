@@ -21,8 +21,12 @@
 //! A implementação completa requer metadados de dependências nos drivers.
 //! Por enquanto, fornece estruturas e funções básicas.
 
+// TODO: Revisar uso no futuro
+#[allow(unused_imports)]
 use super::device::DeviceId;
 use crate::sync::Spinlock;
+// TODO: Revisar uso no futuro
+#[allow(unused_imports)]
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -268,6 +272,8 @@ pub fn print_graph() {
     crate::kinfo!("=== Dependency Graph ===");
     for node in graph.nodes.iter() {
         let deps: Vec<_> = node.depends_on.iter().map(|(n, _)| *n).collect();
+        // TODO: Revisar uso no futuro
+        #[allow(unused_variables)]
         let deps_str = if deps.is_empty() {
             "(none)".into()
         } else {

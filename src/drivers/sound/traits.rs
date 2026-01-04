@@ -12,6 +12,8 @@
 //! - **VirtIO**: Paravirtualizado (QEMU/KVM)
 //! - **USB Audio**: Class driver (futuro)
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -339,15 +341,15 @@ pub trait SoundDevice: Send + Sync {
     // -------------------------------------------------------------------------
 
     /// Retorna nome do dispositivo (ex: "Intel HDA").
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Retorna nome do card (ex: "hw:0").
-    fn card_name(&self) -> &str {
+    fn card_name(&self) -> &'static str {
         self.name()
     }
 
     /// Retorna descrição/modelo.
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Generic Sound Device"
     }
 

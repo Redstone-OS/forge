@@ -3,6 +3,8 @@
 //! Implementação de Command, Event e Transfer Rings.
 
 use super::structs::Trb;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::types::*;
 
 // =============================================================================
@@ -66,6 +68,8 @@ impl XhciRing {
     ///
     /// ## STUB:
     /// Não escreve realmente.
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     pub fn enqueue(&mut self, trb: Trb) -> bool {
         if self.is_full() {
             return false;

@@ -40,9 +40,12 @@ pub mod virtio;
 
 // Re-exports
 pub use traits::*;
-
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::driver::Driver;
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 

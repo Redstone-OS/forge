@@ -2,6 +2,8 @@
 //!
 //! Gerenciamento de portas USB do xHCI.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::regs::*;
 use super::types::*;
 use crate::drivers::bus::usb::host::PortStatus;

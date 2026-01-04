@@ -307,8 +307,13 @@ pub fn register_device(mut dev: Device) -> Arc<Spinlock<Device>> {
     dev.id = DeviceId(mgr.next_device_id);
     mgr.next_device_id += 1;
 
-    let dev_name = dev.name_as_str();
-    let dev_id = dev.id;
+    // Cria Arc protegido
+    let dev_arc = Arc::new(Spinlock::new(dev));
+
+    // Obscurece o mut dev original para evitar uso acidental
+    let dev_locked = dev_arc.lock();
+    let dev_name = dev_locked.name_as_str();
+    let dev_id = dev_locked.id;
 
     crate::kinfo!("(RDS) Registrando dispositivo:", dev_name, "ID:", dev_id.0);
 
@@ -316,17 +321,20 @@ pub fn register_device(mut dev: Device) -> Arc<Spinlock<Device>> {
     if mgr.devices.len() >= MAX_DEVICES {
         crate::kerror!("(RDS) Limite de dispositivos atingido!");
         // Retorna dispositivo mesmo assim, mas em estado de erro
-        dev.set_state(DeviceState::Dead);
-        return Arc::new(Spinlock::new(dev));
+        // Precisamos liberar o lock antes de retornar
+        drop(dev_locked);
+        dev_arc.lock().set_state(DeviceState::Dead);
+        return dev_arc;
     }
 
-    // Cria Arc protegido
-    let dev_arc = Arc::new(Spinlock::new(dev));
     mgr.devices.push(dev_arc.clone());
 
     // Cria contexto persistente para este dispositivo
     let ctx = DriverContext::new(dev_id);
     mgr.contexts.push(ctx);
+
+    // Libera o lock inicial
+    drop(dev_locked);
 
     // Tenta encontrar driver compatível
     let mut bound_driver: Option<Arc<dyn Driver>> = None;
@@ -357,6 +365,8 @@ pub fn register_device(mut dev: Device) -> Arc<Spinlock<Device>> {
         events::emit(events::DeviceEvent::Added(dev_id));
         telemetry::record_device_added(dev_id);
     } else {
+        let dev = dev_arc.lock();
+        let dev_name = dev.name_as_str();
         crate::kwarn!("(RDS) Nenhum driver compatível para:", dev_name);
         telemetry::record_device_orphan(dev_id);
     }
@@ -476,7 +486,7 @@ pub fn shutdown_all() {
     for dev_arc in mgr.devices.iter().rev() {
         let mut dev = dev_arc.lock();
 
-        if let Some(driver) = &dev.driver {
+        if let Some(driver) = dev.driver.clone() {
             crate::kinfo!("(RDS) Desligando:", dev.name_as_str());
 
             // Chama shutdown do driver
@@ -506,7 +516,7 @@ fn next_id() -> DeviceId {
 }
 
 /// Busca contexto persistente de um dispositivo (uso interno).
-pub(crate) fn get_context(id: DeviceId) -> Option<&'static DriverContext> {
+pub(crate) fn get_context(_id: DeviceId) -> Option<&'static DriverContext> {
     // TODO: Implementar busca no pool de contextos
     crate::kwarn!("(RDS) get_context() ainda não totalmente implementado");
     None

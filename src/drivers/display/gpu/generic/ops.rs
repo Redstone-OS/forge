@@ -3,6 +3,8 @@
 //! Implementação em software de primitivas gráficas (BitBlt, Alpha Blending).
 //! Usado como fallback quando a GPU não possui aceleração de hardware ativa.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use gfx_types::{PixelFormat, Rect};
 
 pub struct GenericOps;

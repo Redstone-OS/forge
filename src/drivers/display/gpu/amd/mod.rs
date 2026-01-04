@@ -3,6 +3,8 @@
 //! Driver para GPUs AMD (Radeon, Instinct).
 //! Implementa suporte para IP Blocks (GFX, SDMA, VCN) e AtomBIOS/PSP.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::device::{Device, DeviceState};
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
 use crate::drivers::bus::pci::device::PciDevice;

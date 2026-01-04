@@ -16,6 +16,7 @@
   "code-model": "kernel",
   "dynamic-linking": false,
   "default-hidden-visibility": true,
+  "default-visibility": "hidden",
   "max-atomic-width": 64,
   "atomic-cas": true,
   "no-compiler-rt": true,

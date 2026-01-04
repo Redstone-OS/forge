@@ -184,6 +184,8 @@ pub fn subscribe(listener: Box<dyn DeviceListener>) {
 ///
 /// ## STUB:
 /// Implementação completa requer identificadores únicos.
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 pub fn unsubscribe(name: &str) {
     crate::kwarn!("(Events) unsubscribe() não totalmente implementado");
     // TODO: Implementar remoção por ID ou referência
@@ -227,6 +229,8 @@ impl DeviceListener for LogListener {
                     new_state.as_str()
                 );
             }
+            // TODO: Revisar no futuro
+            #[allow(unused_variables)]
             DeviceEvent::PowerChange(_, new_power) => {
                 crate::kinfo!("(Event) Energia alterada, ID:", id.0);
             }
@@ -236,6 +240,8 @@ impl DeviceListener for LogListener {
             DeviceEvent::DriverReloaded(_) => {
                 crate::kinfo!("(Event) Driver recarregado, ID:", id.0);
             }
+            // TODO: Revisar no futuro
+            #[allow(unused_variables)]
             DeviceEvent::Interrupt(_, irq) => {
                 // IRQs são muito frequentes - não loga por padrão
             }

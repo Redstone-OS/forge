@@ -31,7 +31,7 @@ use alloc::vec::Vec;
 pub const LOOPBACK_NAME: &str = "lo";
 
 /// MTU do loopback (máximo possível).
-pub const LOOPBACK_MTU: u16 = 65536;
+pub const LOOPBACK_MTU: u16 = 65535;
 
 /// MAC address fictício para loopback.
 pub const LOOPBACK_MAC: MacAddress = MacAddress([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);

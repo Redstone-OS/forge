@@ -11,6 +11,8 @@
 //! ## STUB:
 //! Implementação mínima. xHCI é preferido.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::bus::pci;
 use crate::sync::Spinlock;
 

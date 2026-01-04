@@ -2,6 +2,8 @@
 //!
 //! Trait e tipos para host controllers USB.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::device::UsbDevice;
 use super::types::*;
 

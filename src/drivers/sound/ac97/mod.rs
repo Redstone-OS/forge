@@ -250,15 +250,15 @@ impl Ac97Device {
 }
 
 impl SoundDevice for Ac97Device {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "AC97"
     }
 
-    fn card_name(&self) -> &str {
+    fn card_name(&self) -> &'static str {
         "hw:1"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         if self.is_intel_ich() {
             "Intel ICH AC'97 Audio Controller"
         } else {

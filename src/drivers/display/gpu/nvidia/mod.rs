@@ -3,6 +3,8 @@
 //! Driver para GPUs NVIDIA (GeForce, Quadro, Tesla).
 //! Focado em gerenciamento de PFIFO, PGRAPH e buffers de comando.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::device::{Device, DeviceState};
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
 use crate::drivers::bus::pci::device::PciDevice;

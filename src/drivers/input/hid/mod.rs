@@ -33,6 +33,8 @@ pub use report::parse_report;
 pub use types::*;
 
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::vec::Vec;
 
 // =============================================================================

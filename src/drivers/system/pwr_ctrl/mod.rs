@@ -12,6 +12,8 @@
 
 use crate::drivers::base::device::Device;
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::system::traits::*;
 use alloc::sync::Arc;
 

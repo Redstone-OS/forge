@@ -10,7 +10,11 @@
 //! - Negociação de features
 //! - Gerenciamento de interrupções
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::types::*;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::{VirtioAddress, VirtioTransportType};
 use crate::drivers::bus::pci::{self, PciAddress, PciDevice};
 
@@ -119,6 +123,8 @@ impl VirtioPciTransport {
     }
 
     /// Lê registrador MMIO.
+    // TODO: Revisar no futuro
+    #[allow(dead_code, unused_variables)]
     fn read_reg(&self, offset: u64) -> u32 {
         // TODO: Implementar acesso real via BAR
         crate::kwarn!("(VirtIO PCI) read_reg() stub");
@@ -126,6 +132,8 @@ impl VirtioPciTransport {
     }
 
     /// Escreve registrador MMIO.
+    // TODO: Revisar no futuro
+    #[allow(dead_code, unused_variables)]
     fn write_reg(&self, offset: u64, value: u32) {
         // TODO: Implementar acesso real via BAR
         crate::kwarn!("(VirtIO PCI) write_reg() stub");
@@ -159,10 +167,14 @@ impl VirtioTransport for VirtioPciTransport {
         0
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     fn write_driver_features(&self, features: u64) {
         crate::kwarn!("(VirtIO PCI) write_driver_features() stub");
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     fn select_queue(&self, queue_index: u16) {
         crate::kwarn!("(VirtIO PCI) select_queue() stub");
     }
@@ -172,10 +184,14 @@ impl VirtioTransport for VirtioPciTransport {
         256 // Valor padrão
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     fn set_queue_size(&self, size: u16) {
         crate::kwarn!("(VirtIO PCI) set_queue_size() stub");
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     fn set_queue_address(&self, desc: u64, avail: u64, used: u64) {
         crate::kwarn!("(VirtIO PCI) set_queue_address() stub");
     }
@@ -184,15 +200,21 @@ impl VirtioTransport for VirtioPciTransport {
         crate::kwarn!("(VirtIO PCI) enable_queue() stub");
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     fn notify(&self, queue_index: u16) {
         crate::kwarn!("(VirtIO PCI) notify() stub");
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     fn read_config(&self, offset: usize) -> u32 {
         crate::kwarn!("(VirtIO PCI) read_config() stub");
         0
     }
 
+    // TODO: Revisar no futuro
+    #[allow(unused_variables)]
     fn write_config(&self, offset: usize, value: u32) {
         crate::kwarn!("(VirtIO PCI) write_config() stub");
     }

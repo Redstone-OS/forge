@@ -24,6 +24,8 @@ use crate::drivers::bus::pci::{PciAddress, PciDevice};
 use crate::drivers::network::traits::*;
 use crate::drivers::network::NetworkStats;
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::sync::Arc;
 
 // =============================================================================

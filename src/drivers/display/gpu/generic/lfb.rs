@@ -4,6 +4,8 @@
 //! Suporta as resoluções vindas do UEFI GOP ou VESA.
 
 use crate::mm::{PhysAddr, VirtAddr};
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use gfx_types::{DisplayInfo, PixelFormat};
 
 pub struct LfbController {

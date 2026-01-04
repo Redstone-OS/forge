@@ -7,6 +7,8 @@ pub mod lfb;
 pub mod ops;
 pub mod vga;
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use self::lfb::LfbController;
 use self::vga::VgaController;
 use crate::drivers::base::device::{Device, DeviceState};

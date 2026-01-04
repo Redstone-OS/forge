@@ -24,6 +24,8 @@
 
 use super::device::DeviceId;
 use super::driver::DriverError;
+// TODO: Revisar uso no futuro
+#[allow(unused_imports)]
 use crate::sync::Spinlock;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;

@@ -8,6 +8,8 @@
 //! - **Touch**: Eventos de toque (multi-touch)
 //! - **Scroll**: Eventos de rolagem
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::string::String;
 
 // =============================================================================

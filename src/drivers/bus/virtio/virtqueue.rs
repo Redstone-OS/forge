@@ -25,8 +25,14 @@
 //! ## STUB:
 //! Implementação parcial. Aloca estruturas mas não funciona completamente.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::types::*;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::dma::{self, DmaBuffer, DmaDirection};
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
 
@@ -150,6 +156,8 @@ impl VirtQueue {
         let avail_size = 6 + size as usize * 2; // flags + idx + ring[] + used_event
         let used_size = 6 + size as usize * core::mem::size_of::<VirtqUsedElem>(); // flags + idx + ring[] + avail_event
 
+        // TODO: Revisar no futuro
+        #[allow(unused_variables)]
         let total_size = desc_size + avail_size + used_size;
 
         // TODO: Precisa alinhar cada seção corretamente
@@ -159,6 +167,8 @@ impl VirtQueue {
         // let dma = dma::alloc(total_size, device_id, DmaDirection::Bidirectional)?;
 
         // Cria lista de descritores livres
+        // TODO: Revisar no futuro
+        #[allow(unused_mut)]
         let mut free_list: Vec<u16> = (0..size).collect();
 
         Some(Self {

@@ -29,6 +29,8 @@ pub mod structs; // TRBs e contextos
 pub mod transfer; // Operações de transfer
 pub mod types; // Tipos e constantes
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::bus::pci;
 use crate::sync::Spinlock;
 use alloc::sync::Arc;

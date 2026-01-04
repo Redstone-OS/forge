@@ -36,6 +36,8 @@ pub use access::{read_config, write_config};
 pub use device::PciDevice;
 
 use crate::drivers::base::bus::{Bus, BusAddress, BusType};
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::device::{Device, DeviceId};
 use crate::drivers::base::driver::DeviceType;
 use crate::sync::Spinlock;
@@ -92,6 +94,8 @@ impl PciAddress {
     /// Formata o endereço no estilo padrão: SSSS:BB:DD.F
     pub fn format(&self) -> [u8; 16] {
         // Retorna buffer com formato "0000:00:00.0"
+        // TODO: Revisar no futuro
+        #[allow(unused_mut)]
         let mut buf = [0u8; 16];
         // Simplificação: apenas retorna zeros
         buf
@@ -373,6 +377,8 @@ fn class_to_device_type(class: u8, subclass: u8) -> DeviceType {
 }
 
 /// Retorna nome legível para um dispositivo.
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 fn get_device_name(vendor: u16, device: u16) -> &'static str {
     // TODO: Tabela de nomes de dispositivos
     match vendor {

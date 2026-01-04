@@ -4,7 +4,11 @@
 
 use super::regs::*;
 use super::ring::XhciRing;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::structs::*;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::types::*;
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
@@ -50,8 +54,10 @@ pub struct XhciController {
 }
 
 /// Estado de um slot.
-#[derive(Debug, Clone, Default)]
-struct SlotState {
+// TODO: Revisar no futuro
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotState {
     /// Slot está alocado?
     allocated: bool,
     /// Device address atribuído.

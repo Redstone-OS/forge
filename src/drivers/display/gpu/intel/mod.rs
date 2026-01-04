@@ -3,6 +3,8 @@
 //! Driver para GPUs integradas Intel (HD Graphics, Iris, UHD).
 //! Responsável pelo Display Engine e Render Engine via MMIO.
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::device::{Device, DeviceState};
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
 use crate::drivers::bus::pci::device::PciDevice;

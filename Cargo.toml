@@ -64,3 +64,6 @@ strip = "symbols"
 debug-assertions = false
 overflow-checks = false
 incremental = false
+
+[profile.dev]
+panic = "abort"

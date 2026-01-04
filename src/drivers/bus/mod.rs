@@ -65,6 +65,8 @@ pub use virtio::{VirtioBus, VirtioDevice};
 
 use crate::drivers::base::bus::{Bus, BusType};
 use crate::drivers::base::device::Device;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::sync::Spinlock;
 use alloc::sync::Arc;
 use alloc::vec::Vec;

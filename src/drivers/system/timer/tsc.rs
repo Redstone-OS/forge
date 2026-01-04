@@ -9,6 +9,8 @@
 //! - Pode não ser monotônico em CPUs antigas
 //! - Frequência varia com P-states em CPUs antigas
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::system::traits::*;
 use crate::sync::Spinlock;
 

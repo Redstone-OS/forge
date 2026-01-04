@@ -31,6 +31,8 @@ pub mod scsi; // Comandos SCSI
 pub mod transport; // BBB transport
 
 use crate::drivers::bus::usb::device::UsbDevice;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::bus::usb::types::*;
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
@@ -135,16 +137,15 @@ pub fn probe(usb_dev: &UsbDevice) -> bool {
 ///
 /// ## STUB:
 /// Não lê realmente.
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 pub fn read_blocks(
-    device_index: usize,
-    start_block: u64,
-    count: u32,
-    buffer: &mut [u8],
+    _device_index: usize,
+    _start_block: u64,
+    _count: u32,
+    _buffer: &mut [u8],
 ) -> Result<(), MscError> {
     crate::kwarn!("(USB MSC) read_blocks() stub");
-
-    let devices = DEVICES.lock();
-    let _dev = devices.get(device_index).ok_or(MscError::NoDevice)?;
 
     // TODO: Implementar via SCSI READ(10)
 
@@ -155,16 +156,15 @@ pub fn read_blocks(
 ///
 /// ## STUB:
 /// Não escreve realmente.
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 pub fn write_blocks(
-    device_index: usize,
-    start_block: u64,
-    count: u32,
-    buffer: &[u8],
+    _device_index: usize,
+    _start_block: u64,
+    _count: u32,
+    _buffer: &[u8],
 ) -> Result<(), MscError> {
     crate::kwarn!("(USB MSC) write_blocks() stub");
-
-    let devices = DEVICES.lock();
-    let _dev = devices.get(device_index).ok_or(MscError::NoDevice)?;
 
     // TODO: Implementar via SCSI WRITE(10)
 

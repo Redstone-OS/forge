@@ -23,6 +23,8 @@
 use super::device::DeviceId;
 use super::driver::DriverError;
 use crate::sync::Spinlock;
+// TODO: Revisar uso no futuro
+#[allow(unused_imports)]
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 

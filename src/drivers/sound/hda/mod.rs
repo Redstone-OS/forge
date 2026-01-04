@@ -231,15 +231,15 @@ impl IntelHdaDevice {
 }
 
 impl SoundDevice for IntelHdaDevice {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Intel HDA"
     }
 
-    fn card_name(&self) -> &str {
+    fn card_name(&self) -> &'static str {
         "hw:0"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         match self.vendor_id {
             VENDOR_INTEL => "Intel High Definition Audio Controller",
             VENDOR_AMD => "AMD High Definition Audio Controller",

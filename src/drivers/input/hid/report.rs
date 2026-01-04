@@ -6,6 +6,8 @@
 //! Parsing básico implementado. Suporte completo pendente.
 
 use super::types::*;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use super::usage::*;
 use alloc::vec::Vec;
 

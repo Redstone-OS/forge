@@ -46,10 +46,14 @@ pub mod mass_storage; // USB Mass Storage
 pub use device::UsbDevice;
 pub use types::*;
 
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use crate::drivers::base::bus::{Bus, BusType};
 use crate::drivers::base::device::Device;
 use crate::drivers::bus::pci;
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 

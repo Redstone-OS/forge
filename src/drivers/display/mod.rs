@@ -45,6 +45,8 @@ pub use traits::*;
 
 use crate::core::boot::handoff::FramebufferInfo as HandoffFbInfo;
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -112,7 +114,6 @@ pub fn register_device(dev: DisplayDeviceRef) {
 
     let mut devices = DISPLAY_DEVICES.lock();
     let index = devices.len();
-    devices.push(dev);
 
     // Primeiro display se torna primário
     let mut primary = PRIMARY_DISPLAY.lock();
@@ -120,6 +121,8 @@ pub fn register_device(dev: DisplayDeviceRef) {
         *primary = Some(index);
         crate::kinfo!("(Display) Display primário: {}", name);
     }
+
+    devices.push(dev);
 }
 
 /// Remove um dispositivo de display.

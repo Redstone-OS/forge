@@ -43,6 +43,8 @@ pub use traits::*;
 
 use crate::drivers::base::device::Device;
 use crate::sync::Spinlock;
+// TODO: Revisar no futuro
+#[allow(unused_imports)]
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -135,7 +137,6 @@ pub fn register_device(dev: SoundDeviceRef) {
 
     let mut devices = SOUND_DEVICES.lock();
     let index = devices.len();
-    devices.push(dev);
 
     // Se é o primeiro dispositivo, define como padrão
     let mut default = DEFAULT_DEVICE.lock();
@@ -143,6 +144,8 @@ pub fn register_device(dev: SoundDeviceRef) {
         *default = Some(index);
         crate::kinfo!("(Sound) Dispositivo padrão definido: {}", name);
     }
+
+    devices.push(dev);
 }
 
 /// Remove um dispositivo de som.
@@ -219,27 +222,7 @@ pub fn set_default_device(name: &str) -> bool {
 
 /// Retorna lista de nomes de dispositivos.
 pub fn list_device_names() -> Vec<&'static str> {
-    // Precisamos retornar strings estáticas, então copiamos os nomes
-    // Na prática, os drivers retornam &'static str
-    SOUND_DEVICES
-        .lock()
-        .iter()
-        .map(|d| {
-            // Leak do nome para obter 'static lifetime
-            // Isso é seguro porque drivers nunca são removidos em runtime normal
-            let name: &str = d.name();
-            // Retornamos diretamente, já que name() retorna &str do driver
-            name
-        })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .map(|s| {
-            // Na prática os nomes são literais, mas precisamos do tipo correto
-            s as &str
-        })
-        .collect::<Vec<_>>()
-        .leak()
-        .to_vec()
+    SOUND_DEVICES.lock().iter().map(|d| d.name()).collect()
 }
 
 // =============================================================================

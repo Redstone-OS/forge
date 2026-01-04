@@ -338,6 +338,8 @@ pub fn is_in_driver_zone(addr: u64) -> bool {
 ///
 /// ## STUB:
 /// Será implementado quando tivermos page fault handler especial.
+// TODO: Revisar no futuro
+#[allow(unused_variables)]
 pub fn validate_access(addr: u64, size: usize, owner: DeviceId) -> bool {
     crate::kwarn!("(Memory) validate_access() ainda não implementado");
 
