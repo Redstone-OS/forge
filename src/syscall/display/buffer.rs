@@ -67,8 +67,10 @@ pub fn sys_buffer_map(handle: u64, hint_addr: u64) -> SysResult<usize> {
 
     let mut mgr = BUFFER_MANAGER.lock();
     let mapped_addr = mgr.map(buffer_handle, vaddr).map_err(|e| match e {
-        crate::drivers::display::buffer::BufferError::InvalidHandle => SysError::InvalidArgument,
-        crate::drivers::display::buffer::BufferError::AlreadyMapped => SysError::AlreadyExists,
+        crate::drivers::display::fb::buffer::BufferError::InvalidHandle => {
+            SysError::InvalidArgument
+        }
+        crate::drivers::display::fb::buffer::BufferError::AlreadyMapped => SysError::AlreadyExists,
         _ => SysError::IoError,
     })?;
 

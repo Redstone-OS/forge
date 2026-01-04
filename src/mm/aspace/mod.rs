@@ -8,6 +8,8 @@ pub mod vma;
 extern crate alloc;
 
 use crate::mm::{PhysAddr, VirtAddr};
+// TODO: Remover allow
+#[allow(unused_imports)]
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -125,6 +127,8 @@ impl AddressSpace {
             .iter()
             .position(|v| v.start == addr)
             .ok_or(ASpaceError::RegionNotFound)?;
+        // TODO: Remover allow
+        #[allow(unused_variables)]
         let vma = self.vmas.remove(idx);
         self.stats.vma_count = self.stats.vma_count.saturating_sub(1);
         self.tlb_gen.fetch_add(1, Ordering::Release);

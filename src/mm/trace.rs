@@ -18,6 +18,8 @@ pub fn is_enabled() -> bool {
     TRACING_ENABLED.load(Ordering::Acquire)
 }
 
+// TODO: Remover allow
+#[allow(unused_variables)]
 pub fn trace_alloc(phys: u64, _size: usize) {
     if !is_enabled() {
         return;

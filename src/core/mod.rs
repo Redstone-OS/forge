@@ -2,17 +2,17 @@
 //!
 //! Infraestrutura central agnóstica de hardware.
 //!
-//! ## Subsistemas
+//! ## Submódulos
 //!
 //! | Módulo   | Responsabilidade                              |
 //! |----------|-----------------------------------------------|
 //! | `boot`   | Inicialização, kernel_main, panic handler     |
-//! | `object` | Gerenciamento de objetos kernel (handles)     |
-//! | `smp`    | Multiprocessamento (per-cpu, IPI, topology)   |
-//! | `time`   | Relógios e timers                             |
-//! | `work`   | Trabalho diferido (workqueues, tasklets)      |
-//! | `power`  | Gerenciamento de energia (cpufreq, suspend)   |
 //! | `debug`  | Logging, tracing, diagnóstico                 |
+//! | `smp`    | Multiprocessamento (per-cpu, IPI)             |
+//! | `time`   | Relógios e timers                             |
+//! | `work`   | Trabalho diferido (workqueues)                |
+//! | `power`  | Gerenciamento de energia                      |
+//! | `object` | Sistema de handles do kernel                  |
 
 // =============================================================================
 // BOOT — Inicialização do Sistema
@@ -20,15 +20,14 @@
 
 pub mod boot;
 
-// Re-export para acesso direto
 pub use boot::entry::kernel_main;
 pub use boot::handoff::BootInfo;
 
 // =============================================================================
-// OBJECT — Sistema de Objetos do Kernel
+// DEBUG — Diagnóstico e Logging
 // =============================================================================
 
-pub mod object;
+pub mod debug;
 
 // =============================================================================
 // SMP — Multiprocessamento Simétrico
@@ -55,19 +54,13 @@ pub mod work;
 pub mod power;
 
 // =============================================================================
-// DEBUG — Diagnóstico e Trace
+// OBJECT — Sistema de Objetos do Kernel
 // =============================================================================
 
-pub mod debug;
+pub mod object;
 
 // =============================================================================
-// PROCESS — Gerenciamento de Processos
+// PROCESS — Spawn do Init
 // =============================================================================
 
 pub mod process;
-
-// =============================================================================
-// GFX_TEST — Teste Temporário do Framebuffer
-// =============================================================================
-
-pub mod gfx_test;

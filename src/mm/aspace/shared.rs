@@ -34,6 +34,8 @@ static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 
 pub fn create(size: usize, creator: Pid) -> ASpaceResult<SharedMemRegion> {
     let pages = (size + crate::mm::config::PAGE_SIZE - 1) / crate::mm::config::PAGE_SIZE;
+    // TODO: Remover allow
+    #[allow(unused_mut)]
     let mut allocator = crate::mm::pmm::FRAME_ALLOCATOR.lock();
     let phys_base = allocator.allocate_frame().ok_or(ASpaceError::OutOfMemory)?;
     for _ in 1..pages {

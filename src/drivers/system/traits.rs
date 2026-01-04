@@ -2,6 +2,7 @@
 //!
 //! Define interfaces para componentes de sistema.
 
+use crate::core::debug::klog::SerialPrint;
 use alloc::sync::Arc;
 
 // =============================================================================
@@ -21,6 +22,19 @@ pub enum TimerSource {
     AcpiPm,
     /// Local APIC Timer.
     LocalApic,
+}
+
+impl SerialPrint for TimerSource {
+    fn serial_print(&self) {
+        match self {
+            Self::Pit => "PIT",
+            Self::Hpet => "HPET",
+            Self::Tsc => "TSC",
+            Self::AcpiPm => "ACPI PM",
+            Self::LocalApic => "Local APIC",
+        }
+        .serial_print();
+    }
 }
 
 /// Capacidades de um timer.
@@ -95,6 +109,19 @@ pub enum InterruptControllerType {
     MsiX,
 }
 
+impl SerialPrint for InterruptControllerType {
+    fn serial_print(&self) {
+        match self {
+            Self::Pic => "PIC",
+            Self::LocalApic => "Local APIC",
+            Self::IoApic => "I/O APIC",
+            Self::Msi => "MSI",
+            Self::MsiX => "MSI-X",
+        }
+        .serial_print();
+    }
+}
+
 /// Interface para controladores de interrupção.
 pub trait InterruptController: Send + Sync {
     /// Nome do controlador.
@@ -150,6 +177,19 @@ pub enum PowerState {
     Off,
 }
 
+impl SerialPrint for PowerState {
+    fn serial_print(&self) {
+        match self {
+            Self::Running => "Running",
+            Self::Standby => "Standby",
+            Self::SuspendToRam => "Suspend to RAM",
+            Self::Hibernate => "Hibernate",
+            Self::Off => "Off",
+        }
+        .serial_print();
+    }
+}
+
 /// Método de reset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResetMethod {
@@ -161,6 +201,18 @@ pub enum ResetMethod {
     TripleFault,
     /// PCI reset.
     Pci,
+}
+
+impl SerialPrint for ResetMethod {
+    fn serial_print(&self) {
+        match self {
+            Self::Acpi => "ACPI",
+            Self::Keyboard => "Keyboard",
+            Self::TripleFault => "Triple Fault",
+            Self::Pci => "PCI",
+        }
+        .serial_print();
+    }
 }
 
 // =============================================================================
@@ -180,6 +232,13 @@ pub enum DmaChannel {
     Channel7 = 7,
 }
 
+impl SerialPrint for DmaChannel {
+    fn serial_print(&self) {
+        crate::drivers::comm::serial::write_str("Channel ");
+        (*self as u8).serial_print();
+    }
+}
+
 /// Modo de transferência DMA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DmaMode {
@@ -189,6 +248,17 @@ pub enum DmaMode {
     Write,
     /// Verify (sem transferência real).
     Verify,
+}
+
+impl SerialPrint for DmaMode {
+    fn serial_print(&self) {
+        match self {
+            Self::Read => "Read",
+            Self::Write => "Write",
+            Self::Verify => "Verify",
+        }
+        .serial_print();
+    }
 }
 
 /// Erro de DMA.
@@ -202,4 +272,16 @@ pub enum DmaError {
     AddressTooHigh,
     /// Canal ocupado.
     ChannelBusy,
+}
+
+impl SerialPrint for DmaError {
+    fn serial_print(&self) {
+        match self {
+            Self::InvalidChannel => "Invalid Channel",
+            Self::BoundaryCross => "Boundary Cross",
+            Self::AddressTooHigh => "Address Too High",
+            Self::ChannelBusy => "Channel Busy",
+        }
+        .serial_print();
+    }
 }

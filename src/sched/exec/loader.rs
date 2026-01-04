@@ -5,7 +5,6 @@ use crate::mm::vmm::MapFlags;
 use crate::mm::VirtAddr;
 use crate::sys::types::Pid;
 use crate::sys::KernelError;
-use alloc::boxed::Box;
 
 /// Erro de execução
 #[derive(Debug, Clone, Copy)]

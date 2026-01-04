@@ -38,7 +38,7 @@
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
 #![feature(raw_ref_op)]
-
+#![feature(negative_impls)]
 extern crate alloc;
 
 // =============================================================================

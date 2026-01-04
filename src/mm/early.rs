@@ -3,7 +3,6 @@
 //! Alocador simples para uso antes do heap estar disponível.
 
 use crate::sync::Spinlock;
-use core::alloc::Layout;
 
 #[derive(Debug, Clone, Copy)]
 pub struct EarlyRegion {

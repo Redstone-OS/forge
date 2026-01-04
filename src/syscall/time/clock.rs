@@ -47,8 +47,8 @@ pub fn sys_clock_get(clock_id: u32, out_ptr: usize) -> SysResult<usize> {
     // Obter tempo
     let time = match clock {
         ClockId::Monotonic => {
-            let ticks = crate::drivers::timer::ticks();
-            let freq = crate::drivers::timer::frequency() as u64;
+            let ticks = crate::drivers::system::timer::ticks();
+            let freq = crate::drivers::system::timer::frequency() as u64;
             if freq == 0 {
                 TimeSpec::zero()
             } else {

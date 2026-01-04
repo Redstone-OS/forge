@@ -4,6 +4,8 @@
 
 use super::PfmResult;
 use crate::mm::PhysAddr;
+// TODO: Remover allow
+#[allow(unused_imports)]
 use crate::sync::Spinlock;
 
 #[derive(Debug, Clone, Copy)]

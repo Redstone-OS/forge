@@ -5,7 +5,7 @@
 use super::bpb::Bpb;
 use super::dir::DirEntry;
 use super::PublicDirEntry;
-use crate::drivers::block::BlockDevice;
+use crate::drivers::storage::BlockDevice;
 use crate::fs::vfs::inode::FsError;
 use alloc::sync::Arc;
 use alloc::vec::Vec;

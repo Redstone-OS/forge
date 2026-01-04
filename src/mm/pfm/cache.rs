@@ -49,6 +49,8 @@ impl CpuFrameCache {
     }
 
     pub fn refill(&mut self, count: usize) {
+        // TODO: Remover allow
+        #[allow(unused_variables)]
         let pfm = super::get().lock();
         let to_fill = core::cmp::min(count, CACHE_SIZE - self.count);
         for _ in 0..to_fill {

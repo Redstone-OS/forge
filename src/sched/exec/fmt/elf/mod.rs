@@ -1,7 +1,7 @@
 //! ELF Loader
 
 use crate::mm::pmm::{FRAME_ALLOCATOR, FRAME_SIZE};
-use crate::mm::vmm::{map_page_with_pmm, MapFlags};
+use crate::mm::vmm::MapFlags;
 use crate::mm::VirtAddr;
 use crate::sys::{KernelError, KernelResult};
 
@@ -92,7 +92,10 @@ pub fn load_binary(
                     // Vamos tentar fazer merge das permissões na VMA existente
                     crate::kwarn!("(ELF) Sobreposicao detectada. Tentando mesclar...");
 
+                    // TODO: Remover allow
+                    #[allow(unused_mut)]
                     let mut aspace = aspace_arc.lock();
+                    #[allow(unused_mut)]
                     if let Some(mut existing_vma) = aspace.find_vma(start_vaddr) {
                         // Atualizar permissões (Union)
                         // VMA struct é retornada por find_vma (clone).

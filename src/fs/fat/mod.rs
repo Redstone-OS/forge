@@ -46,7 +46,7 @@ pub fn init() {
     crate::kinfo!("(FAT) Inicializando módulo...");
 
     // Tentar montar o primeiro dispositivo de bloco
-    if let Some(device) = crate::drivers::block::first_device() {
+    if let Some(device) = crate::drivers::storage::find_device("1") {
         match FatFs::mount(device) {
             Ok(fat) => {
                 crate::kinfo!("(FAT) Filesystem montado com sucesso!");

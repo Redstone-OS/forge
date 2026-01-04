@@ -27,7 +27,7 @@ pub unsafe fn init_basics() {
     interrupts::init_pics(); // Remapear PIC para 32-47
 
     // Inicializar PIT (Timer) - 100 Hz
-    crate::drivers::timer::pit::init(100);
+    crate::drivers::system::timer::pit::init(100);
 
     // Inicializar syscall MSRs
 

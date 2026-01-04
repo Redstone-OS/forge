@@ -1,5 +1,6 @@
 //! # Page Cache
-
+// TODO: Remover allow
+#[allow(unused_imports)]
 use crate::mm::{PhysAddr, PhysFrame};
 use crate::sync::Spinlock;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};

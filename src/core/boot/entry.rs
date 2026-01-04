@@ -17,7 +17,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 1. Inicialização Precoce (Early Init) - Antes do Heap
     // Configurar Log Serial para que possamos ver o que está acontecendo.
     // (Serial driver geralmente não precisa de heap)
-    crate::drivers::serial::init();
+    crate::drivers::comm::serial::init();
     crate::kinfo!("'--- Iniciando Forge Kernel ---'");
 
     // Validação da ABI do Bootloader
@@ -44,9 +44,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Inicializamos agora que o HHDM está pronto para mapear o FB corretamente
     crate::drivers::display::init(boot_info.framebuffer);
 
-    // === DEBUG VISUAL (comente para desativar) ===
-    crate::core::debug::display::init();
-    // === FIM DEBUG VISUAL ===
+    // Debug console (desativado por padrão, ver core::debug::console)
 
     // 4. Inicialização do Core (Time, SMP, Sched)
     crate::kinfo!("'Inicializando Subsistemas do Núcleo'");

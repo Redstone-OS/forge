@@ -69,7 +69,7 @@ impl ModuleWatchdog {
 
     /// Registra um módulo para monitoramento
     pub fn register(&mut self, id: ModuleId) {
-        let now = crate::drivers::timer::ticks();
+        let now = crate::drivers::system::timer::ticks();
 
         self.watched.insert(
             id,
@@ -92,7 +92,7 @@ impl ModuleWatchdog {
     /// Atualiza status de um módulo (chamado pelo módulo)
     pub fn heartbeat(&mut self, id: ModuleId) {
         if let Some(module) = self.watched.get_mut(&id) {
-            let now = crate::drivers::timer::ticks();
+            let now = crate::drivers::system::timer::ticks();
             module.last_healthy = now;
             module.consecutive_failures = 0;
             module.status = HealthStatus::Healthy;
@@ -113,7 +113,7 @@ impl ModuleWatchdog {
             return alloc::vec::Vec::new();
         }
 
-        let now = crate::drivers::timer::ticks();
+        let now = crate::drivers::system::timer::ticks();
         let mut problems = alloc::vec::Vec::new();
 
         for (&id, module) in self.watched.iter_mut() {

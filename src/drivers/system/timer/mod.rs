@@ -28,7 +28,7 @@ pub use pit::init as init_pit;
 static ACTIVE_TIMER: Spinlock<Option<TimerSource>> = Spinlock::new(None);
 
 /// Frequência do timer em Hz.
-static TIMER_FREQ: Spinlock<u64> = Spinlock::new(100);
+static TIMER_FREQ: Spinlock<u64> = Spinlock::new(250);
 
 // =============================================================================
 // INICIALIZAÇÃO
@@ -50,7 +50,7 @@ pub fn init() {
 /// Define o timer ativo.
 pub fn set_active_timer(source: TimerSource) {
     *ACTIVE_TIMER.lock() = Some(source);
-    crate::kinfo!("(Timer) Fonte ativa: {:?}", source);
+    crate::kinfo!("(Timer) Fonte ativa:", source);
 }
 
 /// Retorna o timer ativo.

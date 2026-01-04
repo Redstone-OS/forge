@@ -2,7 +2,7 @@
 //!
 //! Invalidação de TLB em sistemas multicore via IPI batching.
 
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64};
 
 /// Número máximo de endereços para batch
 pub const MAX_BATCH_SIZE: usize = 32;

@@ -43,7 +43,7 @@ fn panic(info: &PanicInfo) -> ! {
     crate::kerror!("*****************************************************");
 
     // Garantir que todas as mensagens de erro saiam pela serial
-    crate::drivers::serial::force_flush();
+    crate::drivers::comm::serial::force_flush();
 
     // TODO: Enviar IPI para parar outras CPUs (crate::smp::ipi::send_context(Panic))
 

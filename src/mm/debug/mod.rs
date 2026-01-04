@@ -13,6 +13,8 @@ pub fn dump_memory_info() {
 pub fn dump_frame(phys: u64) {
     let pfm = super::pfm::get().lock();
     match pfm.get_state(PhysAddr::new(phys)) {
+        // TODO: Remover allow
+        #[allow(unused_variables)]
         Ok(state) => {
             crate::kinfo!("Frame state:", phys);
         }
