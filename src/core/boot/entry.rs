@@ -44,6 +44,10 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Inicializamos agora que o HHDM está pronto para mapear o FB corretamente
     crate::drivers::display::init(boot_info.framebuffer);
 
+    // === DEBUG VISUAL (comente para desativar) ===
+    crate::core::debug::display::init();
+    // === FIM DEBUG VISUAL ===
+
     // 4. Inicialização do Core (Time, SMP, Sched)
     crate::kinfo!("'Inicializando Subsistemas do Núcleo'");
     crate::core::time::init();
@@ -63,9 +67,8 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Necessário antes de qualquer operação de arquivo
     crate::fs::vfs::init();
 
-    // 6.6 Inicializar Dispositivos de Bloco (VirtIO, etc.)
-    crate::kinfo!("'Inicializando Dispositivos de Bloco'");
-    crate::drivers::block::init();
+    // 6.6 Inicializar Sistema de Drivers (PCI, USB, Block, Input)
+    crate::drivers::init();
 
     // 6.7 Inicializar e Montar FAT se houver disco
     crate::kinfo!("'Inicializando FAT'");
@@ -89,9 +92,6 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     }
 
     // 8. Inicialização do Userspace (Init Process)
-    // Primeiro inicializar drivers de input
-    crate::kinfo!("'Inicializando Drivers de Input'");
-    crate::drivers::input::init();
 
     // 8.5. Inicializar Idle Task
     // A idle task fica em IDLE_TASK (fallback permanente) e NÃO em CURRENT

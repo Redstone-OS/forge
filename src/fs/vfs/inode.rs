@@ -86,7 +86,7 @@ pub struct DirEntry {
 }
 
 /// Erro de filesystem
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FsError {
     NotFound,
     NotDirectory,

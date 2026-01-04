@@ -9,9 +9,10 @@
 /// - `oops`: Tratamento de erros recuperáveis.
 /// - `stats`: Contadores globais de performance/eventos.
 /// - `trace`: Sistema de tracing leve.
-
-pub mod klog;
+/// - `display`: Debug visual na tela (quando sem serial).
+pub mod display;
 pub mod kdebug;
+pub mod klog;
 pub mod oops;
 pub mod stats;
 pub mod trace;

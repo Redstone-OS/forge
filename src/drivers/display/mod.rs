@@ -1,35 +1,34 @@
-//! # Display Driver Module
+//! # Subsistema de Display (Vídeo e Gráficos)
 //!
-//! Driver de display moderno inspirado em DRM/KMS.
+//! Este módulo gerencia a saída visual do RedstoneOS, desde framebuffers simples
+//! até drivers de aceleração 2D/3D.
 //!
-//! ## Arquitetura
-//!
-//! ```text
-//! ┌─────────────────────────────────────────┐
-//! │           Display Subsystem             │
-//! ├─────────────┬─────────────┬─────────────┤
-//! │   Buffer    │    CRTC     │   Plane     │
-//! │   Manager   │  (Output)   │  (Future)   │
-//! └─────────────┴─────────────┴─────────────┘
-//! ```
+//! ## Estrutura:
+//! - **fb/ (Framebuffer)**: Gerenciamento genérico de buffers de memória de vídeo.
+//! - **bochs/**: Driver para o emulador Bochs e QEMU (BGA).
+//! - **virtio/**: Driver VirtIO-GPU para virtualização de alto desempenho.
+//! - **gpu/**: Implementações para hardware real (Intel, AMD, NVIDIA).
+//! - **edid/**: Parser para informações de monitores e resoluções suportadas.
 
-pub mod buffer;
-pub mod crtc;
+pub mod bochs;
+pub mod edid;
+pub mod fb;
+pub mod gpu;
+pub mod virtio;
+
+pub use fb::{BUFFER_MANAGER, DISPLAY_CRTC};
 
 use crate::core::boot::handoff::FramebufferInfo as HandoffFbInfo;
 
-pub use buffer::{BufferManager, DisplayBuffer, BUFFER_MANAGER};
-pub use crtc::{Crtc, DISPLAY_CRTC};
-
-/// Inicializa o subsistema de display.
+/// Inicializa os drivers de display disponíveis no sistema.
 pub fn init(info: HandoffFbInfo) {
-    crate::kinfo!("(Display) Inicializando subsistema de display...");
-    crate::ktrace!("(Display) Width:", info.width as u64);
-    crate::ktrace!("(Display) Height:", info.height as u64);
-    crate::ktrace!("(Display) Stride:", info.stride as u64);
+    crate::kinfo!("(Display) Inicializando subsistema gráfico...");
 
-    // Inicializar CRTC com informações do bootloader
-    crtc::init(info);
+    // 1. Inicializa o núcleo de gerenciamento de buffers e CRTC legado
+    fb::init(info);
 
-    crate::kinfo!("(Display) Subsistema inicializado com sucesso!");
+    // 2. Registra os drivers no RDM para pareamento automático com hardware real
+    bochs::init();
+    virtio::init();
+    gpu::init();
 }
