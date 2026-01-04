@@ -1,31 +1,31 @@
 //! # System Definitions
 //!
-//! Tipos e definições compartilhadas do sistema.
+//! Tipos fundamentais e definições compartilhadas do kernel.
 //!
 //! ## Conteúdo
 //!
-//! | Módulo    | Responsabilidade                      |
-//! |-----------|---------------------------------------|
-//! | `error`   | Códigos de erro do kernel             |
-//! | `types`   | Tipos fundamentais (Pid, Tid, etc)    |
-//! | `elf`     | Estruturas ELF para loading           |
+//! | Módulo  | Responsabilidade                      |
+//! |---------|---------------------------------------|
+//! | `types` | Tipos fundamentais (Pid, Tid, etc)    |
+//! | `error` | Códigos de erro do kernel             |
+//! | `elf`   | Estruturas ELF para loading           |
+//!
+//! ## Filosofia
+//!
+//! Usamos **NewTypes** para garantir segurança em tempo de compilação:
+//! ```text
+//! kill(pid, signal)  ✓ Compila
+//! kill(signal, pid)  ✗ Erro de tipo!
+//! ```
 
-// =============================================================================
-// MODULES
-// =============================================================================
-
-/// Códigos de erro do kernel
-pub mod error;
-
-/// Tipos fundamentais do sistema
-pub mod types;
-
-/// Estruturas ELF
 pub mod elf;
+pub mod error;
+pub mod types;
 
 // =============================================================================
 // RE-EXPORTS
 // =============================================================================
 
 pub use error::{KernelError, KernelResult};
+pub use types::{FileOffset, Size, Time};
 pub use types::{Gid, Pid, Tid, Uid};
