@@ -119,7 +119,6 @@ Documentação detalhada para cada subsistema está disponível em `doc/`:
 | **HAL** | [🏛️ ARCH.md](doc/ARCH.md) | Hardware Abstraction Layer, CPU traits, portabilidade |
 | **Core** | [⚙️ CORE.md](doc/CORE.md) | Boot sequence, SMP, time, work queues, debug |
 | **Drivers** | [🔌 DRIVERS.md](doc/DRIVERS.md) | Redstone Drive System (RDS), recovery, hot-reload |
-| **Memory** | [🧠 MM.md](doc/MM.md) | PMM, VMM, HHDM, Heap, alocadores |
 | **Scheduler** | [⚡ SCHED.md](doc/SCHED.md) | Tasks, round-robin, context switch |
 | **Filesystem** | [📂 FS.md](doc/FS.md) | VFS, FAT, InitRAMFS, syscalls de FS |
 | **Syscalls** | [📞 SYSCALL.md](doc/SYSCALL.md) | ABI completa, números, convenções |
@@ -129,6 +128,40 @@ Documentação detalhada para cada subsistema está disponível em `doc/`:
 | **Sys** | [📋 SYS.md](doc/SYS.md) | Tipos fundamentais, erros, ELF |
 | **Klib** | [📚 KLIB.md](doc/KLIB.md) | Biblioteca interna no_std |
 | **Module** | [📦 MODULE.md](doc/MODULE.md) | Sistema de módulos carregáveis |
+| **RMM** | [🧠 RMM.md](doc/RMM.md) | Redstone Memory Manager - arquitetura unificada |
+
+---
+
+## 🧠 Redstone Memory Manager (RMM)
+
+O RMM é o novo subsistema de gerenciamento de memória do Forge, substituindo o antigo `mm/`. Implementa arquitetura unificada com FrameManager, HHDM, VMAs e suporte a SMP/NUMA.
+
+### Princípios Chave
+
+- **Ownership First**: Todo frame físico tem um owner explícito
+- **Scalable Locking**: Locks por chunk (2MB) + caches per-CPU
+- **Interrupt Safety**: `try_alloc()` para contexto IRQ
+- **HHDM**: Higher Half Direct Map para acesso seguro à RAM física
+
+### ⚠️ Pontos de Atenção (TODO)
+
+Os seguintes pontos foram identificados em revisão arquitetural e são **trabalho futuro**:
+
+| Ponto | Criticidade | Descrição |
+|-------|-------------|-----------|
+| **Rmap Reclamation** | 🔴 Alta | Nós de `rmap_overflow` precisam de GC seguro (hazard pointers/epoch/RCU) |
+| **Bitmap ↔ FrameInfo TOCTOU** | 🔴 Alta | Protocolo atômico para trocar bitmap+FrameInfo |
+| **Page Migration** | 🟡 Média | Algoritmo de migração não especificado (lock + rmap + TLB shootdown) |
+| **Reclaim/Swap Integration** | 🟡 Média | ACLs, latência NOFAIL, interação com pinned pages |
+| **IOMMU Domain Lifetime** | 🟡 Média | Políticas de unmap em falhas e driver crash |
+| **Memory Hotplug** | 🟢 Baixa | Fluxo para adicionar/remover frames dinamicamente |
+| **IRQ/Lock Deadlock Surfaces** | 🟡 Média | Definir estritamente quais code paths bloqueiam |
+| **Observability** | 🟢 Baixa | Latência percentis, histograms, contention counters |
+| **ASLR Forensics** | 🟢 Baixa | Registrar seed, fallback documentado, flag para desabilitar |
+
+### Chunk Size (CRÍTICO ✅ Resolvido)
+
+O CHUNK_SIZE foi ajustado de 64KB para **2MB** para suportar alocações de Huge Pages com um único lock. Lock ordering é ASCENDENTE por endereço físico.
 
 ---
 
@@ -331,7 +364,8 @@ qemu-system-x86_64 \
 | **fs/initramfs** | ✅ Funcional | TAR parser |
 | **ipc** | ⚠️ Básico | Ports, channels |
 | **klib** | ⚠️ Básico | Bitmap, align, C-strings |
-| **mm** | ✅ Funcional | PMM, VMM, HHDM, Heap |
+| **mm** | 🔄 Migração | Substituído pelo RMM (Redstone Memory Manager) |
+| **rmm** | 🚧 Em Desenvolvimento | RMM: FrameManager, HHDM, VMAs, SMP-safe |
 | **module** | 🔄 Estrutura | Estrutura básica |
 | **sched** | ✅ Funcional | Round-robin preemptivo |
 | **security** | 🔄 Estrutura | OCAP framework |
