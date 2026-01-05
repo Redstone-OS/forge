@@ -102,8 +102,15 @@ pub fn sys_spawn(
             // Converter ExecError para SysError
             match e {
                 crate::sched::ExecError::NotFound => Err(SysError::NotFound),
-                crate::sched::ExecError::InvalidFormat => Err(SysError::InvalidArgument),
-                crate::sched::ExecError::OutOfMemory => Err(SysError::OutOfMemory),
+                crate::sched::ExecError::InvalidFormat
+                | crate::sched::ExecError::InvalidElf
+                | crate::sched::ExecError::UnsupportedArch
+                | crate::sched::ExecError::UnsupportedType
+                | crate::sched::ExecError::HeaderOutOfBounds
+                | crate::sched::ExecError::SegmentOutOfBounds => Err(SysError::InvalidArgument),
+                crate::sched::ExecError::OutOfMemory
+                | crate::sched::ExecError::AddressSpaceError
+                | crate::sched::ExecError::MappingFailed => Err(SysError::OutOfMemory),
                 crate::sched::ExecError::PermissionDenied => Err(SysError::PermissionDenied),
             }
         }

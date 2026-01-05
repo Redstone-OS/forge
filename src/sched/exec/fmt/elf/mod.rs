@@ -1,200 +1,278 @@
-//! ELF Loader
+//! # ELF Loader
+//!
+//! Carregamento de binários ELF64 em um Address Space.
+//!
+//! Este módulo usa o parser para interpretar o ELF e o RMM para
+//! alocar e mapear memória no Address Space do processo alvo.
 
-use crate::mm::pmm::{FRAME_ALLOCATOR, FRAME_SIZE};
-use crate::mm::vmm::MapFlags;
-use crate::mm::VirtAddr;
-use crate::sys::{KernelError, KernelResult};
-
+mod parser;
 mod structs;
-use crate::mm::aspace::vma::{MemoryIntent, Protection, VmaFlags};
-use crate::mm::aspace::{ASpaceError, AddressSpace};
+
+pub use parser::{parse, ParsedElf, Segment};
+pub use structs::*;
+
+use crate::rmm::addr::VirtAddr;
+use crate::rmm::config::PAGE_SIZE;
+use crate::rmm::phys::{self, AllocFlags, FrameOwner};
+use crate::rmm::virt::aspace::vma::MemoryIntent;
+use crate::rmm::virt::aspace::AddressSpace;
+use crate::rmm::virt::hhdm;
+use crate::rmm::zone::Zone;
+use crate::sched::exec::error::ExecError;
 use crate::sync::Spinlock;
 use alloc::sync::Arc;
-use structs::*;
 
-/// Carrega um binário ELF na memória de um AddressSpace
+/// Carrega um binário ELF em um Address Space
+///
+/// # Argumentos
+///
+/// * `data` - Bytes do arquivo ELF
+/// * `aspace` - Address Space onde carregar
+///
+/// # Retorna
+///
+/// * `Ok(entry_point)` - Endereço de entrada do binário
+/// * `Err(ExecError)` - Se houver falha no parsing ou mapeamento
 pub fn load_binary(
     data: &[u8],
-    aspace_arc: &Arc<Spinlock<AddressSpace>>,
-) -> KernelResult<VirtAddr> {
-    // 1. Validar Magic Header (\x7FELF)
-    if data.len() < 64 || &data[0..4] != b"\x7fELF" {
-        crate::kerror!("(ELF) Invalid Magic");
-        return Err(KernelError::InvalidArgument);
+    aspace: &Arc<Spinlock<AddressSpace>>,
+) -> Result<VirtAddr, ExecError> {
+    // 1. Parsear ELF
+    let elf = parser::parse(data)?;
+
+    crate::ktrace!("(ELF) Parsed binary, entry:", elf.entry_point.as_u64());
+
+    // 2. Obter CR3 do address space alvo
+    let target_cr3 = aspace.lock().cr3();
+
+    // 3. Carregar cada segmento
+    for segment in &elf.segments {
+        load_segment(segment, data, aspace, target_cr3)?;
     }
 
-    // Cast para Header
-    let ehdr = unsafe { &*(data.as_ptr() as *const Elf64_Ehdr) };
+    crate::ktrace!(
+        "(ELF) Loaded successfully, entry:",
+        elf.entry_point.as_u64()
+    );
+    Ok(elf.entry_point)
+}
 
-    // Validar arquitetura (x86_64 = 0x3E = 62)
-    if ehdr.e_machine != 62 {
-        crate::kerror!("(ELF) Invalid Arch:", ehdr.e_machine as u64);
-        return Err(KernelError::InvalidArgument);
-    }
+/// Carrega um único segmento no Address Space
+fn load_segment(
+    segment: &Segment,
+    data: &[u8],
+    aspace: &Arc<Spinlock<AddressSpace>>,
+    target_cr3: u64,
+) -> Result<(), ExecError> {
+    let page_size = PAGE_SIZE as u64;
 
-    // Validar tipo (EXEC = 2, DYN = 3)
-    if ehdr.e_type != ET_EXEC && ehdr.e_type != ET_DYN {
-        crate::kerror!("(ELF) Invalid Type (Not EXEC/DYN):", ehdr.e_type as u64);
-        return Err(KernelError::InvalidArgument);
-    }
+    // Calcular range de páginas
+    let start_page = segment.vaddr.as_u64() & !(page_size - 1);
+    let end_addr = segment.vaddr.as_u64() + segment.mem_size as u64;
+    let end_page = (end_addr + page_size - 1) & !(page_size - 1);
+    let num_pages = ((end_page - start_page) / page_size) as usize;
 
-    let ph_offset = ehdr.e_phoff as usize;
-    let ph_num = ehdr.e_phnum as usize;
-    let ph_size = ehdr.e_phentsize as usize;
+    crate::ktrace!("(ELF) Loading segment at:", segment.vaddr.as_u64());
+    crate::ktrace!("(ELF)   pages:", num_pages as u64);
 
-    // Iterar Program Headers
-    for i in 0..ph_num {
-        let offset = ph_offset + i * ph_size;
-        let phdr = unsafe { &*(data.as_ptr().add(offset) as *const Elf64_Phdr) };
+    // Determinar intent baseado nas flags
+    let intent = if segment.flags & structs::PF_X != 0 {
+        MemoryIntent::Code
+    } else if segment.flags & structs::PF_W != 0 {
+        MemoryIntent::Data
+    } else {
+        MemoryIntent::Rodata // Read-only data
+    };
 
-        if phdr.p_type == PT_LOAD {
-            crate::ktrace!("(ELF) Segmento LOAD: vaddr=", phdr.p_vaddr);
-            crate::ktrace!("(ELF) memsz=", phdr.p_memsz);
-            // 1. Determinar Proteções e Intenção
-            let mut prot = Protection::READ;
-            if phdr.p_flags & PF_W != 0 {
-                prot = Protection::RW;
+    // 1. Registrar VMA no Address Space
+    {
+        let mut as_guard = aspace.lock();
+        match as_guard.map_region(segment.vaddr, segment.mem_size, segment.protection, intent) {
+            Ok(_) => {}
+            Err(crate::rmm::error::RmmError::InvalidAddress) => {
+                // Sobreposição de segmentos adjacentes - OK
+                crate::ktrace!("(ELF) Segment overlap, merging");
             }
-            if phdr.p_flags & PF_X != 0 {
-                prot = if phdr.p_flags & PF_W != 0 {
-                    Protection::RWX
-                } else {
-                    Protection::RX
-                };
-            }
-
-            let intent = if phdr.p_flags & PF_X != 0 {
-                MemoryIntent::Code
-            } else if phdr.p_flags & PF_W != 0 {
-                MemoryIntent::Data
-            } else {
-                MemoryIntent::FileReadOnly
-            };
-
-            // 2. Registrar VMA no AddressSpace
-            let start_vaddr = VirtAddr::new(phdr.p_vaddr);
-            let mem_size = phdr.p_memsz as usize;
-
-            let map_result = aspace_arc.lock().map_region(
-                Some(start_vaddr),
-                mem_size,
-                prot,
-                VmaFlags::empty(),
-                intent,
-            );
-
-            match map_result {
-                Ok(_) => {
-                    crate::ktrace!("(ELF) VMA registrada:", start_vaddr.as_u64());
-                }
-                Err(ASpaceError::RegionOverlap) => {
-                    // Sobreposição detectada (segmentos adjacentes compartilhando página)
-                    // Vamos tentar fazer merge das permissões na VMA existente
-                    crate::kwarn!("(ELF) Sobreposicao detectada. Tentando mesclar...");
-
-                    // TODO: Remover allow
-                    #[allow(unused_mut)]
-                    let mut aspace = aspace_arc.lock();
-                    #[allow(unused_mut)]
-                    if let Some(mut existing_vma) = aspace.find_vma(start_vaddr) {
-                        // Atualizar permissões (Union)
-                        // VMA struct é retornada por find_vma (clone).
-                        // Precisamos atualizar a lista de VMAs.
-                        // Mas, por enquanto, assumimos que se sobrepôs, a página anterior já existe.
-                        // Vamos apenas garantir que a página física tenha permissão RWX se necessário no passo 3.
-                        crate::kwarn!(
-                            "(ELF) Mesclagem assumida. VMA existente:",
-                            existing_vma.start.as_u64()
-                        );
-                    } else {
-                        crate::kerror!("(ELF) Erro: Regiao sobreposta mas VMA nao encontrada!");
-                        return Err(KernelError::OutOfMemory);
-                    }
-                }
-                Err(e) => {
-                    crate::kerror!("(ELF) Falha fatal ao registrar VMA:", e as u64);
-                    return Err(KernelError::OutOfMemory);
-                }
-            }
-
-            // 3. Alocar e mapear páginas físicas (Manual Load via HHDM)
-            let start_page = phdr.p_vaddr & !(FRAME_SIZE - 1);
-            let end_page = (phdr.p_vaddr + phdr.p_memsz + FRAME_SIZE - 1) & !(FRAME_SIZE - 1);
-            let pages = (end_page - start_page) / FRAME_SIZE;
-
-            let target_cr3 = aspace_arc.lock().cr3();
-            let mut pmm = FRAME_ALLOCATOR.lock();
-            let mut vmm_flags = MapFlags::PRESENT | MapFlags::USER | MapFlags::WRITABLE;
-
-            if phdr.p_flags & 0x1 != 0 {
-                vmm_flags |= MapFlags::EXECUTABLE;
-            }
-
-            for page_idx in 0..pages {
-                let vaddr = start_page + page_idx * FRAME_SIZE;
-
-                // Verificar se já está mapeado no alvo
-                if crate::mm::vmm::mapper::translate_addr_in_p4(target_cr3, vaddr).is_none() {
-                    if let Some(frame) = pmm.allocate_frame() {
-                        unsafe {
-                            crate::mm::vmm::mapper::map_page_in_target_p4(
-                                target_cr3,
-                                vaddr,
-                                frame.as_u64(),
-                                vmm_flags,
-                                &mut *pmm,
-                            )
-                            .expect("(ELF) Erro ao mapear página");
-
-                            // Zerar página NOVA via HHDM
-                            core::ptr::write_bytes(
-                                crate::mm::addr::phys_to_virt::<u8>(frame.as_u64()),
-                                0,
-                                FRAME_SIZE as usize,
-                            );
-                        }
-                    }
-                }
-            }
-
-            // 4. Copiar dados via HHDM para os frames do AddressSpace alvo
-            let file_size = phdr.p_filesz as usize;
-            if file_size > 0 {
-                let mut bytes_copied = 0usize;
-                let file_offset = phdr.p_offset as usize;
-                let segment_data = &data[file_offset..file_offset + file_size];
-
-                while bytes_copied < file_size {
-                    let vaddr = phdr.p_vaddr + bytes_copied as u64;
-                    let page_offset = vaddr % FRAME_SIZE;
-                    let bytes_to_copy = core::cmp::min(
-                        file_size - bytes_copied,
-                        (FRAME_SIZE - page_offset) as usize,
-                    );
-
-                    // Achar frame físico correspondente no alvo
-                    if let Some(phys) =
-                        crate::mm::vmm::mapper::translate_addr_in_p4(target_cr3, vaddr)
-                    {
-                        unsafe {
-                            let dst = crate::mm::addr::phys_to_virt::<u8>(phys & !0xFFF)
-                                .add(page_offset as usize);
-                            core::ptr::copy_nonoverlapping(
-                                segment_data.as_ptr().add(bytes_copied),
-                                dst,
-                                bytes_to_copy,
-                            );
-                        }
-                    } else {
-                        panic!("(ELF) Erro fatal: página do segmento não mapeada!");
-                    }
-
-                    bytes_copied += bytes_to_copy;
-                }
-            }
+            Err(_) => return Err(ExecError::MappingFailed),
         }
     }
 
-    crate::ktrace!("(ELF) Carregado com sucesso. Entrada:", ehdr.e_entry);
-    Ok(VirtAddr::new(ehdr.e_entry))
+    // 2. Alocar e mapear páginas físicas
+    for page_idx in 0..num_pages {
+        let vaddr = start_page + (page_idx as u64) * page_size;
+
+        // Verificar se já está mapeada (pode ser overlap de segmento anterior)
+        if is_page_mapped(target_cr3, vaddr) {
+            continue;
+        }
+
+        // Alocar frame zerado para userspace
+        let frame = phys::alloc(
+            FrameOwner::Process { pid: 0 },
+            Zone::Normal,
+            AllocFlags::ZERO,
+        )
+        .ok_or(ExecError::OutOfMemory)?;
+
+        // Mapear no address space alvo
+        map_page_in_target(target_cr3, vaddr, frame.as_u64(), segment.protection)?;
+    }
+
+    // 3. Copiar dados do segmento
+    if segment.file_size > 0 {
+        copy_segment_data(segment, data, target_cr3)?;
+    }
+
+    Ok(())
+}
+
+/// Copia dados do ELF para as páginas mapeadas
+fn copy_segment_data(segment: &Segment, data: &[u8], target_cr3: u64) -> Result<(), ExecError> {
+    let page_size = PAGE_SIZE as u64;
+    let segment_data = &data[segment.file_offset..segment.file_offset + segment.file_size];
+
+    let mut bytes_copied = 0usize;
+
+    while bytes_copied < segment.file_size {
+        let vaddr = segment.vaddr.as_u64() + bytes_copied as u64;
+        let page_offset = vaddr % page_size;
+        let bytes_to_copy = core::cmp::min(
+            segment.file_size - bytes_copied,
+            (page_size - page_offset) as usize,
+        );
+
+        // Traduzir para endereço físico
+        let phys = translate_in_target(target_cr3, vaddr).ok_or(ExecError::MappingFailed)?;
+
+        unsafe {
+            let dst = hhdm::phys_to_virt(phys & !(page_size - 1)) as *mut u8;
+            let dst = dst.add(page_offset as usize);
+            core::ptr::copy_nonoverlapping(
+                segment_data.as_ptr().add(bytes_copied),
+                dst,
+                bytes_to_copy,
+            );
+        }
+
+        bytes_copied += bytes_to_copy;
+    }
+
+    Ok(())
+}
+
+/// Verifica se uma página já está mapeada no address space alvo
+fn is_page_mapped(target_cr3: u64, vaddr: u64) -> bool {
+    translate_in_target(target_cr3, vaddr).is_some()
+}
+
+/// Mapeia uma página física no address space alvo
+fn map_page_in_target(
+    target_cr3: u64,
+    vaddr: u64,
+    phys_frame: u64,
+    _protection: crate::rmm::virt::aspace::vma::Protection,
+) -> Result<(), ExecError> {
+    // Flags para tabelas intermediárias (sempre writable e user para permitir acesso)
+    let table_flags: u64 = 0x7; // Present | Writable | User
+
+    unsafe {
+        let pml4_phys = target_cr3 & !0xFFF;
+        let pml4 = hhdm::phys_to_virt(pml4_phys) as *mut u64;
+
+        let pml4_idx = ((vaddr >> 39) & 0x1FF) as usize;
+        let pdpt_idx = ((vaddr >> 30) & 0x1FF) as usize;
+        let pd_idx = ((vaddr >> 21) & 0x1FF) as usize;
+        let pt_idx = ((vaddr >> 12) & 0x1FF) as usize;
+
+        // Ensure PDPT exists
+        if (*pml4.add(pml4_idx)) & 1 == 0 {
+            let new_pdpt = phys::alloc(FrameOwner::Kernel, Zone::Normal, AllocFlags::ZERO)
+                .ok_or(ExecError::OutOfMemory)?;
+            *pml4.add(pml4_idx) = new_pdpt.as_u64() | table_flags;
+        }
+
+        let pdpt_phys = (*pml4.add(pml4_idx)) & 0x000F_FFFF_FFFF_F000;
+        let pdpt = hhdm::phys_to_virt(pdpt_phys) as *mut u64;
+
+        // Ensure PD exists
+        if (*pdpt.add(pdpt_idx)) & 1 == 0 {
+            let new_pd = phys::alloc(FrameOwner::Kernel, Zone::Normal, AllocFlags::ZERO)
+                .ok_or(ExecError::OutOfMemory)?;
+            *pdpt.add(pdpt_idx) = new_pd.as_u64() | table_flags;
+        }
+
+        let pd_phys = (*pdpt.add(pdpt_idx)) & 0x000F_FFFF_FFFF_F000;
+        let pd = hhdm::phys_to_virt(pd_phys) as *mut u64;
+
+        // Ensure PT exists
+        if (*pd.add(pd_idx)) & 1 == 0 {
+            let new_pt = phys::alloc(FrameOwner::Kernel, Zone::Normal, AllocFlags::ZERO)
+                .ok_or(ExecError::OutOfMemory)?;
+            *pd.add(pd_idx) = new_pt.as_u64() | table_flags;
+        }
+
+        let pt_phys = (*pd.add(pd_idx)) & 0x000F_FFFF_FFFF_F000;
+        let pt = hhdm::phys_to_virt(pt_phys) as *mut u64;
+
+        // Map the page with user flags
+        *pt.add(pt_idx) = phys_frame | table_flags;
+    }
+
+    Ok(())
+}
+
+/// Traduz endereço virtual para físico no address space alvo
+fn translate_in_target(target_cr3: u64, vaddr: u64) -> Option<u64> {
+    unsafe {
+        let pml4_phys = target_cr3 & !0xFFF;
+        let pml4 = hhdm::phys_to_virt(pml4_phys) as *const u64;
+
+        let pml4_idx = ((vaddr >> 39) & 0x1FF) as usize;
+        let pml4e = *pml4.add(pml4_idx);
+        if pml4e & 1 == 0 {
+            return None;
+        }
+
+        let pdpt_phys = pml4e & 0x000F_FFFF_FFFF_F000;
+        let pdpt = hhdm::phys_to_virt(pdpt_phys) as *const u64;
+
+        let pdpt_idx = ((vaddr >> 30) & 0x1FF) as usize;
+        let pdpte = *pdpt.add(pdpt_idx);
+        if pdpte & 1 == 0 {
+            return None;
+        }
+
+        // 1GB page?
+        if pdpte & 0x80 != 0 {
+            let phys_base = pdpte & 0x000F_FFFF_C000_0000;
+            return Some(phys_base | (vaddr & 0x3FFF_FFFF));
+        }
+
+        let pd_phys = pdpte & 0x000F_FFFF_FFFF_F000;
+        let pd = hhdm::phys_to_virt(pd_phys) as *const u64;
+
+        let pd_idx = ((vaddr >> 21) & 0x1FF) as usize;
+        let pde = *pd.add(pd_idx);
+        if pde & 1 == 0 {
+            return None;
+        }
+
+        // 2MB page?
+        if pde & 0x80 != 0 {
+            let phys_base = pde & 0x000F_FFFF_FFE0_0000;
+            return Some(phys_base | (vaddr & 0x1F_FFFF));
+        }
+
+        let pt_phys = pde & 0x000F_FFFF_FFFF_F000;
+        let pt = hhdm::phys_to_virt(pt_phys) as *const u64;
+
+        let pt_idx = ((vaddr >> 12) & 0x1FF) as usize;
+        let pte = *pt.add(pt_idx);
+        if pte & 1 == 0 {
+            return None;
+        }
+
+        let phys_base = pte & 0x000F_FFFF_FFFF_F000;
+        Some(phys_base | (vaddr & 0xFFF))
+    }
 }

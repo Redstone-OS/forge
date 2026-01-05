@@ -56,7 +56,7 @@ fn convert_prot(prot: u32) -> Protection {
     } else if prot & PROT_EXEC != 0 {
         Protection::RX
     } else if prot & PROT_READ != 0 {
-        Protection::READ
+        Protection::RO
     } else {
         Protection::NONE
     }
@@ -67,10 +67,10 @@ fn convert_prot(prot: u32) -> Protection {
 fn convert_flags(flags: u32) -> VmaFlags {
     let mut f = VmaFlags::empty();
     if flags & MAP_SHARED != 0 {
-        f = f | VmaFlags::SHARED;
+        f = f.union(VmaFlags::SHARED);
     }
     if flags & MAP_PRIVATE != 0 {
-        f = f | VmaFlags::COW;
+        f = f.union(VmaFlags::COW);
     }
     f
 }
@@ -85,10 +85,7 @@ fn infer_intent(prot: u32, flags: u32) -> MemoryIntent {
             MemoryIntent::Heap
         }
     } else {
-        if flags & MAP_PRIVATE != 0 {
-            MemoryIntent::FilePrivate
-        } else {
-            MemoryIntent::FileReadOnly
-        }
+        // File-backed mmap uses FileMmap intent
+        MemoryIntent::FileMmap
     }
 }
