@@ -1,185 +1,209 @@
 //! # Shared Memory Syscalls
 //!
-//! Criação e mapeamento de memória compartilhada.
+//! Syscalls para criação e mapeamento de memória compartilhada.
+//!
+//! ## Syscalls Implementados
+//!
+//! | Syscall | Descrição |
+//! |---------|-----------|
+//! | `sys_shm_create` | Cria nova região SHM |
+//! | `sys_shm_map` | Mapeia região no address space |
+//! | `sys_shm_get_size` | Obtém tamanho de uma região |
+//!
+//! ## Uso
+//!
+//! ```rust,ignore
+//! // Processo A: cria região de 4KB
+//! let shm_id = sys_shm_create(4096)?;
+//!
+//! // Processo A: mapeia
+//! let addr_a = sys_shm_map(shm_id, 0)?;
+//!
+//! // Processo B: mapeia mesma região (precisa conhecer shm_id)
+//! let addr_b = sys_shm_map(shm_id, 0)?;
+//!
+//! // Ambos processos podem ler/escrever no mesmo endereço físico
+//! ```
 
-use crate::ipc::shm::{ShmId, SHM_REGISTRY};
+use crate::ipc::shm::{ShmError, ShmId, SHM_REGISTRY};
+use crate::rmm::addr::VirtAddr;
+use crate::rmm::virt::aspace::vma::{MemoryIntent, Protection};
+use crate::rmm::virt::mapper;
 use crate::syscall::abi::SyscallArgs;
 use crate::syscall::error::{SysError, SysResult};
 
-// === WRAPPERS ===
+// =============================================================================
+// WRAPPERS
+// =============================================================================
 
+/// Wrapper para sys_shm_create
 pub fn sys_shm_create_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_shm_create(args.arg1)
 }
 
+/// Wrapper para sys_shm_map
 pub fn sys_shm_map_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_shm_map(args.arg1 as u64, args.arg2)
 }
 
+/// Wrapper para sys_shm_get_size
 pub fn sys_shm_get_size_wrapper(args: &SyscallArgs) -> SysResult<usize> {
     sys_shm_get_size(args.arg1 as u64)
 }
 
-// === IMPLEMENTAÇÕES ===
+// =============================================================================
+// IMPLEMENTAÇÕES
+// =============================================================================
+
+/// Tamanho máximo de uma região SHM (16 MB)
+const SHM_MAX_SIZE: usize = 16 * 1024 * 1024;
+
+/// Base de mapeamento para regiões SHM (24 GB)
+const SHM_MMAP_BASE: u64 = 0x6_0000_0000;
+
+/// Offset entre regiões SHM (16 MB)
+const SHM_REGION_OFFSET: u64 = 0x100_0000;
 
 /// Cria uma região de memória compartilhada
 ///
-/// # Args
-/// - size: tamanho em bytes
+/// # Argumentos
 ///
-/// # Returns
-/// shm_id da região criada
+/// * `size` - Tamanho em bytes (será arredondado para páginas)
+///
+/// # Retorna
+///
+/// * `Ok(shm_id)` - ID da região criada
+/// * `Err(InvalidArgument)` - Tamanho inválido
+/// * `Err(OutOfMemory)` - Sem memória disponível
 pub fn sys_shm_create(size: usize) -> SysResult<usize> {
-    if size == 0 || size > 16 * 1024 * 1024 {
-        // Máximo 16MB por região SHM
+    // Validar tamanho
+    if size == 0 || size > SHM_MAX_SIZE {
+        crate::kerror!("(Syscall) sys_shm_create: invalid size=", size as u64);
         return Err(SysError::InvalidArgument);
     }
 
     let mut registry = SHM_REGISTRY.lock();
+
     match registry.create(size) {
         Ok(id) => {
-            crate::kdebug!("(Syscall) sys_shm_create: size=", size as u64);
-            crate::kdebug!("(Syscall) sys_shm_create: id=", id.as_u64());
+            crate::kinfo!("(Syscall) sys_shm_create: id=", id.as_u64());
             Ok(id.as_u64() as usize)
         }
-        Err(_) => Err(SysError::OutOfMemory),
+        Err(e) => {
+            crate::kerror!("(Syscall) sys_shm_create failed");
+            Err(shm_error_to_sys_error(e))
+        }
     }
 }
 
-/// Mapeia uma região SHM no espaço do processo
+/// Mapeia uma região SHM no espaço do processo atual
 ///
-/// # Args
-/// - shm_id: ID da região
-/// - suggested_addr: endereço sugerido (0 = kernel escolhe)
+/// # Argumentos
 ///
-/// # Returns
-/// Endereço onde foi mapeado
+/// * `shm_id` - ID da região
+/// * `suggested_addr` - Endereço sugerido (0 = kernel escolhe)
+///
+/// # Retorna
+///
+/// * `Ok(vaddr)` - Endereço onde foi mapeado
+/// * `Err(InvalidHandle)` - ID inválido
+/// * `Err(BadAddress)` - Falha no mapeamento
 pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
-    let id = ShmId(shm_id);
+    let id = ShmId::new(shm_id);
+
     crate::ktrace!("(Syscall) sys_shm_map: id=", shm_id);
 
-    // Base address for SHM mappings (24GB)
-    // Movido para 24GB (0x6_0000_0000) e implementado lógica de limpeza de Huge Pages.
-    // O problema anterior era um PDE pré-existente marcado como Huge Page (2MB) que apontava
-    // para memória física inexistente (Identity Map incorreto/sobra).
-    // O Mapper não quebrava essa página, então a escrita ía para o limbo.
+    // Determinar endereço de mapeamento
     let base_addr = if suggested_addr != 0 {
         suggested_addr as u64
     } else {
-        0x6_0000_0000 + (shm_id * 0x1000000)
+        // Calcular endereço baseado no ID
+        SHM_MMAP_BASE + (shm_id * SHM_REGION_OFFSET)
     };
 
+    // Obter CR3 do processo atual
+    let (target_cr3, aspace_arc) = {
+        let guard = crate::sched::core::CURRENT.lock();
+        if let Some(task) = guard.as_ref() {
+            if let Some(ref aspace) = task.aspace {
+                (aspace.lock().cr3(), Some(aspace.clone()))
+            } else {
+                return Err(SysError::InvalidHandle);
+            }
+        } else {
+            return Err(SysError::InvalidHandle);
+        }
+    };
+
+    // Mapear região
     let registry = SHM_REGISTRY.lock();
     if let Some(shm) = registry.get(id) {
-        // crate::kdebug!("(Syscall) sys_shm_map: vaddr=", base_addr);
-
-        // 0. FIX DO BURACO NEGRO (Bunker Buster)
-        // Verifica se existe uma Huge Page (2MB) bloqueando este endereço.
-        // Se existir, ZERA a entrada do PDE para forçar o mapper a criar uma Page Table nova.
-        unsafe {
-            nuke_huge_page_if_exists(base_addr);
-        }
         crate::ktrace!("(Syscall) sys_shm_map: addr=", base_addr);
 
-        // 1. Mapear
-        match shm.map(base_addr) {
-            Ok(_) => {
-                crate::ktrace!("(Syscall) sys_shm_map: mapping OK. Registering VMA...");
-                // 2. Registrar VMA para que o Page Fault handler saiba que esta região é legítima
-                let aspace_arc = {
-                    let guard = crate::sched::core::CURRENT.lock();
-                    if let Some(task) = guard.as_ref() {
-                        task.aspace.clone()
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(aspace) = aspace_arc {
-                    use crate::mm::aspace::vma::{MemoryIntent, Protection, VmaFlags};
-                    let mut as_lock = aspace.lock();
-                    let _ = as_lock.map_region(
-                        Some(crate::mm::VirtAddr::new(base_addr)),
-                        shm.size,
-                        Protection::RW,
-                        VmaFlags::SHARED,
-                        MemoryIntent::SharedMemory,
-                    );
-                }
-                crate::ktrace!("(Syscall) sys_shm_map: VMA registered.");
-
-                // Flush TLB
-                unsafe {
-                    let cr3 = crate::mm::vmm::mapper::read_cr3();
-                    crate::mm::vmm::mapper::write_cr3(cr3);
-                }
-
-                Ok(base_addr as usize)
-            }
-            Err(_) => Err(SysError::BadAddress),
+        // Mapear páginas físicas no address space
+        if let Err(e) = shm.map_at(target_cr3, base_addr) {
+            crate::kerror!("(Syscall) sys_shm_map: map failed");
+            return Err(shm_error_to_sys_error(e));
         }
+
+        // Registrar VMA no AddressSpace
+        if let Some(aspace) = aspace_arc {
+            let mut as_lock = aspace.lock();
+            let _ = as_lock.map_region(
+                VirtAddr::new(base_addr),
+                shm.size(),
+                Protection::RW,
+                MemoryIntent::SharedMemory,
+            );
+            crate::ktrace!("(Syscall) sys_shm_map: VMA registered");
+        }
+
+        // Flush TLB
+        unsafe {
+            let cr3 = mapper::read_cr3();
+            mapper::write_cr3(cr3);
+        }
+
+        Ok(base_addr as usize)
     } else {
+        crate::kerror!("(Syscall) sys_shm_map: invalid id=", shm_id);
         Err(SysError::InvalidHandle)
     }
 }
 
 /// Obtém o tamanho de uma região SHM
 ///
-/// # Args
-/// - shm_id: ID da região
+/// # Argumentos
 ///
-/// # Returns
-/// Tamanho em bytes
+/// * `shm_id` - ID da região
+///
+/// # Retorna
+///
+/// * `Ok(size)` - Tamanho em bytes
+/// * `Err(InvalidHandle)` - ID inválido
 pub fn sys_shm_get_size(shm_id: u64) -> SysResult<usize> {
-    let id = ShmId(shm_id);
+    let id = ShmId::new(shm_id);
     let registry = SHM_REGISTRY.lock();
 
     if let Some(shm) = registry.get(id) {
-        Ok(shm.size)
+        Ok(shm.size())
     } else {
         Err(SysError::InvalidHandle)
     }
 }
 
-// Remove entradas Huge Page que bloqueiam o mapeamento granular
-unsafe fn nuke_huge_page_if_exists(vaddr: u64) {
-    let cr3: u64 = crate::mm::vmm::mapper::read_cr3();
-    let pml4_phys = cr3 & !0xFFF;
+// =============================================================================
+// Helpers
+// =============================================================================
 
-    let pml4_idx = ((vaddr >> 39) & 0x1FF) as usize;
-    let pdpt_idx = ((vaddr >> 30) & 0x1FF) as usize;
-    let pd_idx = ((vaddr >> 21) & 0x1FF) as usize;
-
-    let pml4_ptr = crate::mm::addr::phys_to_virt::<u64>(pml4_phys);
-    let pml4e = core::ptr::read_volatile(pml4_ptr.add(pml4_idx));
-    if pml4e & 1 == 0 {
-        return;
-    }
-
-    let pdpt_phys = pml4e & 0x000F_FFFF_FFFF_F000;
-    let pdpt_ptr = crate::mm::addr::phys_to_virt::<u64>(pdpt_phys);
-    let pdpte = core::ptr::read_volatile(pdpt_ptr.add(pdpt_idx));
-    if pdpte & 1 == 0 {
-        return;
-    }
-
-    if (pdpte & 0x80) != 0 {
-        crate::kwarn!("(SHM) WARN: Found 1GB Huge Page at PDPT. Nuking...");
-        core::ptr::write_volatile(pdpt_ptr.add(pdpt_idx) as *mut u64, 0);
-        core::arch::asm!("invlpg [{}]", in(reg) vaddr);
-        return;
-    }
-
-    let pd_phys = pdpte & 0x000F_FFFF_FFFF_F000;
-    let pd_ptr = crate::mm::addr::phys_to_virt::<u64>(pd_phys);
-    let pde = core::ptr::read_volatile(pd_ptr.add(pd_idx));
-    if pde & 1 == 0 {
-        return;
-    }
-
-    if (pde & 0x80) != 0 {
-        crate::kdebug!("(SHM) FATAL: Found 2MB Huge Page at PDE. Nuking to allow split!");
-        core::ptr::write_volatile(pd_ptr.add(pd_idx) as *mut u64, 0);
-        core::arch::asm!("invlpg [{}]", in(reg) vaddr);
+/// Converte ShmError para SysError
+fn shm_error_to_sys_error(e: ShmError) -> SysError {
+    match e {
+        ShmError::OutOfMemory => SysError::OutOfMemory,
+        ShmError::InvalidId => SysError::InvalidHandle,
+        ShmError::MapFailed => SysError::BadAddress,
+        ShmError::NotMapped => SysError::BadAddress,
+        ShmError::InvalidSize => SysError::InvalidArgument,
+        ShmError::InvalidAddress => SysError::BadAddress,
     }
 }

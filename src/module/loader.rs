@@ -91,19 +91,20 @@ impl ModuleLoader {
             return Err(ModuleError::LimitReached);
         }
 
+        // TODO: Implementar alocador de memória para módulos
         // Alocar páginas via PMM
-        for _ in 0..code_pages_needed {
-            match crate::mm::pmm::FRAME_ALLOCATOR.lock().allocate_frame() {
-                Some(frame) => {
-                    module.code_pages.push(frame.addr());
-                }
-                None => {
-                    // Liberar páginas já alocadas
-                    self.free_pages(module);
-                    return Err(ModuleError::InternalError);
-                }
-            }
-        }
+        //for _ in 0..code_pages_needed {
+        //    match crate::rmm::pmm::FRAME_ALLOCATOR.lock().allocate_frame() {
+        //        Some(frame) => {
+        //            module.code_pages.push(frame.addr());
+        //        }
+        //        None => {
+        //            // Liberar páginas já alocadas
+        //            self.free_pages(module);
+        //            return Err(ModuleError::InternalError);
+        //        }
+        //    }
+        //}
 
         // TODO: Copiar código para as páginas
         // TODO: Parsear seções .data e .bss
