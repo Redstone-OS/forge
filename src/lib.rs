@@ -72,7 +72,7 @@ pub mod sys;
 pub mod core;
 
 /// Gerenciamento de memória (PMM, VMM, heap)
-pub mod mm;
+pub mod rmm;
 
 /// Scheduler e gerenciamento de tarefas
 pub mod sched;

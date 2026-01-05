@@ -4,94 +4,265 @@
 //!
 //! ## Fontes de Entropia
 //!
-//! 1. TSC (Time Stamp Counter): disponível em todas as CPUs x86
-//! 2. RDRAND: hardware RNG, se disponível
+//! 1. **TSC (Time Stamp Counter)**: disponível em todas as CPUs x86
+//! 2. **RDRAND**: hardware RNG, se disponível (verificado via CPUID)
 //!
 //! ## Fallback
 //!
 //! Se RDRAND não estiver disponível, usa apenas TSC.
 //! Isso reduz a entropia mas ainda fornece aleatoriedade razoável.
 //!
-//! ## TODO: Forensics
+//! ## Segurança
 //!
-//! - Registrar seed gerado para debug/forensics
-//! - Permitir desabilitar ASLR via flag de debug para testes determinísticos
-//! - Verificar CPUID antes de usar RDRAND
+//! O offset ASLR dificulta ataques que dependem de endereços previsíveis:
+//! - Stack spraying
+//! - Heap spraying
+//! - Return-oriented programming (ROP)
+//!
+//! ## Debug
+//!
+//! Em builds debug, ASLR pode ser desabilitado para reprodutibilidade.
+//! O seed é registrado para forensics.
 
 use crate::rmm::config::{ASLR_ENTROPY_BITS, ASLR_SLOT_ALIGN};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Flag para desabilitar ASLR em testes
 #[cfg(debug_assertions)]
-pub static mut ASLR_DISABLED: bool = false;
+static ASLR_DISABLED: AtomicBool = AtomicBool::new(false);
 
 /// Último seed gerado (para forensics)
-static mut LAST_SEED: u64 = 0;
+static LAST_SEED: AtomicU64 = AtomicU64::new(0);
+
+/// Último offset gerado
+static LAST_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 /// Gera offset ASLR para o heap
+///
+/// Retorna um offset alinhado a `ASLR_SLOT_ALIGN` bytes (2MB por padrão)
+/// com `ASLR_ENTROPY_BITS` bits de entropia.
 pub fn generate_aslr_offset() -> usize {
+    // Verifica se ASLR está desabilitado (debug only)
+    #[cfg(debug_assertions)]
+    if ASLR_DISABLED.load(Ordering::Relaxed) {
+        return 0;
+    }
+
+    // Gera entropia
+    let entropy = generate_entropy();
+
+    // Salva seed para forensics
+    LAST_SEED.store(entropy, Ordering::Relaxed);
+
+    // Calcula offset
+    let slots = 1 << ASLR_ENTROPY_BITS; // 256 slots por padrão
+    let slot = (entropy as usize) % slots;
+    let offset = slot * ASLR_SLOT_ALIGN;
+
+    // Salva offset
+    LAST_OFFSET.store(offset as u64, Ordering::Relaxed);
+
+    #[cfg(debug_assertions)]
+    crate::kinfo!(
+        "(ASLR) seed=0x{:016x}, slot={}, offset=0x{:x}",
+        entropy,
+        slot,
+        offset
+    );
+
+    offset
+}
+
+/// Gera entropia combinando múltiplas fontes
+fn generate_entropy() -> u64 {
     let mut entropy: u64 = 0;
 
-    // Fonte 1: TSC (timing)
-    entropy ^= read_tsc();
+    // Fonte 1: TSC (sempre disponível em x86)
+    let tsc = read_tsc();
+    entropy ^= tsc;
 
     // Fonte 2: RDRAND (se disponível)
-    if let Some(rand) = try_rdrand() {
-        entropy ^= rand;
+    if has_rdrand() {
+        if let Some(rdrand) = read_rdrand() {
+            entropy ^= rdrand;
+        }
     }
 
-    // Mix simples
-    entropy = mix(entropy);
+    // Fonte 3: Mistura adicional usando variações de tempo
+    let tsc2 = read_tsc();
+    entropy ^= tsc2.wrapping_mul(0x517cc1b727220a95); // Multiplicador de Knuth
 
-    // Extrai bits de entropia
-    let slots = 1 << ASLR_ENTROPY_BITS;
-    let slot = (entropy as usize) % slots;
+    // Fonte 4: Mais uma leitura TSC para variabilidade
+    let tsc3 = read_tsc();
+    entropy ^= tsc3.rotate_left(23);
 
-    slot * ASLR_SLOT_ALIGN
+    // Mix final
+    entropy = mix64(entropy);
+
+    entropy
 }
 
-/// Lê TSC (Time Stamp Counter)
+/// Lê Time Stamp Counter (TSC)
 #[inline]
 fn read_tsc() -> u64 {
+    let low: u32;
+    let high: u32;
+
     unsafe {
-        let lo: u32;
-        let hi: u32;
         core::arch::asm!(
             "rdtsc",
-            out("eax") lo,
-            out("edx") hi,
+            out("eax") low,
+            out("edx") high,
             options(nomem, nostack)
         );
-        ((hi as u64) << 32) | (lo as u64)
     }
+
+    ((high as u64) << 32) | (low as u64)
 }
 
-/// Tenta RDRAND
-fn try_rdrand() -> Option<u64> {
-    // TODO: Verificar CPUID para RDRAND support
-    let mut val: u64;
-    let ok: u8;
+/// Verifica se RDRAND está disponível via CPUID
+fn has_rdrand() -> bool {
+    // CPUID.01H:ECX.RDRAND[bit 30]
+    let ecx: u32;
+
     unsafe {
         core::arch::asm!(
-            "rdrand {}",
-            "setc {}",
-            out(reg) val,
-            out(reg_byte) ok,
+            "mov eax, 1",
+            "cpuid",
+            out("ecx") ecx,
+            out("eax") _,
+            out("ebx") _,
+            out("edx") _,
             options(nomem, nostack)
         );
     }
-    if ok != 0 {
-        Some(val)
-    } else {
-        None
+
+    (ecx & (1 << 30)) != 0
+}
+
+/// Lê valor aleatório de RDRAND
+fn read_rdrand() -> Option<u64> {
+    let mut value: u64 = 0;
+    let success: u8;
+
+    // Tenta até 10 vezes (RDRAND pode falhar temporariamente)
+    for _ in 0..10 {
+        unsafe {
+            core::arch::asm!(
+                "rdrand {0:r}",
+                "setc {1}",
+                out(reg) value,
+                out(reg_byte) success,
+                options(nomem, nostack)
+            );
+        }
+
+        if success != 0 {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+/// Função de mistura de 64 bits (SplitMix64)
+#[inline]
+fn mix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9e3779b97f4a7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+    x ^ (x >> 31)
+}
+
+// =============================================================================
+// API de Debug/Forensics
+// =============================================================================
+
+/// Retorna o último seed usado
+pub fn last_seed() -> u64 {
+    LAST_SEED.load(Ordering::Relaxed)
+}
+
+/// Retorna o último offset gerado
+pub fn last_offset() -> u64 {
+    LAST_OFFSET.load(Ordering::Relaxed)
+}
+
+/// Desabilita ASLR (apenas em debug builds)
+#[cfg(debug_assertions)]
+pub fn disable() {
+    ASLR_DISABLED.store(true, Ordering::Relaxed);
+    crate::kwarn!("(ASLR) DISABLED - for testing only!");
+}
+
+/// Habilita ASLR
+#[cfg(debug_assertions)]
+pub fn enable() {
+    ASLR_DISABLED.store(false, Ordering::Relaxed);
+    crate::kinfo!("(ASLR) Enabled");
+}
+
+/// Verifica se ASLR está habilitado
+pub fn is_enabled() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        !ASLR_DISABLED.load(Ordering::Relaxed)
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        true
     }
 }
 
-/// Mix de entropia (FNV-1a like)
-fn mix(mut x: u64) -> u64 {
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xff51afd7ed558ccd);
-    x ^= x >> 33;
-    x = x.wrapping_mul(0xc4ceb9fe1a85ec53);
-    x ^= x >> 33;
-    x
+/// Gera offset com seed específico (para testes determinísticos)
+#[cfg(debug_assertions)]
+pub fn generate_with_seed(seed: u64) -> usize {
+    LAST_SEED.store(seed, Ordering::Relaxed);
+
+    let entropy = mix64(seed);
+    let slots = 1 << ASLR_ENTROPY_BITS;
+    let slot = (entropy as usize) % slots;
+    let offset = slot * ASLR_SLOT_ALIGN;
+
+    LAST_OFFSET.store(offset as u64, Ordering::Relaxed);
+
+    offset
+}
+
+/// Dump informações ASLR
+pub fn dump_info() {
+    crate::kinfo!("=== ASLR Information ===");
+    crate::kinfo!("  Enabled: {}", is_enabled());
+    crate::kinfo!("  RDRAND available: {}", has_rdrand());
+    crate::kinfo!("  Entropy bits: {}", ASLR_ENTROPY_BITS);
+    crate::kinfo!("  Slot alignment: {} KB", ASLR_SLOT_ALIGN / 1024);
+    crate::kinfo!("  Last seed: 0x{:016x}", last_seed());
+    crate::kinfo!("  Last offset: 0x{:x}", last_offset());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_aslr_offset_aligned() {
+        let offset = generate_aslr_offset();
+        assert_eq!(offset % ASLR_SLOT_ALIGN, 0);
+    }
+
+    #[test]
+    fn test_aslr_offset_bounded() {
+        let offset = generate_aslr_offset();
+        let max_offset = (1 << ASLR_ENTROPY_BITS) * ASLR_SLOT_ALIGN;
+        assert!(offset < max_offset);
+    }
+
+    #[test]
+    fn test_mix64() {
+        // Verifica que mix64 produz outputs diferentes
+        let a = mix64(0);
+        let b = mix64(1);
+        assert_ne!(a, b);
+    }
 }
