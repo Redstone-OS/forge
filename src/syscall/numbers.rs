@@ -73,30 +73,89 @@ pub const SYS_THREAD_EXIT: usize = 0x09;
 // MEMÓRIA (0x10 - 0x1F)
 // ============================================================================
 
-/// Aloca memória virtual.
-/// Args: (size, flags)
+/// Aloca memória virtual (kernel escolhe endereço).
+/// Args: (size: usize, flags: u32)
+/// Flags: ALLOC_ZEROED=1, ALLOC_COMMIT=2, ALLOC_GUARD=4
 /// Retorno: endereço ou erro
 pub const SYS_ALLOC: usize = 0x10;
 
 /// Libera memória alocada.
-/// Args: (addr, size)
+/// Args: (addr: usize, size: usize)
 /// Retorno: 0 ou erro
 pub const SYS_FREE: usize = 0x11;
 
-/// Mapeia região de memória ou handle.
-/// Args: (addr, size, flags, handle)
+/// Mapeia região de memória (estilo mmap).
+/// Args: (hint: usize, size: usize, prot: u32, flags: u32, fd: i32, offset: u64)
+/// Prot: PROT_READ=1, PROT_WRITE=2, PROT_EXEC=4
+/// Flags: MAP_PRIVATE=2, MAP_SHARED=1, MAP_ANONYMOUS=0x20, MAP_FIXED=0x10
 /// Retorno: endereço ou erro
 pub const SYS_MAP: usize = 0x12;
 
-/// Remove mapeamento de memória.
-/// Args: (addr, size)
+/// Remove mapeamento de memória (munmap).
+/// Args: (addr: usize, size: usize)
 /// Retorno: 0 ou erro
 pub const SYS_UNMAP: usize = 0x13;
 
-/// Altera as proteções de uma região de memória.
-/// Args: (addr, size, new_flags)
+/// Altera proteções de uma região de memória.
+/// Args: (addr: usize, size: usize, new_prot: u32)
 /// Retorno: 0 ou erro
 pub const SYS_MPROTECT: usize = 0x14;
+
+/// Obtém informações de memória do sistema.
+/// Args: (out_ptr: *mut MemInfo)
+/// Retorno: 0 ou erro
+pub const SYS_MEMINFO: usize = 0x15;
+
+/// Aloca memória em endereço específico.
+/// Args: (addr: usize, size: usize, flags: u32)
+/// Retorno: endereço (igual a addr) ou erro
+pub const SYS_ALLOC_AT: usize = 0x16;
+
+/// Cria uma região de memória compartilhada.
+/// Args: (size: usize)
+/// Retorno: shm_id ou erro
+pub const SYS_SHM_CREATE: usize = 0x17;
+
+/// Mapeia/anexa uma região SHM no processo.
+/// Args: (shm_id: u64, suggested_addr: usize)
+/// Retorno: endereço mapeado ou erro
+pub const SYS_SHM_ATTACH: usize = 0x18;
+
+/// Libera/desanexa uma região SHM.
+/// Args: (shm_id: u64)
+/// Retorno: 0 ou erro
+pub const SYS_SHM_RELEASE: usize = 0x19;
+
+/// Fecha mapeamento de memória (alias para UNMAP, compatibilidade).
+/// Args: (addr: usize, size: usize)
+/// Retorno: 0 ou erro
+pub const SYS_CLOSE_MAPPING: usize = 0x1A;
+
+/// Sincroniza região de memória mapeada com backing store.
+/// Args: (addr: usize, size: usize, flags: u32)
+/// Flags: MS_ASYNC=1, MS_SYNC=4, MS_INVALIDATE=2
+/// Retorno: 0 ou erro
+pub const SYS_MSYNC: usize = 0x1B;
+
+/// Fornece dicas de uso de memória ao kernel.
+/// Args: (addr: usize, size: usize, advice: i32)
+/// Advice: MADV_NORMAL=0, MADV_RANDOM=1, MADV_SEQUENTIAL=2,
+///         MADV_WILLNEED=3, MADV_DONTNEED=4, MADV_FREE=8
+/// Retorno: 0 ou erro
+pub const SYS_MADVISE: usize = 0x1C;
+
+// ============================================================================
+// MEMÓRIA - ALIASES (compatibilidade retroativa)
+// ============================================================================
+
+/// Alias para SYS_SHM_ATTACH (compatibilidade com código antigo)
+pub const SYS_SHM_MAP: usize = SYS_SHM_ATTACH;
+
+/// Obtém tamanho de região SHM.
+/// Args: (shm_id: u64)
+/// Retorno: tamanho em bytes ou erro
+pub const SYS_SHM_GET_SIZE: usize = 0x1D;
+// TODO: Remover assim que possivel
 
 // ============================================================================
 // HANDLES (0x20 - 0x2F)
@@ -146,25 +205,10 @@ pub const SYS_FUTEX_WAIT: usize = 0x33;
 /// Retorno: número de threads acordadas ou erro
 pub const SYS_FUTEX_WAKE: usize = 0x34;
 
-/// Cria uma região de memória compartilhada.
-/// Args: (size: usize)
-/// Retorno: shm_id ou erro
-pub const SYS_SHM_CREATE: usize = 0x35;
-
-/// Mapeia uma região SHM no espaço do processo.
-/// Args: (shm_id: u64, suggested_addr: usize)
-/// Retorno: endereço mapeado ou erro
-pub const SYS_SHM_MAP: usize = 0x36;
-
 /// Conecta a uma porta nomeada.
 /// Args: (name_ptr, name_len)
 /// Retorno: port_id ou erro
-pub const SYS_PORT_CONNECT: usize = 0x37;
-
-/// Obtém o tamanho de uma região SHM.
-/// Args: (shm_id: u64)
-/// Retorno: tamanho em bytes ou erro
-pub const SYS_SHM_GET_SIZE: usize = 0x38;
+pub const SYS_PORT_CONNECT: usize = 0x35;
 
 // ============================================================================
 // GRÁFICOS / INPUT (0x40 - 0x4F)
