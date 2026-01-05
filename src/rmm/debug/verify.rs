@@ -209,7 +209,7 @@ pub fn verify_or_panic() {
     if !result.is_ok() {
         crate::kerror!("=== RMM INTEGRITY CHECK FAILED ===");
         for msg in &result.messages {
-            crate::kerror!("  {}", msg);
+            crate::kerror!("  {}", msg.as_str());
         }
         panic!(
             "RMM integrity check failed with {} errors",

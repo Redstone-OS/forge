@@ -14,6 +14,7 @@ use crate::rmm::config::PAGE_SIZE;
 use crate::rmm::phys::{free_count, get_owner, FrameOwner};
 use crate::rmm::virt::hhdm;
 use crate::rmm::zone::Zone;
+use alloc::format;
 
 // =============================================================================
 // Memory Info Dump
@@ -68,9 +69,9 @@ pub fn dump_frame(phys: u64) {
 
     crate::kinfo!("=== Frame @ 0x{:016x} ===", phys);
 
-    // Owner
     if let Some(owner) = get_owner(phys_addr) {
-        crate::kinfo!("  Owner: {:?}", owner);
+        let owner_str = format!("{:?}", owner);
+        crate::kinfo!("  Owner: {}", owner_str.as_str());
 
         // Informações adicionais baseadas no owner
         match owner {
@@ -111,7 +112,8 @@ pub fn dump_frame(phys: u64) {
 
     // Zona
     let zone = Zone::for_address(phys);
-    crate::kinfo!("  Zone: {:?}", zone);
+    let zone_str = format!("{:?}", zone);
+    crate::kinfo!("  Zone: {}", zone_str.as_str());
 
     // TODO: Adicionar refcount, flags, rmap quando APIs estiverem disponíveis
 }
@@ -149,9 +151,9 @@ pub fn dump_frames(start: u64, count: usize) {
 // Zone Dump
 // =============================================================================
 
-/// Dump informações de uma zona
 pub fn dump_zone_info(zone: Zone) {
-    crate::kinfo!("=== Zone {:?} ===", zone);
+    let zone_str = format!("{:?}", zone);
+    crate::kinfo!("=== Zone {} ===", zone_str.as_str());
 
     let (start, end) = zone.address_range();
     let size_mb = (end - start) / (1024 * 1024);
@@ -184,7 +186,7 @@ pub fn dump_all_zones() {
 ///
 /// O endereço físico deve ser válido e mapeado via HHDM.
 pub unsafe fn hexdump_phys(phys: u64, len: usize) {
-    let virt = hhdm::phys_to_virt(PhysAddr::new(phys)).as_u64() as *const u8;
+    let virt = hhdm::phys_to_virt(phys) as *const u8;
 
     crate::kinfo!("=== Hexdump @ 0x{:016x} ({} bytes) ===", phys, len);
 
@@ -213,7 +215,7 @@ pub unsafe fn hexdump_phys(phys: u64, len: usize) {
             }
         }
 
-        crate::kinfo!("  {:08x}  {}|{}|", offset, hex, ascii);
+        crate::kinfo!("  {:08x}  {}|{}|", offset, hex.as_str(), ascii.as_str());
         offset += 16;
     }
 }
@@ -254,7 +256,7 @@ pub unsafe fn hexdump_virt(virt: u64, len: usize) {
             }
         }
 
-        crate::kinfo!("  {:08x}  {}|{}|", offset, hex, ascii);
+        crate::kinfo!("  {:08x}  {}|{}|", offset, hex.as_str(), ascii.as_str());
         offset += 16;
     }
 }

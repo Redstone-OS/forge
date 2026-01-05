@@ -52,10 +52,10 @@ pub use chunk::ChunkManager;
 pub use frame::{FrameFlags, FrameInfo, FrameOwner};
 pub use stats::PhysStats;
 
-use crate::core::boot::BootInfo;
+use crate::core::boot::handoff::{BootInfo, MemoryMapEntry, MemoryType};
 use crate::rmm::addr::PhysAddr;
 use crate::rmm::config::*;
-use crate::rmm::early::EARLY_ALLOCATOR;
+use crate::rmm::early;
 use crate::rmm::error::{RmmError, RmmResult};
 use crate::rmm::virt::hhdm;
 use crate::rmm::zone::Zone;
@@ -154,6 +154,10 @@ pub struct FrameManager {
     zone_dma32_end: usize, // Índice do último frame da zona DMA32
 }
 
+// SAFETY: O FrameManager contém ponteiros raw que são protegidos pelo Spinlock.
+// A sincronização é garantida pelo lock antes de qualquer acesso.
+unsafe impl Send for FrameManager {}
+
 /// Instância global do FrameManager
 static FRAME_MANAGER: Spinlock<Option<FrameManager>> = Spinlock::new(None);
 
@@ -168,8 +172,21 @@ static FREE_FRAMES: AtomicUsize = AtomicUsize::new(0);
 pub unsafe fn init(boot_info: &'static BootInfo) {
     crate::kinfo!("(RMM/Phys) Inicializando FrameManager...");
 
-    // 1. Calcular memória total e número de frames
-    let total_memory = boot_info.total_memory;
+    // 1. Calcular memória total e número de frames usando o mapa de memória
+    let mut total_memory: u64 = 0;
+    let entries_ptr = boot_info.memory_map_addr as *const MemoryMapEntry;
+    let entries_count = boot_info.memory_map_len as usize;
+
+    for i in 0..entries_count {
+        let entry = &*entries_ptr.add(i);
+        if entry.typ == MemoryType::Usable {
+            let end = entry.base + entry.len;
+            if end > total_memory {
+                total_memory = end;
+            }
+        }
+    }
+
     let frame_count = total_memory as usize / PAGE_SIZE;
     let chunk_count = (frame_count + FRAMES_PER_CHUNK - 1) / FRAMES_PER_CHUNK;
 
@@ -182,21 +199,11 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
 
     // 2. Alocar array de FrameInfo via early allocator
     let frames_size = frame_count * core::mem::size_of::<FrameInfo>();
-    let frames_ptr = {
-        let mut early = EARLY_ALLOCATOR.lock();
-        if let Some(allocator) = early.as_mut() {
-            allocator.alloc(frames_size, core::mem::align_of::<FrameInfo>())
-        } else {
-            panic!("Early allocator not initialized!");
-        }
-    };
-
-    if frames_ptr.is_null() {
-        panic!("Failed to allocate FrameInfo array!");
-    }
+    let frames_phys = early::alloc(frames_size, core::mem::align_of::<FrameInfo>())
+        .expect("Failed to allocate FrameInfo array!");
 
     // Converter para ponteiro virtual via HHDM
-    let frames_virt = hhdm::phys_to_virt(frames_ptr as u64) as *mut FrameInfo;
+    let frames_virt = hhdm::phys_to_virt(frames_phys.as_u64()) as *mut FrameInfo;
 
     crate::kinfo!(
         "(RMM/Phys) FrameInfo array: {} KB @ 0x{:x}",
@@ -233,10 +240,11 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
 
     // 6. Marcar regiões reservadas do BootInfo
     let mut reserved_frames = 0usize;
-    for region in boot_info.memory_regions.iter() {
-        if !region.is_usable() {
-            let start_frame = region.start as usize / PAGE_SIZE;
-            let end_frame = (region.start as usize + region.size) / PAGE_SIZE;
+    for i in 0..entries_count {
+        let entry = &*entries_ptr.add(i);
+        if entry.typ != MemoryType::Usable {
+            let start_frame = entry.base as usize / PAGE_SIZE;
+            let end_frame = (entry.base as usize + entry.len as usize) / PAGE_SIZE;
             for f in start_frame..end_frame.min(frame_count) {
                 let frame_info = &mut *frames_virt.add(f);
                 frame_info.set_owner(FrameOwner::Kernel);

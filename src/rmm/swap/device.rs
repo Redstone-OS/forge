@@ -214,15 +214,11 @@ impl RamdiskBackend {
         }
 
         // Copia de ramdisk para página destino
-        let src = hhdm::phys_to_virt(PhysAddr::new(self.base.as_u64() + offset));
-        let dst = hhdm::phys_to_virt(dest_phys);
+        let src = hhdm::phys_to_virt(self.base.as_u64() + offset);
+        let dst = hhdm::phys_to_virt(dest_phys.as_u64());
 
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                src.as_u64() as *const u8,
-                dst.as_u64() as *mut u8,
-                PAGE_SIZE,
-            );
+            core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, PAGE_SIZE);
         }
 
         Ok(())
@@ -239,15 +235,11 @@ impl RamdiskBackend {
         }
 
         // Copia de página origem para ramdisk
-        let src = hhdm::phys_to_virt(src_phys);
-        let dst = hhdm::phys_to_virt(PhysAddr::new(self.base.as_u64() + offset));
+        let src = hhdm::phys_to_virt(src_phys.as_u64());
+        let dst = hhdm::phys_to_virt(self.base.as_u64() + offset);
 
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                src.as_u64() as *const u8,
-                dst.as_u64() as *mut u8,
-                PAGE_SIZE,
-            );
+            core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, PAGE_SIZE);
         }
 
         Ok(())

@@ -8,6 +8,7 @@
 //! - **SRAT (System Resource Affinity Table)**: CPU e memória por nó
 //! - **SLIT (System Locality Information Table)**: Distâncias entre nós
 
+use alloc::vec;
 use alloc::vec::Vec;
 
 // =============================================================================

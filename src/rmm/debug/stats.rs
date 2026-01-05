@@ -102,6 +102,12 @@ pub struct RmmStats {
 impl RmmStats {
     /// Nova instância zerada
     pub const fn new() -> Self {
+        const ZONE_DEFAULT: ZoneStats = ZoneStats {
+            total: 0,
+            free: 0,
+            movable: 0,
+            reclaimable: 0,
+        };
         Self {
             total_frames: 0,
             free_frames: 0,
@@ -115,7 +121,7 @@ impl RmmStats {
             free_count: 0,
             cache_hits: 0,
             cache_misses: 0,
-            zones: [ZoneStats::default(); 3],
+            zones: [ZONE_DEFAULT; 3],
             pages_reclaimed: 0,
             pages_scanned: 0,
         }

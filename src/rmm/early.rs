@@ -28,7 +28,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::addr::{align_up, PhysAddr};
 use super::config::PAGE_SIZE;
-use crate::core::boot::BootInfo;
+use crate::core::boot::handoff::{BootInfo, MemoryMapEntry, MemoryType};
 
 /// Alocador de boot que só avança ponteiro
 pub struct EarlyBumpAllocator {
@@ -168,8 +168,14 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     let mut best_start: u64 = 0;
     let mut best_size: u64 = 0;
 
-    for entry in boot_info.memory_map.entries() {
-        if entry.is_usable() && entry.size > best_size {
+    // Itera sobre o mapa de memória usando os campos do BootInfo
+    let entries_ptr = boot_info.memory_map_addr as *const MemoryMapEntry;
+    let entries_count = boot_info.memory_map_len as usize;
+
+    for i in 0..entries_count {
+        let entry = &*entries_ptr.add(i);
+
+        if entry.typ == MemoryType::Usable && entry.len > best_size {
             // Evita os primeiros 1MB (legacy)
             let start = if entry.base < 0x10_0000 {
                 0x10_0000
@@ -178,9 +184,9 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
             };
 
             let size = if start > entry.base {
-                entry.size.saturating_sub(start - entry.base)
+                entry.len.saturating_sub(start - entry.base)
             } else {
-                entry.size
+                entry.len
             };
 
             if size > best_size {
@@ -201,9 +207,9 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     EARLY_ACTIVE = true;
 
     crate::kinfo!(
-        "(RMM/Early) Região: {:?} - {:?} ({} MB)",
-        start,
-        end,
+        "(RMM/Early) Região: 0x{:x} - 0x{:x} ({} MB)",
+        best_start,
+        best_start + best_size,
         best_size / 1024 / 1024
     );
 }

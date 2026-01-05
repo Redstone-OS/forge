@@ -124,14 +124,18 @@ fn read_tsc() -> u64 {
 fn has_rdrand() -> bool {
     // CPUID.01H:ECX.RDRAND[bit 30]
     let ecx: u32;
+    let _ebx: u32; // Precisa salvar ebx para preservar
 
     unsafe {
         core::arch::asm!(
+            "push rbx",
             "mov eax, 1",
             "cpuid",
+            "mov {0:e}, ebx",
+            "pop rbx",
+            out(reg) _ebx,
             out("ecx") ecx,
             out("eax") _,
-            out("ebx") _,
             out("edx") _,
             options(nomem, nostack)
         );
@@ -140,10 +144,9 @@ fn has_rdrand() -> bool {
     (ecx & (1 << 30)) != 0
 }
 
-/// Lê valor aleatório de RDRAND
 fn read_rdrand() -> Option<u64> {
     let mut value: u64 = 0;
-    let success: u8;
+    let mut success: u8;
 
     // Tenta até 10 vezes (RDRAND pode falhar temporariamente)
     for _ in 0..10 {

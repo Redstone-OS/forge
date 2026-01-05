@@ -1025,23 +1025,6 @@ pub fn insert(inode: InodeId, offset: u64, phys: PhysAddr) {}  // TODO
 
 ---
 
-## 🗺️ Roadmap
-
-| Fase | Componentes | Status |
-|------|-------------|--------|
-| 1 | config, error, addr, early | 🆕 A criar |
-| 2 | zone, phys/frame, phys/chunk | 🆕 A criar |
-| 3 | phys/percpu, numa (stub) | 🆕 A criar |
-| 4 | virt/mapper, virt/hhdm, virt/tlb | 🔄 Migrar |
-| 5 | virt/aspace | 🔄 Migrar |
-| 6 | heap (buddy, slab, aslr) | 🔄 Migrar |
-| 7 | driver (dma, iommu stub) | 🆕 A criar |
-| 8 | debug (verify, stats) | 🆕 A criar |
-| 9 | reclaim, swap, cache (stubs) | 📝 Stubs |
-| 10 | Migrar consumidores | 🔄 Atualizar imports |
-
----
-
 ## 📎 Referências
 
 - [DRIVERS.md](./DRIVERS.md) - Sistema de drivers (consome rmm::driver)

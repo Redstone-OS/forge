@@ -168,7 +168,7 @@ impl SlabCache {
     }
 
     /// Aloca objeto desta classe
-    fn alloc(&mut self, slab_allocator: &mut SlabAllocator) -> Option<*mut u8> {
+    fn alloc(&mut self) -> Option<*mut u8> {
         // Tenta alocar de slab parcial
         if !self.partial.is_null() {
             let slab = unsafe { &mut *self.partial };
@@ -183,8 +183,12 @@ impl SlabCache {
             return Some(ptr);
         }
 
-        // Precisa criar novo slab
-        let slab = slab_allocator.create_slab(self.object_size)?;
+        // Retorna None - caller deve criar slab e chamar novamente
+        None
+    }
+
+    /// Adiciona slab e aloca imediatamente
+    fn alloc_from_new_slab(&mut self, slab: *mut SlabMeta) -> Option<*mut u8> {
         self.add_partial(slab);
 
         // Agora aloca
@@ -347,7 +351,15 @@ impl SlabAllocator {
             return None; // Muito grande para slab
         }
 
-        let ptr = self.caches[class].alloc(self)?;
+        // Tenta alocar de cache existente
+        if let Some(ptr) = self.caches[class].alloc() {
+            return NonNull::new(ptr);
+        }
+
+        // Precisa criar novo slab
+        let object_size = SIZE_CLASSES[class];
+        let slab = self.create_slab(object_size)?;
+        let ptr = self.caches[class].alloc_from_new_slab(slab)?;
         NonNull::new(ptr)
     }
 

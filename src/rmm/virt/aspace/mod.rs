@@ -314,7 +314,7 @@ impl AddressSpace {
 
     /// Expande ou contrai o heap (brk syscall)
     pub fn brk(&mut self, new_break: u64) -> RmmResult<u64> {
-        let _guard = self.lock.lock();
+        // Nota: Não trava lock aqui porque &mut self já garante exclusividade
 
         if new_break < self.heap_base {
             return Ok(self.heap_break);

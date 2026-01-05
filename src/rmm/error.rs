@@ -26,6 +26,9 @@ pub enum RmmError {
     /// Endereço físico inválido (fora do range gerenciado)
     InvalidPhysAddr,
 
+    /// Endereço inválido (alias para InvalidPhysAddr)
+    InvalidAddress,
+
     /// Endereço virtual inválido
     InvalidVirtAddr,
 
@@ -92,7 +95,7 @@ impl RmmError {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::OutOfMemory => "out of memory",
-            Self::InvalidPhysAddr => "invalid physical address",
+            Self::InvalidPhysAddr | Self::InvalidAddress => "invalid physical address",
             Self::InvalidVirtAddr => "invalid virtual address",
             Self::NotAligned => "address not aligned",
             Self::AlreadyMapped => "page already mapped",

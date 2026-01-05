@@ -52,9 +52,14 @@ static mut RAM_SIZE: u64 = 0;
 ///
 /// Deve ser chamada apenas uma vez durante o boot.
 pub unsafe fn init(boot_info: &'static BootInfo) {
-    // O bootloader (Limine) configura o HHDM offset
-    HHDM_OFFSET = boot_info.hhdm_offset.unwrap_or(HHDM_BASE);
-    RAM_SIZE = boot_info.total_memory;
+    // O bootloader (Ignite) configura o HHDM offset
+    // Se for 0, usa o padrão HHDM_BASE
+    HHDM_OFFSET = if boot_info.hhdm_offset != 0 {
+        boot_info.hhdm_offset
+    } else {
+        HHDM_BASE
+    };
+    RAM_SIZE = boot_info.hhdm_size;
     HHDM_INITIALIZED = true;
 
     crate::kinfo!(

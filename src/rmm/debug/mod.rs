@@ -159,7 +159,7 @@ pub fn check_and_report() -> bool {
         crate::kerror!("(RMM/Debug) Integrity check: FAILED");
         crate::kerror!("  Errors: {}", result.error_count);
         for msg in &result.messages {
-            crate::kerror!("  - {}", msg);
+            crate::kerror!("  - {}", msg.as_str());
         }
         false
     }

@@ -85,8 +85,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 // Estado Global
 // =============================================================================
 
-/// Page cache global
-static PAGE_CACHE: Spinlock<PageCacheState> = Spinlock::new(PageCacheState::new());
+/// Page cache global - usamos Option para inicialização lazy
+static PAGE_CACHE: Spinlock<Option<PageCacheState>> = Spinlock::new(None);
 
 /// Estatísticas atômicas
 static CACHE_HITS: AtomicU64 = AtomicU64::new(0);
@@ -109,7 +109,7 @@ struct PageCacheState {
 }
 
 impl PageCacheState {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             index: PageIndex::new(),
             writeback: WritebackControl::new(),
@@ -133,7 +133,8 @@ pub fn init() {
 
     {
         let mut cache = PAGE_CACHE.lock();
-        cache.max_pages = max_cache;
+        let state = cache.get_or_insert_with(PageCacheState::new);
+        state.max_pages = max_cache;
     }
 
     crate::kinfo!(
@@ -151,8 +152,9 @@ pub fn lookup(inode: u64, offset: u64) -> Option<PhysAddr> {
     let aligned_offset = offset & !(PAGE_SIZE as u64 - 1);
 
     let cache = PAGE_CACHE.lock();
+    let state = cache.as_ref()?;
 
-    if let Some(entry) = cache.index.get(inode, aligned_offset) {
+    if let Some(entry) = state.index.get(inode, aligned_offset) {
         // Marca como referenciada
         entry.mark_referenced();
         CACHE_HITS.fetch_add(1, Ordering::Relaxed);
@@ -173,19 +175,20 @@ pub fn insert(inode: u64, offset: u64, phys: PhysAddr) {
     let entry = CacheEntry::new(inode, aligned_offset, phys);
 
     let mut cache = PAGE_CACHE.lock();
+    let state = cache.get_or_insert_with(PageCacheState::new);
 
     // Verifica limite
-    if cache.max_pages > 0 && cache.index.len() >= cache.max_pages {
+    if state.max_pages > 0 && state.index.len() >= state.max_pages {
         // Tenta evictar uma página
-        if let Some(key) = cache.index.evictable_pages(1).first() {
-            if let Some(_evicted) = cache.index.remove(key.inode, key.offset) {
+        if let Some(key) = state.index.evictable_pages(1).first() {
+            if let Some(_evicted) = state.index.remove(key.inode, key.offset) {
                 PAGES_EVICTED.fetch_add(1, Ordering::Relaxed);
                 // TODO: Liberar frame físico via phys::free()
             }
         }
     }
 
-    cache.index.insert(entry);
+    state.index.insert(entry);
     PAGES_ADDED.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -194,9 +197,10 @@ pub fn mark_dirty(inode: u64, offset: u64) {
     let aligned_offset = offset & !(PAGE_SIZE as u64 - 1);
 
     let mut cache = PAGE_CACHE.lock();
-
-    if let Some(entry) = cache.index.get_mut(inode, aligned_offset) {
-        entry.mark_dirty();
+    if let Some(state) = cache.as_mut() {
+        if let Some(entry) = state.index.get_mut(inode, aligned_offset) {
+            entry.mark_dirty();
+        }
     }
 }
 
@@ -205,19 +209,17 @@ pub fn mark_dirty(inode: u64, offset: u64) {
 /// Usado após truncate ou delete de arquivo.
 pub fn invalidate(inode: u64) {
     let mut cache = PAGE_CACHE.lock();
+    if let Some(state) = cache.as_mut() {
+        // Remove da fila de writeback
+        state.writeback.remove_inode(inode);
 
-    // Remove da fila de writeback
-    cache.writeback.remove_inode(inode);
+        // Remove do índice
+        if let Some(pages) = state.index.remove_inode(inode) {
+            let count = pages.len();
+            PAGES_EVICTED.fetch_add(count as u64, Ordering::Relaxed);
 
-    // Remove do índice
-    if let Some(pages) = cache.index.remove_inode(inode) {
-        let count = pages.len();
-        PAGES_EVICTED.fetch_add(count as u64, Ordering::Relaxed);
-
-        // TODO: Liberar frames físicos via phys::free()
-        // for entry in pages.iter() {
-        //     phys::free(entry.phys(), FrameOwner::Cache { inode: inode as u32 });
-        // }
+            // TODO: Liberar frames físicos via phys::free()
+        }
     }
 }
 
@@ -226,10 +228,11 @@ pub fn invalidate_page(inode: u64, offset: u64) {
     let aligned_offset = offset & !(PAGE_SIZE as u64 - 1);
 
     let mut cache = PAGE_CACHE.lock();
-
-    if let Some(_entry) = cache.index.remove(inode, aligned_offset) {
-        PAGES_EVICTED.fetch_add(1, Ordering::Relaxed);
-        // TODO: Liberar frame físico
+    if let Some(state) = cache.as_mut() {
+        if let Some(_entry) = state.index.remove(inode, aligned_offset) {
+            PAGES_EVICTED.fetch_add(1, Ordering::Relaxed);
+            // TODO: Liberar frame físico
+        }
     }
 }
 
@@ -237,20 +240,21 @@ pub fn invalidate_page(inode: u64, offset: u64) {
 ///
 /// Chamado antes de close ou fsync.
 pub fn writeback(inode: u64) {
-    let mut cache = PAGE_CACHE.lock();
+    let cache = PAGE_CACHE.lock();
+    if let Some(state) = cache.as_ref() {
+        if let Some(inode_pages) = state.index.get_inode(inode) {
+            let dirty = inode_pages.dirty_pages();
 
-    if let Some(inode_pages) = cache.index.get_inode(inode) {
-        let dirty = inode_pages.dirty_pages();
+            for entry in dirty {
+                // Marca início de writeback
+                entry.start_writeback();
 
-        for entry in dirty {
-            // Marca início de writeback
-            entry.start_writeback();
+                // STUB: Escreve para disco
+                let _ = writeback::write_page_to_disk(entry.inode(), entry.offset(), entry.phys());
 
-            // STUB: Escreve para disco
-            let _ = writeback::write_page_to_disk(entry.inode(), entry.offset(), entry.phys());
-
-            // Marca fim de writeback
-            entry.end_writeback();
+                // Marca fim de writeback
+                entry.end_writeback();
+            }
         }
     }
 }
@@ -258,9 +262,11 @@ pub fn writeback(inode: u64) {
 /// Escreve todas as páginas sujas
 pub fn sync_all() {
     let cache = PAGE_CACHE.lock();
-
-    // Coleta todos os inodes
-    let inodes: alloc::vec::Vec<u64> = cache.index.iter_inodes().map(|(inode, _)| *inode).collect();
+    let inodes: alloc::vec::Vec<u64> = if let Some(state) = cache.as_ref() {
+        state.index.iter_inodes().map(|(inode, _)| *inode).collect()
+    } else {
+        alloc::vec::Vec::new()
+    };
 
     drop(cache);
 
@@ -272,12 +278,20 @@ pub fn sync_all() {
 
 /// Retorna número de páginas no cache
 pub fn page_count() -> usize {
-    PAGE_CACHE.lock().index.len()
+    PAGE_CACHE
+        .lock()
+        .as_ref()
+        .map(|s| s.index.len())
+        .unwrap_or(0)
 }
 
 /// Retorna número de inodes no cache
 pub fn inode_count() -> usize {
-    PAGE_CACHE.lock().index.inode_count()
+    PAGE_CACHE
+        .lock()
+        .as_ref()
+        .map(|s| s.index.inode_count())
+        .unwrap_or(0)
 }
 
 // =============================================================================
@@ -310,9 +324,15 @@ pub fn stats() -> CacheStats {
     let misses = CACHE_MISSES.load(Ordering::Relaxed);
     let total = hits + misses;
 
+    let (pages, inodes) = if let Some(state) = cache.as_ref() {
+        (state.index.len() as u64, state.index.inode_count() as u64)
+    } else {
+        (0, 0)
+    };
+
     CacheStats {
-        pages: cache.index.len() as u64,
-        inodes: cache.index.inode_count() as u64,
+        pages,
+        inodes,
         hits,
         misses,
         pages_added: PAGES_ADDED.load(Ordering::Relaxed),
@@ -349,27 +369,34 @@ impl ShrinkerOps for PageCacheShrinkerImpl {
 
     fn count(&self) -> usize {
         let cache = PAGE_CACHE.lock();
-        cache.index.evictable_pages(usize::MAX).len()
+        cache
+            .as_ref()
+            .map(|s| s.index.evictable_pages(usize::MAX).len())
+            .unwrap_or(0)
     }
 
     fn shrink(&self, target: usize) -> usize {
         let mut cache = PAGE_CACHE.lock();
-        let evictable = cache.index.evictable_pages(target);
-        let mut freed = 0;
+        if let Some(state) = cache.as_mut() {
+            let evictable = state.index.evictable_pages(target);
+            let mut freed = 0;
 
-        for key in evictable {
-            if let Some(_entry) = cache.index.remove(key.inode, key.offset) {
-                freed += 1;
-                PAGES_EVICTED.fetch_add(1, Ordering::Relaxed);
-                // TODO: Liberar frame físico
+            for key in evictable {
+                if let Some(_entry) = state.index.remove(key.inode, key.offset) {
+                    freed += 1;
+                    PAGES_EVICTED.fetch_add(1, Ordering::Relaxed);
+                    // TODO: Liberar frame físico
+                }
+
+                if freed >= target {
+                    break;
+                }
             }
 
-            if freed >= target {
-                break;
-            }
+            freed
+        } else {
+            0
         }
-
-        freed
     }
 
     fn priority(&self) -> u32 {
@@ -394,8 +421,10 @@ pub fn register_shrinker() {
 #[cfg(debug_assertions)]
 pub fn clear_all() {
     let mut cache = PAGE_CACHE.lock();
-    cache.index.clear();
-    cache.writeback.clear();
+    if let Some(state) = cache.as_mut() {
+        state.index.clear();
+        state.writeback.clear();
+    }
 }
 
 // =============================================================================
@@ -440,7 +469,7 @@ mod tests {
         mark_dirty(inode, offset);
 
         let cache = PAGE_CACHE.lock();
-        let entry = cache.index.get(inode, offset).unwrap();
+        let entry = cache.as_ref().unwrap().index.get(inode, offset).unwrap();
         assert!(entry.is_dirty());
     }
 }

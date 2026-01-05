@@ -125,7 +125,7 @@ pub struct PageIndex {
 
 impl PageIndex {
     /// Cria novo índice
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             inodes: BTreeMap::new(),
             total_pages: 0,

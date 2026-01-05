@@ -91,8 +91,8 @@ pub struct WritebackQueue {
 }
 
 impl WritebackQueue {
-    /// Cria nova fila
-    pub fn new(max_in_flight: usize) -> Self {
+    /// Cria nova fila (const fn)
+    pub const fn new(max_in_flight: usize) -> Self {
         Self {
             queue: VecDeque::new(),
             in_flight: 0,
@@ -194,11 +194,15 @@ pub struct WritebackControl {
 }
 
 impl WritebackControl {
-    /// Cria novo controle com defaults
-    pub fn new() -> Self {
+    /// Cria novo controle com defaults (const fn)
+    pub const fn new() -> Self {
         Self {
-            queue: WritebackQueue::default(),
-            stats: WritebackStats::default(),
+            queue: WritebackQueue::new(32),
+            stats: WritebackStats {
+                pages_written: 0,
+                write_errors: 0,
+                bytes_written: 0,
+            },
             interval_ms: 5000,          // 5 segundos
             dirty_expire_ms: 30000,     // 30 segundos
             dirty_ratio: 20,            // 20%

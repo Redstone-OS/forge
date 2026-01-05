@@ -25,6 +25,7 @@
 //! let policy = NumaPolicy::bind(0);
 //! ```
 
+use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -56,7 +57,7 @@ impl Default for NumaPolicyType {
 // =============================================================================
 
 /// Política de alocação NUMA
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct NumaPolicy {
     /// Tipo de política
     pub policy_type: NumaPolicyType,
@@ -68,6 +69,18 @@ pub struct NumaPolicy {
     interleave_counter: AtomicU32,
     /// Modo estrito (falha se não conseguir do nó desejado)
     pub strict: bool,
+}
+
+impl Clone for NumaPolicy {
+    fn clone(&self) -> Self {
+        Self {
+            policy_type: self.policy_type,
+            preferred_node: self.preferred_node,
+            interleave_nodes: self.interleave_nodes.clone(),
+            interleave_counter: AtomicU32::new(self.interleave_counter.load(Ordering::Relaxed)),
+            strict: self.strict,
+        }
+    }
 }
 
 impl NumaPolicy {
