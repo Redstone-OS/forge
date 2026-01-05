@@ -29,8 +29,8 @@ impl Driver for PowerControlDriver {
     }
 
     fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        crate::kinfo!("(PwrCtrl) Controle de energia ativo");
-        Ok(())
+        // Power Control não é descoberto via hardware
+        Err(DriverError::NotSupported)
     }
 
     fn remove(&self, _dev: &mut Device) -> Result<(), DriverError> {

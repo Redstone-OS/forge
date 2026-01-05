@@ -9,9 +9,9 @@
 //! │              Filesystems                │  (VFS, FAT, ext4)
 //! ├─────────────────────────────────────────┤
 //! │              Block Layer                │  (este módulo)
-//! ├──────────┬────────┬─────────┬───────────┤
-//! │   AHCI   │  NVMe  │  VirtIO │  Ramdisk  │
-//! ├──────────┴────────┴─────────┴───────────┤
+//! ├──────┬──────┬────────┬─────────┬────────┤
+//! │ AHCI │ NVMe │ VirtIO │ Ramdisk │   ATA  │
+//! ├──────┴──────┴────────┴─────────┴────────┤
 //! │              drivers/base               │  (RDS Core)
 //! └─────────────────────────────────────────┘
 //! ```
@@ -24,7 +24,8 @@
 //! | `nvme`    | Stub   | NVMe SSDs via PCIe           |
 //! | `ata`     | Stub   | Legacy PATA/IDE              |
 //! | `virtio`  | Stub   | VirtIO-Blk (QEMU/KVM)        |
-//! | `ramdisk` | Func   | Disco em memória             |
+//! | `ramdisk` | Func   | Disco em memória             |  
+//!
 //!
 //! ## Integração RDS:
 //! - Drivers implementam `BlockDevice` + `drivers::base::Driver`
@@ -36,7 +37,7 @@ pub mod ata;
 pub mod nvme;
 pub mod ramdisk;
 pub mod traits;
-pub mod virtio;
+// pub mod virtio; Nao funcional ainda
 
 // Re-exports
 pub use traits::*;
@@ -76,7 +77,7 @@ pub fn init() {
     ramdisk::init();
 
     // Fase 2: VirtIO (prioridade para VMs)
-    virtio::init();
+    //virtio::init();
 
     // Fase 3: NVMe (SSDs modernos)
     nvme::init();

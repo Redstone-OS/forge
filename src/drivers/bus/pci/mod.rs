@@ -249,8 +249,8 @@ fn scan_bus(bus: u8, devices: &mut Vec<PciDevice>) {
 fn scan_device(bus: u8, device: u8, devices: &mut Vec<PciDevice>) {
     let addr = PciAddress::new(0, bus, device, 0);
 
-    // Lê Vendor ID para verificar se dispositivo existe
-    let vendor_id = read_config(addr, config::PCI_VENDOR_ID) as u16;
+    // Lê Vendor ID para verificar se dispositivo existe (16 bits em offset 0x00)
+    let vendor_id = access::read_config_u16(addr, config::PCI_VENDOR_ID);
 
     // 0xFFFF significa slot vazio
     if vendor_id == 0xFFFF {
@@ -260,8 +260,8 @@ fn scan_device(bus: u8, device: u8, devices: &mut Vec<PciDevice>) {
     // Escaneia função 0
     scan_function(bus, device, 0, devices);
 
-    // Verifica se é multi-função
-    let header_type = read_config(addr, config::PCI_HEADER_TYPE) as u8;
+    // Verifica se é multi-função (8 bits em offset 0x0E)
+    let header_type = access::read_config_u8(addr, config::PCI_HEADER_TYPE);
     if header_type & 0x80 != 0 {
         // Multi-função: escaneia funções 1-7
         for function in 1..MAX_PCI_FUNCTIONS {
@@ -274,16 +274,20 @@ fn scan_device(bus: u8, device: u8, devices: &mut Vec<PciDevice>) {
 fn scan_function(bus: u8, device: u8, function: u8, devices: &mut Vec<PciDevice>) {
     let addr = PciAddress::new(0, bus, device, function);
 
-    let vendor_id = read_config(addr, config::PCI_VENDOR_ID) as u16;
+    // Lê vendor_id (16 bits em offset 0x00)
+    let vendor_id = access::read_config_u16(addr, config::PCI_VENDOR_ID);
     if vendor_id == 0xFFFF {
         return;
     }
 
-    let device_id = read_config(addr, config::PCI_DEVICE_ID) as u16;
-    let class = read_config(addr, config::PCI_CLASS) as u8;
-    let subclass = read_config(addr, config::PCI_SUBCLASS) as u8;
-    let prog_if = read_config(addr, config::PCI_PROG_IF) as u8;
-    let revision = read_config(addr, config::PCI_REVISION) as u8;
+    // Lê device_id (16 bits em offset 0x02)
+    let device_id = access::read_config_u16(addr, config::PCI_DEVICE_ID);
+
+    // Lê campos de classificação (8 bits cada)
+    let class = access::read_config_u8(addr, config::PCI_CLASS);
+    let subclass = access::read_config_u8(addr, config::PCI_SUBCLASS);
+    let prog_if = access::read_config_u8(addr, config::PCI_PROG_IF);
+    let revision = access::read_config_u8(addr, config::PCI_REVISION);
 
     let pci_dev = PciDevice {
         address: addr,
@@ -293,9 +297,9 @@ fn scan_function(bus: u8, device: u8, function: u8, devices: &mut Vec<PciDevice>
         subclass_code: subclass,
         prog_if,
         revision,
-        header_type: read_config(addr, config::PCI_HEADER_TYPE) as u8 & 0x7F,
-        interrupt_line: read_config(addr, config::PCI_INTERRUPT_LINE) as u8,
-        interrupt_pin: read_config(addr, config::PCI_INTERRUPT_PIN) as u8,
+        header_type: access::read_config_u8(addr, config::PCI_HEADER_TYPE) & 0x7F,
+        interrupt_line: access::read_config_u8(addr, config::PCI_INTERRUPT_LINE),
+        interrupt_pin: access::read_config_u8(addr, config::PCI_INTERRUPT_PIN),
         bars: read_all_bars(addr),
     };
 
@@ -313,8 +317,8 @@ fn scan_function(bus: u8, device: u8, function: u8, devices: &mut Vec<PciDevice>
     // Verifica se é bridge PCI-to-PCI
     if class == 0x06 && subclass == 0x04 {
         // É uma bridge - escaneia barramento secundário
-        let secondary_bus = read_config(addr, 0x19) as u8;
-        crate::kinfo!("(PCI) Bridge para barramento", secondary_bus);
+        let secondary_bus = access::read_config_u8(addr, config::PCI_SECONDARY_BUS);
+        crate::kdebug!("(PCI) Bridge para barramento", secondary_bus);
         scan_bus(secondary_bus, devices);
     }
 

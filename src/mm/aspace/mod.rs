@@ -104,8 +104,8 @@ impl AddressSpace {
             (found_addr, aligned_size)
         };
 
-        crate::ktrace!("(ASpace) map_region: alvo=", target_addr.as_u64());
-        crate::ktrace!("(ASpace) map_region: tamanho=", target_size as u64);
+        // crate::ktrace!("(ASpace) map_region: alvo=", target_addr.as_u64());
+        // crate::ktrace!("(ASpace) map_region: tamanho=", target_size as u64);
 
         // Verificar conflito com o endereço final calculado
         // This call will either confirm target_addr is free or return an error

@@ -71,6 +71,16 @@ impl Driver for Ps2Driver {
     }
 
     fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
+        // PS/2 só deve parear com o dispositivo "PS/2 Controller" do Platform bus
+        if dev.device_type != DeviceType::Input {
+            return Err(DriverError::NotSupported);
+        }
+
+        // Verifica se é o controlador PS/2 correto
+        if !dev.name_as_str().contains("PS/2") {
+            return Err(DriverError::NotSupported);
+        }
+
         crate::kinfo!("(PS/2) Inicializando controlador 8042...");
 
         // Limpa buffer inicial

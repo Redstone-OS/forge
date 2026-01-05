@@ -77,10 +77,10 @@ pub fn enqueue(task: Pin<Box<Task>>) {
         // TODO: Tratar melhor isso
         return;
     }
-    crate::ktrace!(
-        "(Sched) Nova tarefa na RunQueue PID:",
-        task.tid.as_u32() as u64
-    );
+    // crate::ktrace!(
+    //     "(Sched) Nova tarefa na RunQueue PID:",
+    //     task.tid.as_u32() as u64
+    // );
     RUNQUEUE.lock().push(task);
 }
 
@@ -89,10 +89,10 @@ pub fn pick_next() -> Option<Pin<Box<Task>>> {
     let mut rq = RUNQUEUE.lock();
     let res = rq.pop();
     if let Some(ref t) = res {
-        crate::ktrace!(
-            "(Sched) pick_next() selecionado PID:",
-            t.tid.as_u32() as u64
-        );
+        // crate::ktrace!(
+        //     "(Sched) pick_next() selecionado PID:",
+        //     t.tid.as_u32() as u64
+        // );
     }
     res
 }
@@ -124,7 +124,7 @@ pub fn sleep_current(ms: u64) {
             unsafe { Pin::get_unchecked_mut(task.as_mut()) }.wake_at = Some(now + ticks);
             unsafe { Pin::get_unchecked_mut(task.as_mut()) }.state = TaskState::Sleeping;
 
-            crate::kdebug!("(Sched) Tarefa no estado Sleeping");
+            // crate::ktrace!("(Sched) Tarefa no estado Sleeping");
         }
     }
 
@@ -264,7 +264,7 @@ pub extern "C" fn schedule() {
         let state = old_task.state;
         let is_old_idle = old_pid == 0;
 
-        crate::ktrace!("(Sched) Trocando contexto PID:", old_pid as u64);
+        // crate::ktrace!("(Sched) Trocando contexto PID:", old_pid as u64);
 
         // Obtém ponteiro para contexto da task antiga
         let old_ctx_ptr =

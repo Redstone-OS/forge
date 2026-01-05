@@ -46,7 +46,22 @@ impl Driver for HpetDriver {
         DeviceType::System
     }
 
-    fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
+    fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
+        // HPET é um dispositivo de sistema detectado via ACPI
+        // Só aceita dispositivos Platform com nome "HPET"
+        if dev.device_type != DeviceType::System {
+            return Err(DriverError::NotSupported);
+        }
+
+        if !matches!(dev.bus_type, crate::drivers::base::bus::BusType::Acpi) {
+            return Err(DriverError::NotSupported);
+        }
+
+        // Verifica se o nome indica HPET
+        if !dev.name_as_str().contains("HPET") {
+            return Err(DriverError::NotSupported);
+        }
+
         crate::kinfo!("(HPET) Procurando timer de alta precisão...");
 
         // TODO: Inicialização real:

@@ -8,17 +8,25 @@
 //! - Tenha alinhamento específico
 //! - Tenha endereço físico conhecido (para programar o dispositivo)
 //!
+//! ## Arquitetura
+//!
+//! O DMA Pool aloca frames físicos do PMM e mapeia-os na região virtual
+//! DMA_POOL_START. A conversão virtual→física é O(1) usando:
+//!
+//! ```text
+//! phys = virt - DMA_POOL_START + first_frame_phys
+//! ```
+//!
 //! ## Por que centralizado?
 //! - **Controle**: A Base sabe quem alocou o quê
 //! - **Segurança**: Impossível driver A usar DMA de driver B
 //! - **Limpeza**: Fácil liberar tudo quando driver morre
 //! - **IOMMU**: Preparado para proteção de DMA futura
-//!
-//! ## STUB:
-//! Este módulo está parcialmente implementado. A alocação real de
-//! memória física contígua depende do VMM do kernel.
 
 use super::device::DeviceId;
+use crate::mm::addr::PhysAddr;
+use crate::mm::pmm::FRAME_ALLOCATOR;
+use crate::mm::vmm::{map_page_with_pmm, MapFlags};
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
 
@@ -43,6 +51,9 @@ pub const MAX_DMA_SIZE: usize = 256 * 1024 * 1024;
 
 /// Alinhamento padrão para DMA (página).
 pub const DMA_ALIGNMENT: usize = 4096;
+
+/// Tamanho de uma página.
+const PAGE_SIZE: usize = 4096;
 
 // =============================================================================
 // ESTRUTURA DE BUFFER DMA
@@ -71,6 +82,34 @@ pub struct DmaBuffer {
 
     /// Direção do DMA (para futuro suporte a coerência de cache).
     pub direction: DmaDirection,
+}
+
+impl DmaBuffer {
+    /// Retorna o endereço virtual como ponteiro.
+    pub fn as_ptr(&self) -> *const u8 {
+        self.virt as *const u8
+    }
+
+    /// Retorna o endereço virtual como ponteiro mutável.
+    pub fn as_mut_ptr(&self) -> *mut u8 {
+        self.virt as *mut u8
+    }
+
+    /// Retorna slice do buffer.
+    ///
+    /// # Safety
+    /// Caller deve garantir acesso exclusivo durante DMA.
+    pub unsafe fn as_slice(&self) -> &[u8] {
+        core::slice::from_raw_parts(self.as_ptr(), self.size)
+    }
+
+    /// Retorna slice mutável do buffer.
+    ///
+    /// # Safety
+    /// Caller deve garantir acesso exclusivo durante DMA.
+    pub unsafe fn as_mut_slice(&self) -> &mut [u8] {
+        core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.size)
+    }
 }
 
 /// Direção do fluxo de dados DMA.
@@ -132,12 +171,6 @@ pub fn init() {
         return;
     }
 
-    // TODO: Reservar região de memória física para DMA
-    // A implementação real precisará:
-    // 1. Alocar páginas físicas contíguas
-    // 2. Mapear na região virtual DMA_POOL_START
-    // 3. Configurar IOMMU se disponível
-
     pool.initialized = true;
     pool.next_virt = DMA_POOL_START;
 
@@ -149,16 +182,17 @@ pub fn init() {
 /// Aloca um buffer DMA.
 ///
 /// ## Parâmetros:
-/// - `size`: Tamanho desejado (será arredondado para cima)
+/// - `size`: Tamanho desejado (será arredondado para múltiplo de página)
 /// - `owner`: ID do dispositivo alocador
 /// - `direction`: Direção do fluxo de dados
 ///
 /// ## Retorno:
 /// Some(DmaBuffer) com ponteiros válidos, ou None em caso de falha.
 ///
-/// ## STUB:
-/// Atualmente não aloca memória física real. Retorna estrutura
-/// simulada para permitir desenvolvimento de drivers.
+/// ## Implementação
+/// 1. Aloca frames físicos contíguos do PMM
+/// 2. Mapeia na região virtual DMA_POOL_START+offset
+/// 3. Retorna buffer com endereços virtual e físico
 pub fn alloc(size: usize, owner: DeviceId, direction: DmaDirection) -> Option<DmaBuffer> {
     // Validações
     if size == 0 || size > MAX_DMA_SIZE {
@@ -168,24 +202,79 @@ pub fn alloc(size: usize, owner: DeviceId, direction: DmaDirection) -> Option<Dm
 
     // Arredonda para múltiplo de página
     let aligned_size = align_up(size, DMA_ALIGNMENT);
-
-    crate::kwarn!("(DMA) alloc() usando simulação! DMA real não implementado");
+    let num_pages = aligned_size / PAGE_SIZE;
 
     let mut pool = DMA_POOL.lock();
 
-    // Verifica espaço disponível
+    // Verifica espaço disponível na região virtual
     if pool.next_virt + aligned_size as u64 > DMA_POOL_END {
-        crate::kerror!("(DMA) Pool esgotado!");
+        crate::kerror!("(DMA) Pool virtual esgotado!");
         return None;
     }
 
-    // Simula alocação
-    let virt = pool.next_virt;
-    let phys = virt - DMA_POOL_START + 0x1000_0000; // Offset fictício
+    // Aloca frames físicos contíguos
+    // TODO: Quando o MM for refatorado, considerar usar um alocador de
+    // páginas contíguas dedicado para DMA (evita fragmentação)
+    let mut pmm = FRAME_ALLOCATOR.lock();
+    let mut frames: Vec<u64> = Vec::with_capacity(num_pages);
+
+    for _ in 0..num_pages {
+        if let Some(frame_addr) = pmm.allocate_frame() {
+            frames.push(frame_addr.as_u64());
+        } else {
+            // Falha: libera frames já alocados
+            crate::kerror!("(DMA) OOM ao alocar frames para DMA");
+            for &frame in &frames {
+                pmm.deallocate_frame(PhysAddr::new(frame));
+            }
+            return None;
+        }
+    }
+
+    // Verifica se frames são contíguos (necessário para DMA)
+    // TODO: Implementar alocação contígua garantida no PMM
+    // Por enquanto, assumimos que vão ser contíguos se alocados em sequência
+    let first_phys = frames[0];
+    let mut is_contiguous = true;
+    for (i, &frame) in frames.iter().enumerate().skip(1) {
+        if frame != first_phys + (i as u64 * PAGE_SIZE as u64) {
+            is_contiguous = false;
+            break;
+        }
+    }
+
+    if !is_contiguous {
+        crate::kwarn!("(DMA) Frames não contíguos! DMA pode não funcionar corretamente");
+        // TODO: Implementar fallback ou retry com alocação contígua
+    }
+
+    let virt_start = pool.next_virt;
+
+    // Mapeia cada frame na região DMA
+    for (i, &frame) in frames.iter().enumerate() {
+        let page_virt = virt_start + (i as u64 * PAGE_SIZE as u64);
+
+        // Mapeia com flags: Writable, No-Execute, No-Cache
+        let flags = MapFlags::WRITABLE | MapFlags::NO_EXECUTE | MapFlags::NO_CACHE;
+
+        if let Err(e) = map_page_with_pmm(page_virt, frame, flags, &mut pmm) {
+            crate::kerror!("(DMA) Falha ao mapear página DMA:", e);
+            // Libera frames alocados
+            for &f in &frames {
+                pmm.deallocate_frame(PhysAddr::new(f));
+            }
+            return None;
+        }
+    }
+
+    // Zera o buffer (importante para segurança)
+    unsafe {
+        core::ptr::write_bytes(virt_start as *mut u8, 0, aligned_size);
+    }
 
     let buffer = DmaBuffer {
-        virt,
-        phys,
+        virt: virt_start,
+        phys: first_phys,
         size: aligned_size,
         owner,
         in_use: true,
@@ -198,9 +287,9 @@ pub fn alloc(size: usize, owner: DeviceId, direction: DmaDirection) -> Option<Dm
 
     crate::kinfo!(
         "(DMA) Buffer alocado: virt=",
-        virt,
+        virt_start,
         "phys=",
-        phys,
+        first_phys,
         "size=",
         aligned_size
     );
@@ -210,15 +299,23 @@ pub fn alloc(size: usize, owner: DeviceId, direction: DmaDirection) -> Option<Dm
 
 /// Libera um buffer DMA.
 ///
-/// ## STUB:
-/// Marca o buffer como livre, mas não libera memória real.
+/// Marca o buffer como livre e libera os frames físicos.
 pub fn free(buffer: &DmaBuffer) {
-    crate::kwarn!("(DMA) free() parcialmente implementado");
-
     let mut pool = DMA_POOL.lock();
+    let pmm = FRAME_ALLOCATOR.lock();
 
     for buf in pool.buffers.iter_mut() {
         if buf.virt == buffer.virt && buf.owner == buffer.owner {
+            // Libera os frames físicos
+            let num_pages = buf.size / PAGE_SIZE;
+            for i in 0..num_pages {
+                let frame_phys = buf.phys + (i as u64 * PAGE_SIZE as u64);
+                pmm.deallocate_frame(PhysAddr::new(frame_phys));
+            }
+
+            // TODO: Desmapear as páginas virtuais (precisa de unmap_page)
+            // Por enquanto, apenas marcamos como livre
+
             buf.in_use = false;
             pool.total_allocated = pool.total_allocated.saturating_sub(buffer.size);
             crate::kinfo!("(DMA) Buffer liberado:", buffer.virt);
@@ -236,11 +333,19 @@ pub fn free_all_for_device(owner: DeviceId) {
     crate::kinfo!("(DMA) Liberando buffers do dispositivo:", owner.0);
 
     let mut pool = DMA_POOL.lock();
+    let pmm = FRAME_ALLOCATOR.lock();
     let mut freed_count = 0;
     let mut freed_size = 0;
 
     for buf in pool.buffers.iter_mut() {
         if buf.owner == owner && buf.in_use {
+            // Libera os frames físicos
+            let num_pages = buf.size / PAGE_SIZE;
+            for i in 0..num_pages {
+                let frame_phys = buf.phys + (i as u64 * PAGE_SIZE as u64);
+                pmm.deallocate_frame(PhysAddr::new(frame_phys));
+            }
+
             buf.in_use = false;
             freed_count += 1;
             freed_size += buf.size;
@@ -261,6 +366,7 @@ pub fn free_all_for_device(owner: DeviceId) {
 /// Retorna o endereço físico de um buffer DMA.
 ///
 /// Usado para programar registradores de hardware.
+#[inline]
 pub fn phys_addr(buffer: &DmaBuffer) -> u64 {
     buffer.phys
 }
@@ -268,6 +374,7 @@ pub fn phys_addr(buffer: &DmaBuffer) -> u64 {
 /// Retorna o endereço virtual de um buffer DMA.
 ///
 /// Usado pela CPU para acessar os dados.
+#[inline]
 pub fn virt_addr(buffer: &DmaBuffer) -> u64 {
     buffer.virt
 }
@@ -276,8 +383,34 @@ pub fn virt_addr(buffer: &DmaBuffer) -> u64 {
 ///
 /// ## Safety:
 /// Caller deve garantir acesso exclusivo durante DMA.
+#[inline]
 pub unsafe fn as_mut_ptr(buffer: &DmaBuffer) -> *mut u8 {
     buffer.virt as *mut u8
+}
+
+/// Converte endereço virtual do DMA Pool para endereço físico.
+///
+/// ## Importante
+/// Esta função só funciona para endereços dentro do DMA Pool!
+/// Para outros endereços, use translate_addr() do VMM.
+///
+/// TODO: Quando o MM for refatorado, integrar com função unificada de conversão.
+#[inline]
+pub fn virt_to_phys(virt: u64) -> Option<u64> {
+    if !is_in_dma_pool(virt) {
+        return None;
+    }
+
+    // Procura o buffer correspondente
+    let pool = DMA_POOL.lock();
+    for buf in pool.buffers.iter() {
+        if buf.in_use && virt >= buf.virt && virt < buf.virt + buf.size as u64 {
+            let offset = virt - buf.virt;
+            return Some(buf.phys + offset);
+        }
+    }
+
+    None
 }
 
 /// Retorna estatísticas do DMA Pool.
@@ -313,11 +446,13 @@ pub struct DmaStats {
 // =============================================================================
 
 /// Arredonda valor para cima até múltiplo de align.
+#[inline]
 fn align_up(value: usize, align: usize) -> usize {
     (value + align - 1) & !(align - 1)
 }
 
 /// Verifica se um endereço está no DMA Pool.
+#[inline]
 pub fn is_in_dma_pool(addr: u64) -> bool {
     addr >= DMA_POOL_START && addr < DMA_POOL_END
 }

@@ -55,7 +55,18 @@ impl Driver for IntCtrlDriver {
         DeviceType::System
     }
 
-    fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
+    fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
+        // Só aceita dispositivos de sistema do tipo Platform (não PCI ou VirtIO)
+        // Controladores de interrupção são dispositivos de sistema fixos
+        if dev.device_type != DeviceType::System {
+            return Err(DriverError::NotSupported);
+        }
+
+        // Verifica se é um dispositivo platform (PIC, APIC, etc)
+        if !matches!(dev.bus_type, crate::drivers::base::bus::BusType::Platform) {
+            return Err(DriverError::NotSupported);
+        }
+
         crate::kinfo!("(IntCtrl) Detectando controladores de interrupção...");
 
         // TODO: Detecção real:

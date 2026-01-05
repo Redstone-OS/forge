@@ -16,6 +16,10 @@ const PT_ENTRIES: usize = 512;
 const FLAG_PRESENT: u64 = 1 << 0;
 const FLAG_WRITABLE: u64 = 1 << 1;
 const FLAG_USER: u64 = 1 << 2;
+const FLAG_PWT: u64 = 1 << 3; // Write-Through
+const FLAG_PCD: u64 = 1 << 4; // Cache Disable
+const FLAG_HUGE: u64 = 1 << 7;
+const FLAG_GLOBAL: u64 = 1 << 8;
 const FLAG_NO_EXEC: u64 = 1 << 63;
 
 /// Lê o registrador CR3 (endereço físico da PML4)
@@ -324,6 +328,12 @@ pub fn map_page_with_pmm(
     }
     if !flags.contains(MapFlags::EXECUTABLE) || flags.contains(MapFlags::NO_EXECUTE) {
         pte_flags |= FLAG_NO_EXEC;
+    }
+    if flags.contains(MapFlags::WRITE_THROUGH) {
+        pte_flags |= FLAG_PWT;
+    }
+    if flags.contains(MapFlags::NO_CACHE) {
+        pte_flags |= FLAG_PCD;
     }
 
     // Flags para tabelas intermediárias (sempre presentes e graváveis)

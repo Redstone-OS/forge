@@ -41,19 +41,23 @@ static MOUNTED_FAT: Spinlock<Option<FatFs>> = Spinlock::new(None);
 // API PÚBLICA
 // =============================================================================
 
-/// Inicializa o módulo FAT e tenta montar o primeiro disco
+/// Inicializa o módulo FAT e tenta montar o primeiro disco.
 pub fn init() {
     crate::kinfo!("(FAT) Inicializando módulo...");
 
-    // Tentar montar o primeiro dispositivo de bloco
-    if let Some(device) = crate::drivers::storage::find_device("1") {
+    // Procura dispositivo de bloco (hda = ATA primary master)
+    let device = crate::drivers::storage::find_device("hda")
+        .or_else(|| crate::drivers::storage::get_first_device());
+
+    if let Some(device) = device {
+        crate::kdebug!("(FAT) Montando dispositivo:", device.name());
         match FatFs::mount(device) {
             Ok(fat) => {
-                crate::kinfo!("(FAT) Filesystem montado com sucesso!");
+                crate::kdebug!("(FAT) Filesystem montado com sucesso!");
                 *MOUNTED_FAT.lock() = Some(fat);
             }
             Err(e) => {
-                crate::kwarn!("(FAT) Falha ao montar:", e as u64);
+                crate::kerror!("(FAT) Falha ao montar:", e as u64);
             }
         }
     } else {

@@ -67,29 +67,43 @@ pub fn init(fb_info: crate::core::boot::handoff::FramebufferInfo) {
     crate::kinfo!("(Drivers) Inicializando Suporte de Vida...");
     system::init();
 
-    // 3. Inicializa Barramentos (Descoberta física)
+    // 3. Inicializa Barramentos (estruturas, não escaneia ainda)
     crate::kinfo!("(Drivers) Inicializando Barramentos...");
     bus::init();
 
-    // 4. Registra os Drivers Funcionais no RDM
-    crate::kinfo!("(Drivers) Inicializando Armazenamento...");
+    // 4. Registra os Drivers Funcionais no RDM ANTES do scan
+    // Assim quando dispositivos forem registrados, já existe driver para matching
+    crate::kinfo!("(Drivers) Registrando Drivers...");
+
+    // Storage drivers (virtio-blk, nvme, ahci, ata, ramdisk)
     storage::init();
 
-    // 5. Inicializa Drivers de Display
-    crate::kinfo!("(Drivers) Inicializando Display...");
+    // Display drivers
     display::init(fb_info);
 
-    // 6. Inicializa Drivers de Rede
-    crate::kinfo!("(Drivers) Inicializando Rede...");
+    // Network drivers
     network::init();
 
-    // 7. Inicializa Drivers de Input
-    crate::kinfo!("(Drivers) Inicializando Input...");
+    // Input drivers
     input::init();
 
-    // 8. Inicializa Drivers de Comunicação
-    crate::kinfo!("(Drivers) Inicializando Comunicação...");
+    // Sound drivers
+    sound::init();
+
+    // Communication drivers
     comm::init();
+
+    // 5. Escaneia hardware e registra dispositivos no RDS
+    // O matching com drivers acontece automaticamente aqui
+    crate::kinfo!("(Drivers) Escaneando Hardware...");
+    let devices = bus::scan_all();
+    crate::kdebug!("(Drivers) Dispositivos encontrados:", devices.len());
+
+    // Registra todos os dispositivos no RDS
+    // O RDS fará probe() em cada driver registrado
+    for dev in devices {
+        base::register_device(dev);
+    }
 
     crate::kinfo!("(Drivers) Sistema de hardware operacional.");
 }

@@ -37,7 +37,7 @@ pub unsafe fn get_idle_context() -> *mut CpuContext {
 /// Entry point da idle task - loop infinito de espera
 #[no_mangle]
 pub extern "C" fn idle_task_entry() -> ! {
-    crate::kdebug!("(Idle) Idle task iniciada (TID 0)");
+    // crate::kdebug!("(Idle) Idle task iniciada (TID 0)");
 
     let mut idle_count: u64 = 0;
 

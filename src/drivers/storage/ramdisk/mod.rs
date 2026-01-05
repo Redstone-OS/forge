@@ -21,12 +21,12 @@ const DEFAULT_SIZE_MB: usize = 32;
 
 /// Driver Ramdisk para o RDS.
 pub struct RamdiskDriver {
-    size_mb: usize,
+    _size_mb: usize,
 }
 
 impl RamdiskDriver {
     pub fn new(size_mb: usize) -> Self {
-        Self { size_mb }
+        Self { _size_mb: size_mb }
     }
 }
 
@@ -45,10 +45,9 @@ impl Driver for RamdiskDriver {
     }
 
     fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        crate::kinfo!("(Ramdisk) Criando disco de {}MB", self.size_mb);
-        let device = RamdiskDevice::new(self.size_mb);
-        crate::drivers::storage::register_device(Arc::new(device));
-        Ok(())
+        // Ramdisk não é descoberto via hardware - ele é virtual
+        // A criação do dispositivo é feita em init(), não via probe()
+        Err(DriverError::NotSupported)
     }
 
     fn remove(&self, _dev: &mut Device) -> Result<(), DriverError> {
@@ -152,8 +151,17 @@ impl BlockDevice for RamdiskDevice {
 }
 
 /// Registra o driver Ramdisk.
+///
+/// **Nota**: O Ramdisk é um dispositivo virtual, não descoberto via hardware.
+/// Por isso o driver retorna NotSupported em probe() e nós criamos o device aqui.
 pub fn init() {
     crate::kinfo!("(Ramdisk) Registrando driver...");
     let driver = RamdiskDriver::new(DEFAULT_SIZE_MB);
     crate::drivers::base::register_driver(Arc::new(driver));
+
+    // Cria o dispositivo ramdisk manualmente (não via probe)
+    // Comentado por enquanto - descomentar se precisar de ramdisk
+    // crate::kinfo!("(Ramdisk) Criando disco de {}MB", DEFAULT_SIZE_MB);
+    // let device = RamdiskDevice::new(DEFAULT_SIZE_MB);
+    // crate::drivers::storage::register_device(Arc::new(device));
 }

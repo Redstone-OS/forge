@@ -55,7 +55,17 @@ impl Driver for DmaDriver {
         DeviceType::System
     }
 
-    fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
+    fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
+        // DMA Legacy só deve parear com o dispositivo 8237 DMA platform
+        if dev.device_type != DeviceType::System {
+            return Err(DriverError::NotSupported);
+        }
+
+        // Verifica se é o dispositivo DMA correto pelo nome
+        if !dev.name_as_str().contains("8237") && !dev.name_as_str().contains("DMA") {
+            return Err(DriverError::NotSupported);
+        }
+
         crate::kinfo!("(DMA) Inicializando controlador legado...");
 
         // Reset ambos os controladores

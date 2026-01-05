@@ -23,8 +23,9 @@ impl Driver for SpeakerDriver {
     }
 
     fn probe(&self, _dev: &mut Device) -> Result<(), DriverError> {
-        crate::kinfo!("(Speaker) PC Speaker registrado");
-        Ok(())
+        // PC Speaker não é descoberto via RDS - é inicializado manualmente
+        // Retorna NotSupported para não parear com nenhum dispositivo
+        Err(DriverError::NotSupported)
     }
 
     fn remove(&self, _dev: &mut Device) -> Result<(), DriverError> {

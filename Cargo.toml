@@ -1,9 +1,9 @@
 [package]
 name = "forge"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Redstone OS Team"]
-description = "Forge - The RedstoneOS Microkernel"
+description = "Forge - The RedstoneOS Kernel"
 license = "MIT"
 
 [[bin]]
