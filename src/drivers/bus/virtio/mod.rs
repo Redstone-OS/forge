@@ -128,7 +128,8 @@ impl VirtioDeviceType {
         let type_id = if id >= VIRTIO_DEVICE_ID_MODERN_BASE {
             id - VIRTIO_DEVICE_ID_MODERN_BASE
         } else if id >= VIRTIO_DEVICE_ID_BASE {
-            id - VIRTIO_DEVICE_ID_BASE
+            // Em legacy PCI, Device ID 0x1000 é Net (Tipo 1), 0x1001 é Block (Tipo 2), etc.
+            (id - VIRTIO_DEVICE_ID_BASE) + 1
         } else {
             return Self::Unknown;
         };

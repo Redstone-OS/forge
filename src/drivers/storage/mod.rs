@@ -77,7 +77,7 @@ pub fn init() {
     ramdisk::init();
 
     // Fase 2: VirtIO (prioridade para VMs)
-    //virtio::init();
+    virtio::init();
 
     // Fase 3: NVMe (SSDs modernos)
     nvme::init();

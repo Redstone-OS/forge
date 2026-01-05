@@ -50,8 +50,8 @@ const VIRTIO_VENDOR: u16 = 0x1AF4;
 const VIRTIO_BLK_DEVICE_LEGACY: u16 = 0x1001;
 const VIRTIO_BLK_DEVICE_MODERN: u16 = 0x1042; // 0x1040 + device_type(2)
 
-/// Tamanho da VirtQueue (potência de 2).
-const VIRTQUEUE_SIZE: u16 = 128;
+/// Tamanho máximo da VirtQueue suportado pelo driver.
+const VIRTQUEUE_MAX_SIZE: u16 = 256;
 
 /// Tamanho de um setor.
 const SECTOR_SIZE: usize = 512;
@@ -206,6 +206,8 @@ struct VirtioDiskState {
     capacity: u64,
     /// Estatísticas.
     stats: StorageStats,
+    /// Tamanho real da queue negociado.
+    queue_size: u16,
     /// Índice do próximo descritor livre.
     free_head: u16,
     /// Último índice do used ring processado.
@@ -250,12 +252,16 @@ impl VirtioDisk {
         let status = VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER;
         unsafe { port_write_u8(io_base + REG_DEVICE_STATUS, status) };
 
-        // Acknowledge features offered by device
-        let _features = unsafe { port_read_u32(io_base + REG_DEVICE_FEATURES) };
-
-        // Desabilitar todas as features para teste (modo pure legacy)
-        let acknowledged = 0u32;
-        crate::kinfo!("(VirtIO-Blk) Acknowledging 0 features for stability");
+        // Negotiate features
+        let offered = unsafe { port_read_u32(io_base + REG_DEVICE_FEATURES) };
+        // Por enquanto, aceitamos o que for oferecido que não quebre o modo legacy
+        let acknowledged = offered & !(VIRTIO_F_VERSION_1 as u32);
+        crate::kinfo!(
+            "(VirtIO-Blk) Negociando features. Oferecidas:",
+            offered as u64,
+            "Aceitas:",
+            acknowledged as u64
+        );
         unsafe { port_write_u32(io_base + REG_DRIVER_FEATURES, acknowledged) };
 
         // Selecionar queue 0
@@ -267,18 +273,20 @@ impl VirtioDisk {
             crate::kerror!("(VirtIO-Blk) Queue size is 0!");
             return None;
         }
-        let queue_size = queue_size.min(VIRTQUEUE_SIZE);
+        let queue_size = queue_size.min(VIRTQUEUE_MAX_SIZE);
+        // Em Legacy, não escrevemos no queue_size, apenas lemos.
+        // Mas alguns emuladores aceitam como confirmação.
         unsafe { port_write_u16(io_base + REG_QUEUE_SIZE, queue_size) };
-        crate::kinfo!("(VirtIO-Blk) Configured Queue Size: ", queue_size as u64);
+        crate::kinfo!("(VirtIO-Blk) Queue Size Final:", queue_size as u64);
 
-        // Calcular tamanho da VirtQueue
+        // Calcular tamanho da VirtQueue conforme Spec Legacy
         // Desc table: 16 bytes * queue_size
-        // Avail ring: 6 + 2 * queue_size
-        // Used ring: 6 + 8 * queue_size (alinhado a 4096)
+        // Avail ring: 2 (flags) + 2 (idx) + 2 * queue_size + 2 (used_event)
+        // Used ring: 2 (flags) + 2 (idx) + 8 * queue_size + 2 (avail_event) (Alinhado a 4096)
         let desc_size = 16 * queue_size as usize;
-        let avail_size = 6 + 2 * queue_size as usize;
+        let avail_size = 4 + 2 * queue_size as usize + 2;
         let used_offset = align_up(desc_size + avail_size, 4096);
-        let used_size = 6 + 8 * queue_size as usize;
+        let used_size = 4 + 8 * queue_size as usize + 2;
         let total_size = used_offset + align_up(used_size, 4096);
 
         // Alocar buffer DMA para VirtQueue
@@ -349,6 +357,7 @@ impl VirtioDisk {
                 enabled: true,
                 capacity,
                 stats: StorageStats::default(),
+                queue_size,
                 free_head: 0,
                 last_used_idx: 0,
             }),
@@ -405,7 +414,7 @@ impl VirtioDisk {
             (*d).addr = req_dma.phys + header_offset;
             (*d).len = 16;
             (*d).flags = VIRTQ_DESC_F_NEXT;
-            (*d).next = (desc_base + 1) % VIRTQUEUE_SIZE;
+            (*d).next = (desc_base + 1) % state.queue_size;
         }
 
         // Descritor 1: Data (device-writable para read, device-readable para write)
@@ -415,29 +424,31 @@ impl VirtioDisk {
             VIRTQ_DESC_F_NEXT
         };
         unsafe {
-            let d = desc_ptr.add(((desc_base + 1) % VIRTQUEUE_SIZE) as usize);
+            let d = desc_ptr.add(((desc_base + 1) % state.queue_size) as usize);
             (*d).addr = req_dma.phys + data_offset;
             (*d).len = 512; // Sempre um setor
             (*d).flags = data_flags;
-            (*d).next = (desc_base + 2) % VIRTQUEUE_SIZE;
+            (*d).next = (desc_base + 2) % state.queue_size;
         }
 
         // Descritor 2: Status (1 byte, device-writable)
         unsafe {
-            let d = desc_ptr.add(((desc_base + 2) % VIRTQUEUE_SIZE) as usize);
+            let d = desc_ptr.add(((desc_base + 2) % state.queue_size) as usize);
             (*d).addr = req_dma.phys + status_offset;
             (*d).len = 1;
             (*d).flags = VIRTQ_DESC_F_WRITE;
             (*d).next = 0;
         }
 
-        state.free_head = (state.free_head + 3) % VIRTQUEUE_SIZE;
+        state.free_head = (state.free_head + 3) % state.queue_size;
 
         // Adicionar ao available ring
-        let avail_off = 16 * VIRTQUEUE_SIZE as usize;
+        let avail_off = 16 * state.queue_size as usize;
         let avail_ptr = (vq_dma.virt + avail_off as u64) as *mut u16;
+
+        // Avail Ring Layout: [flags: u16][idx: u16][ring: u16 * queue_size]
         let avail_idx = unsafe { ptr::read_volatile(avail_ptr.add(1)) };
-        let ring_idx = (avail_idx % VIRTQUEUE_SIZE) as usize;
+        let ring_idx = (avail_idx % state.queue_size) as usize;
 
         unsafe {
             ptr::write_volatile(avail_ptr.add(2 + ring_idx), desc_base);
@@ -447,14 +458,10 @@ impl VirtioDisk {
 
         // Notificar dispositivo
         fence(Ordering::SeqCst);
-        crate::kinfo!(
-            "(VirtIO-Blk) Notifying Queue 0 with avail_idx=",
-            avail_idx as u64
-        );
         unsafe { port_write_u16(self.io_base + REG_QUEUE_NOTIFY, 0) };
 
         // Esperar pela conclusão (polling)
-        let used_off = align_up(avail_off + 6 + 2 * VIRTQUEUE_SIZE as usize, 4096);
+        let used_off = align_up(avail_off + 4 + 2 * state.queue_size as usize + 2, 4096);
         let used_ptr = (vq_dma.virt + used_off as u64) as *mut u16;
 
         // Aumentado para ~1 segundo em emulação lenta
