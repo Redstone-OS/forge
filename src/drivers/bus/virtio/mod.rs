@@ -143,6 +143,7 @@ impl VirtioDeviceType {
             8 => Self::Scsi,
             16 => Self::Gpu,
             18 => Self::Input,
+            22 => Self::Block, // Alguns emuladores usam 22 para block moderno em certas configs
             25 => Self::Sound,
             _ => Self::Unknown,
         }

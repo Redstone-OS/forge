@@ -631,14 +631,14 @@ src/drivers/
 | `base/driver.rs` | ✅ Existe | Trait Driver |
 | `base/device.rs` | ✅ Existe | Struct Device |
 | `base/bus.rs` | 🔄 Expandir | + BusOperations |
-| `base/recovery.rs` | 🔄 Expandir | + Fallback |
-| `base/memory.rs` | 🆕 Criar | Driver Zone |
-| `base/dma.rs` | 🆕 Criar | DMA Pool |
-| `base/context.rs` | 🆕 Criar | DriverContext |
-| `base/async.rs` | 🆕 Criar | Async probe |
-| `base/deps.rs` | 🆕 Criar | Dependências |
-| `base/fallback.rs` | 🆕 Criar | Fallback chain |
-| `base/telemetry.rs` | 🆕 Criar | Diagnósticos |
+| `base/recovery.rs` | 🔄 Stub | + Fallback |
+| `base/memory.rs` | 🆕 Stub | Driver Zone |
+| `base/dma.rs` | 🆕 Expandir | DMA Pool |
+| `base/context.rs` | 🆕 Stub | DriverContext |
+| `base/async.rs` | 🆕 Stub | Async probe |
+| `base/deps.rs` | 🆕 Stub | Dependências |
+| `base/fallback.rs` | 🆕 Stub | Fallback chain |
+| `base/telemetry.rs` | 🆕 Expandir | Diagnósticos |
 
 ---
 
@@ -821,95 +821,3 @@ pub fn init() {
 3. **SEMPRE** verifique IDs antes de assumir controle
 4. **SEMPRE** libere recursos no `remove()`
 5. **SEMPRE** trate erros, nunca use `unwrap()`
-
----
-
-## 🗺️ Roadmap
-
-### Fase 1: Fundação (Prioridade Crítica)
-
-> *"Sem fundação, não existe casa."*
-
-| Tarefa | Descrição | Dependências |
-|--------|-----------|--------------|
-| `base/memory.rs` | Driver Memory Zone com guard pages | - |
-| `base/dma.rs` | DMA Pool centralizado | memory.rs |
-| `base/context.rs` | DriverContext persistente | - |
-| `base/fallback.rs` | Sistema de fallback progressivo | recovery.rs |
-| Expandir `recovery.rs` | Políticas por categoria | context.rs |
-
-### Fase 2: Transporte (Prioridade Alta)
-
-> *"A rodoviária precisa funcionar para a cidade viver."*
-
-| Tarefa | Descrição | Dependências |
-|--------|-----------|--------------|
-| Expandir `bus.rs` | BusOperations trait | Fase 1 |
-| `bus/pci/` | Enumeração PCI completa | bus.rs |
-| `bus/usb/xhci/` | USB 3.x host controller | pci/ |
-| `bus/virtio/` | Paravirtualização | pci/ |
-
-### Fase 3: Armazenamento (Prioridade Alta)
-
-> *"Precisamos acessar arquivos fora da RAM."*
-
-| Tarefa | Descrição | Dependências |
-|--------|-----------|--------------|
-| `storage/virtio/` | VirtIO-Blk para QEMU | Fase 2 |
-| `storage/ahci/` | SATA controller | Fase 2 |
-| `bus/usb/mass_storage/` | USB pen drives | xhci/ |
-
-### Fase 4: Vídeo Básico (Prioridade Média)
-
-> *"O usuário precisa ver o que está acontecendo."*
-
-| Tarefa | Descrição | Dependências |
-|--------|-----------|--------------|
-| `display/fb/` | Framebuffer manager | Fase 1 |
-| `display/bochs/` | Driver QEMU/Bochs | fb/ |
-| `display/gpu/generic/` | VESA/VGA fallback | fb/ |
-
-### Fase 5: Comunicação (Prioridade Média)
-
-> *"Conexão com o mundo externo."*
-
-| Tarefa | Descrição | Dependências |
-|--------|-----------|--------------|
-| `network/virtio/` | VirtIO-Net | Fase 2 |
-| `network/ethernet/intel.rs` | e1000 (QEMU) | pci/ |
-
-### Fase 6: Entrada (Prioridade Normal)
-
-> *"Interação com o usuário."*
-
-| Tarefa | Descrição | Dependências |
-|--------|-----------|--------------|
-| `input/ps2/` | Teclado/Mouse legado | - |
-| `input/hid/` | USB HID parser | xhci/ |
-
-### Fase 7: Refinamentos (Prioridade Baixa)
-
-> *"Quando o básico funcionar."*
-
-| Tarefa | Descrição | Dependências |
-|--------|-----------|--------------|
-| `sound/intel_hda/` | HD Audio | Fase 2 |
-| `display/gpu/intel/` | Intel HD Graphics | Fase 4 |
-| `base/async.rs` | Probing assíncrono | Fase 1 |
-| `base/telemetry.rs` | Diagnósticos avançados | Fase 1 |
-| Módulos externos | Carregamento ELF | Fase 1-6 |
-
-### Fase 8: Futuro (Quando estiver maduro)
-
-| Tarefa | Descrição |
-|--------|-----------|
-| IOMMU support | Segurança de DMA |
-| SR-IOV | Virtualização de hardware |
-| NUMA awareness | Multi-socket |
-| Signed drivers | Verificação de módulos |
-
----
-
-
-*Documentação oficial do Redstone Drive System.*  
-*RedstoneOS © 2026 - Forge Kernel Team*
