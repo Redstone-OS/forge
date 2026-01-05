@@ -187,6 +187,8 @@ impl RamdiskBackend {
     /// Cria novo ramdisk
     pub fn new(size_mb: usize) -> Self {
         // Aloca memória para o ramdisk
+        // Todo: Revisar
+        #[allow(unused)]
         let pages = (size_mb * 1024 * 1024) / PAGE_SIZE;
 
         // TODO: Alocar memória contígua via phys::alloc_contiguous

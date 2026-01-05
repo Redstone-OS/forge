@@ -33,11 +33,15 @@ use crate::rmm::addr::PhysAddr;
 use crate::rmm::config::PAGE_SIZE;
 use crate::rmm::error::{RmmError, RmmResult};
 use crate::rmm::phys::{self, AllocFlags, FrameOwner};
+// Todo: Revisar
+#[allow(unused)]
 use crate::rmm::virt::{hhdm, mapper, MapFlags};
 use crate::rmm::zone::Zone;
 use crate::sync::Spinlock;
 
 use alloc::vec::Vec;
+// Todo: Revisar
+#[allow(unused)]
 use core::ptr::NonNull;
 
 /// DMA Pool para alocações rápidas

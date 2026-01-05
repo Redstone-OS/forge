@@ -107,6 +107,8 @@ impl HeapAllocator {
     /// Libera memória
     pub fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
         let size = layout.size().max(layout.align());
+        // Todo: Revisar
+        #[allow(unused)]
         let addr = ptr.as_ptr() as u64;
 
         if size <= self.slab_max_size {

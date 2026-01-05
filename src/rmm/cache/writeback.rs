@@ -296,7 +296,8 @@ pub fn is_page_expired(dirty_time: u64, expire_threshold: u64) -> bool {
 pub fn collect_for_writeback(
     dirty_pages: &[&CacheEntry],
     max_pages: usize,
-    expire_threshold: u64,
+    // Todo: Revisar
+    #[allow(unused)] expire_threshold: u64,
 ) -> Vec<CacheKey> {
     let mut result = Vec::with_capacity(max_pages.min(dirty_pages.len()));
 

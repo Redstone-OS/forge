@@ -59,10 +59,15 @@ use crate::rmm::addr::VirtAddr;
 use crate::rmm::config::*;
 use crate::rmm::error::RmmResult;
 use crate::rmm::phys::{self, AllocFlags, FrameOwner};
+// Todo: Revisar
+#[allow(unused)]
 use crate::rmm::virt::{hhdm, mapper, MapFlags};
 use crate::rmm::zone::Zone;
 
+// Todo: Revisar
+#[allow(unused)]
 use core::alloc::{GlobalAlloc, Layout};
+#[allow(unused)]
 use core::ptr::NonNull;
 
 /// Heap global (unsafe static para GlobalAlloc)

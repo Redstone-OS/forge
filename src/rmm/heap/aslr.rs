@@ -145,6 +145,8 @@ fn has_rdrand() -> bool {
 }
 
 fn read_rdrand() -> Option<u64> {
+    // Todo: Revisar
+    #[allow(unused)]
     let mut value: u64 = 0;
     let mut success: u8;
 

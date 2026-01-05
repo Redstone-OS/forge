@@ -18,6 +18,8 @@
 
 use crate::rmm::addr::PhysAddr;
 use crate::rmm::config::PAGE_SIZE;
+// Todo: Revisar
+#[allow(unused)]
 use crate::rmm::phys::frame::{FrameFlags, FrameInfo, FrameOwner};
 
 use alloc::vec::Vec;

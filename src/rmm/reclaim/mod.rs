@@ -50,6 +50,8 @@ pub use scanner::{PageScanner, ScanResult};
 pub use shrinker::{Shrinker, ShrinkerOps};
 
 use crate::rmm::addr::PhysAddr;
+// Todo: Revisar
+#[allow(unused)]
 use crate::rmm::config::PAGE_SIZE;
 use crate::sync::Spinlock;
 
@@ -262,12 +264,16 @@ fn swap_anon_pages(lru: &mut LruList, target: usize) -> usize {
 }
 
 /// Verifica se página pode ser evicted (clean file-backed)
+// Todo: Revisar
+#[allow(unused)]
 fn can_evict(phys: PhysAddr) -> bool {
     // TODO: Verificar FrameInfo flags (DIRTY)
     true
 }
 
 /// Evicta página (remove mapeamentos e libera)
+// Todo: Revisar
+#[allow(unused)]
 fn do_evict(phys: PhysAddr) -> bool {
     // TODO:
     // 1. Obter rmap da página
@@ -277,6 +283,8 @@ fn do_evict(phys: PhysAddr) -> bool {
 }
 
 /// Faz swap de página
+// Todo: Revisar
+#[allow(unused)]
 fn do_swap(phys: PhysAddr) -> bool {
     // TODO:
     // 1. Alocar slot no swap

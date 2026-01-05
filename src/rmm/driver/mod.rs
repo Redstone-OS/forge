@@ -47,6 +47,8 @@ pub use dma::{alloc_dma, alloc_dma_coherent, free_dma, DmaBuffer, DmaPool};
 pub use iommu::{IommuDomain, IommuOps, NoIommu};
 pub use pinned::{alloc_pinned, free_pinned, PinnedMemory};
 
+// Todo: Revisar
+#[allow(unused)]
 use crate::rmm::addr::PhysAddr;
 use crate::rmm::error::RmmResult;
 

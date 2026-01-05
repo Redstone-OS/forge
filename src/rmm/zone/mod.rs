@@ -42,7 +42,10 @@ pub mod types;
 pub use manager::ZoneManager;
 pub use types::{MigrateType, Zone, ZoneInfo, ZoneStats};
 
+// Todo: Revisar
+#[allow(unused)]
 use crate::rmm::addr::PhysAddr;
+#[allow(unused)]
 use crate::rmm::config::{PAGE_SIZE, ZONE_DMA32_END, ZONE_DMA_END};
 use crate::sync::Spinlock;
 use core::sync::atomic::{AtomicBool, Ordering};

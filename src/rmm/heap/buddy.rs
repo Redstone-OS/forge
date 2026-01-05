@@ -202,6 +202,8 @@ impl BuddyAllocator {
     /// Split de bloco maior para ordem menor
     fn split_to_order(&mut self, block: *mut FreeBlock, from_order: usize, to_order: usize) {
         let mut current_order = from_order;
+        // Todo: Revisar
+        #[allow(unused)]
         let mut current_block = block as u64;
 
         while current_order > to_order {

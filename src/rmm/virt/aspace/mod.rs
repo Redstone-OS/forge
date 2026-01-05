@@ -41,6 +41,8 @@ use crate::rmm::zone::Zone;
 use crate::sync::Spinlock;
 
 use alloc::collections::BTreeMap;
+// Todo: Revisar
+#[allow(unused)]
 use alloc::vec::Vec;
 
 /// ID de processo para address space

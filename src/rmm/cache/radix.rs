@@ -20,6 +20,8 @@
 //! ```
 
 use super::entry::{CacheEntry, CacheKey};
+// Todo: Revisar
+#[allow(unused)]
 use crate::rmm::addr::PhysAddr;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
