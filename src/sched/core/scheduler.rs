@@ -88,6 +88,7 @@ pub fn enqueue(task: Pin<Box<Task>>) {
 pub fn pick_next() -> Option<Pin<Box<Task>>> {
     let mut rq = RUNQUEUE.lock();
     let res = rq.pop();
+    #[allow(unused)]
     if let Some(ref t) = res {
         // crate::ktrace!(
         //     "(Sched) pick_next() selecionado PID:",

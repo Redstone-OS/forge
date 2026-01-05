@@ -1,69 +1,50 @@
-//! # Intel Graphics Driver (i915-style)
+//! # Intel Integrated Graphics Driver (i915-style)
 //!
-//! Driver para GPUs integradas Intel (HD Graphics, Iris, UHD).
-//! Responsável pelo Display Engine e Render Engine via MMIO.
+//! Driver genérico para GPUs Intel integradas.
+//! Suporta Gen9+ (Skylake, Apollo Lake, Kaby Lake, etc).
+//!
+//! ## Arquitetura
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────┐
+//! │                 Intel GPU Driver                │
+//! ├─────────────────┬───────────────────────────────┤
+//! │     Display     │           Memory              │
+//! │   (pipe/plane)  │         (GTT/GEM)             │
+//! ├─────────────────┴───────────────────────────────┤
+//! │                   Hardware (hw/)                │
+//! │              MMIO, Registers, Gen9              │
+//! └─────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Device IDs Suportados
+//!
+//! | Device ID | Nome               | Geração  |
+//! |-----------|--------------------|----------|
+//! | 0x5A85    | HD Graphics 500    | Gen9 LP  |
+//! | 0x5A84    | HD Graphics 505    | Gen9 LP  |
+//! | 0x3184    | UHD Graphics 600   | Gen9.5   |
+//! | 0x3185    | UHD Graphics 605   | Gen9.5   |
 
-// TODO: Revisar no futuro
-#[allow(unused_imports)]
-use crate::drivers::base::device::{Device, DeviceState};
-use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
-use crate::drivers::bus::pci::device::PciDevice;
+pub mod device;
+pub mod display;
+pub mod hw;
+pub mod memory;
+pub mod pci;
+
 use alloc::sync::Arc;
 
-pub struct IntelGpuDriver;
+// Re-exports
+pub use device::IntelDevice;
 
-impl IntelGpuDriver {
-    /// Registros MMIO comuns da Intel
-    pub const DE_PIPE_A_CONF: u32 = 0x70008;
-    pub const DE_PIPE_A_HORZ: u32 = 0x70004;
-    pub const DE_PIPE_A_VERT: u32 = 0x7000C;
+// =============================================================================
+// INICIALIZAÇÃO
+// =============================================================================
 
-    // TODO: Implementar GTT (Graphics Translation Table)
-    // TODO: Implementar Ring Buffers para execução de comandos
-}
-
-impl Driver for IntelGpuDriver {
-    fn name(&self) -> &'static str {
-        "Intel Integrated Graphics Driver"
-    }
-
-    fn device_type(&self) -> DeviceType {
-        DeviceType::Display
-    }
-
-    fn probe(&self, dev: &mut Device) -> Result<(), DriverError> {
-        let pci_info = match dev.get_data::<PciDevice>() {
-            Some(info) => info,
-            None => return Err(DriverError::NotSupported),
-        };
-
-        // Vendor ID Intel = 0x8086
-        if pci_info.vendor_id != 0x8086 {
-            return Err(DriverError::NotSupported);
-        }
-
-        crate::kinfo!("(GPU) Intel HD/UHD Graphics detectada.");
-
-        // 1. Mapear MMIO (GTTMMADR no BAR0)
-        let mmio_base = pci_info.bar_address(0);
-        if mmio_base == 0 {
-            return Err(DriverError::HardwareFault);
-        }
-        crate::kdebug!("  -> MMIO Base:", mmio_base);
-
-        // 2. Mapear GTT e Framebuffer (GMADR no BAR2)
-        let fb_base = pci_info.bar_address(2);
-        if fb_base == 0 {
-            return Err(DriverError::HardwareFault);
-        }
-        crate::kdebug!("  -> Framebuffer Base:", fb_base);
-
-        // 3. Inicialização de baixo nível (Pipes e Planes)
-
-        Ok(())
-    }
-}
-
+/// Inicializa o driver Intel GPU.
+///
+/// Registra o driver no RDS. O matching com dispositivos é automático.
 pub fn init() {
-    crate::drivers::base::register_driver(Arc::new(IntelGpuDriver));
+    crate::kdebug!("(Intel GPU) Registrando driver...");
+    crate::drivers::base::register_driver(Arc::new(pci::IntelGpuDriver));
 }

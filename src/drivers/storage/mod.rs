@@ -37,7 +37,7 @@ pub mod ata;
 pub mod nvme;
 pub mod ramdisk;
 pub mod traits;
-// pub mod virtio; Nao funcional ainda
+pub mod virtio;
 
 // Re-exports
 pub use traits::*;

@@ -5,6 +5,9 @@
 //!
 //! ## Spec: OASIS VirtIO v1.2 - Section 5.7 GPU Device
 
+#[path = "virtio-gpu/mod.rs"]
+pub mod virtio_gpu;
+
 use crate::drivers::base::device::Device;
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
 use crate::drivers::display::traits::*;
