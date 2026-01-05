@@ -2,7 +2,7 @@
 //! InitramFS - filesystem em memória do boot
 
 use crate::fs::vfs::inode::{DirEntry, FsError, InodeOps};
-use crate::mm::VirtAddr;
+use crate::rmm::addr::VirtAddr;
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
 use core::slice;

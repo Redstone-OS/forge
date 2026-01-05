@@ -1,6 +1,6 @@
 //! # Memory Mapping Syscalls
 
-use crate::mm::aspace::vma::{MemoryIntent, Protection, VmaFlags};
+use crate::rmm::virt::aspace::vma::{MemoryIntent, Protection, VmaFlags};
 use crate::syscall::SysResult;
 
 pub const PROT_NONE: u32 = 0;

@@ -3,7 +3,7 @@
 //! Abstração para acesso MMIO aos registros do GPU Intel.
 //! O GPU Intel usa memory-mapped I/O no BAR0 (GTTMMADR).
 
-use crate::mm::VirtAddr;
+use crate::rmm::addr::VirtAddr;
 
 // =============================================================================
 // MMIO WRAPPER

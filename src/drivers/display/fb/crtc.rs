@@ -7,7 +7,7 @@ use super::buffer::BUFFER_MANAGER;
 use crate::core::boot::handoff::{
     FramebufferInfo as HandoffFbInfo, PixelFormat as HandoffPixelFormat,
 };
-use crate::mm::{PhysAddr, VirtAddr};
+use crate::rmm::addr::{PhysAddr, VirtAddr};
 use crate::sync::Spinlock;
 use gfx_types::{BufferHandle, DisplayInfo, PixelFormat, Rect};
 

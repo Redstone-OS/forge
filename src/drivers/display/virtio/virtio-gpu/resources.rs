@@ -3,7 +3,7 @@
 //! Gerenciamento de recursos GPU (buffers 2D/3D).
 
 use super::protocol::VirtioGpuFormat;
-use crate::mm::{PhysAddr, VirtAddr};
+use crate::rmm::addr::{PhysAddr, VirtAddr};
 
 // =============================================================================
 // RESOURCE BACKING

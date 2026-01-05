@@ -3,7 +3,7 @@
 //! Lógica para gerenciar displays em modo gráfico usando mapeamento de memória direta.
 //! Suporta as resoluções vindas do UEFI GOP ou VESA.
 
-use crate::mm::{PhysAddr, VirtAddr};
+use crate::rmm::addr::{PhysAddr, VirtAddr};
 // TODO: Revisar no futuro
 #[allow(unused_imports)]
 use gfx_types::{DisplayInfo, PixelFormat};

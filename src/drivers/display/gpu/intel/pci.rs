@@ -8,7 +8,7 @@ use crate::drivers::base::device::Device;
 use crate::drivers::base::driver::{DeviceType, Driver, DriverError};
 use crate::drivers::bus::pci::config;
 use crate::drivers::bus::pci::{self, PciAddress};
-use crate::mm::VirtAddr;
+use crate::rmm::addr::VirtAddr;
 use alloc::sync::Arc;
 
 use super::device::IntelDevice;

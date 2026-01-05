@@ -15,7 +15,7 @@
 
 #![allow(dead_code)]
 
-use crate::mm::PhysAddr;
+use crate::rmm::addr::PhysAddr;
 
 // =============================================================================
 // GTT ENTRY

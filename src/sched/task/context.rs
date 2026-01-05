@@ -4,7 +4,7 @@
 //!
 //! Gerencia a troca de contexto entre tasks.
 
-use crate::mm::VirtAddr;
+use crate::rmm::addr::VirtAddr;
 
 /// Contexto de CPU (registradores salvos)
 ///

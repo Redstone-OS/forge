@@ -5,7 +5,7 @@
 //! para a idle task de forma segura.
 
 use crate::arch::Cpu;
-use crate::mm::VirtAddr;
+use crate::rmm::addr::VirtAddr;
 use crate::sched::task::context::CpuContext;
 use crate::sched::task::{Task, TaskState};
 use crate::sync::Spinlock;

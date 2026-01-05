@@ -3,8 +3,8 @@
 use super::accounting::Accounting;
 use super::context::CpuContext;
 use super::state::TaskState;
-use crate::mm::aspace::AddressSpace;
-use crate::mm::VirtAddr;
+use crate::rmm::addr::VirtAddr;
+use crate::rmm::virt::aspace::AddressSpace;
 use crate::sync::Spinlock;
 use crate::sys::types::Tid;
 use crate::syscall::handle::table::HandleTable;

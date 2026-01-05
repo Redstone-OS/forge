@@ -11,7 +11,7 @@
 #![allow(dead_code)]
 
 use super::gtt::{GttEntry, GttRange};
-use crate::mm::{PhysAddr, VirtAddr};
+use crate::rmm::addr::{PhysAddr, VirtAddr};
 
 // =============================================================================
 // GGTT

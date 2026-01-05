@@ -1,6 +1,6 @@
 //! Fast Userspace Mutex
 
-use crate::mm::VirtAddr;
+use crate::rmm::addr::VirtAddr;
 use crate::sched::sync::WaitQueue;
 use crate::sync::Spinlock;
 use alloc::collections::BTreeMap;
