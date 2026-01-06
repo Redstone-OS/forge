@@ -141,10 +141,12 @@ unsafe fn find_table(
 
     for i in 0..entries_len {
         crate::kdebug!("(ACPI) Reading entry", i as u64);
+        // SAFETY: Usar read_unaligned porque tabelas ACPI são packed e podem
+        // ter ponteiros em endereços não alinhados a 8 bytes
         let entry_addr = if is_xsdt {
-            *((entries_start + (i * 8) as u64) as *const u64)
+            core::ptr::read_unaligned((entries_start + (i * 8) as u64) as *const u64)
         } else {
-            *((entries_start + (i * 4) as u64) as *const u32) as u64
+            core::ptr::read_unaligned((entries_start + (i * 4) as u64) as *const u32) as u64
         };
         crate::kdebug!("(ACPI) Entry", i as u64, "@ phys", entry_addr);
 

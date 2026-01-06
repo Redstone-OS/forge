@@ -67,5 +67,6 @@ pub mod bringup;
 pub mod ipi;
 pub mod percpu;
 pub mod topology;
+pub mod trampoline;
 
 pub use topology::{cpu_count, current_cpu, CpuInfo, TOPOLOGY};

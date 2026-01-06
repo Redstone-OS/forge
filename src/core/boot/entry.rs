@@ -70,7 +70,18 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 6. SMP Bringup (Acordar outros cores)
     crate::kinfo!("'Inicializando SMP'");
+
+    // Primeiro inicializar o LAPIC do BSP (necessário para enviar IPIs)
+    unsafe {
+        crate::arch::x86_64::apic::lapic::init();
+    }
+    crate::kdebug!("(SMP) LAPIC do BSP inicializado");
+
     crate::core::smp::bringup::init();
+    // Acordar APs se temos mais de 1 CPU
+    unsafe {
+        crate::core::smp::bringup::bringup_all_aps();
+    }
 
     // 6.5 Inicializar VFS (Sistema de Arquivos Virtual)
     // Necessário antes de qualquer operação de arquivo

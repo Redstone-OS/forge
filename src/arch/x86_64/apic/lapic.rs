@@ -38,7 +38,17 @@ use crate::arch::x86_64::cpu::Cpu;
 // =============================================================================
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
-const LAPIC_BASE_ADDR: u64 = 0xFEE00000;
+const LAPIC_BASE_PHYS: u64 = 0xFEE00000;
+
+/// Obtém o endereço virtual do LAPIC via HHDM
+///
+/// # Safety
+///
+/// HHDM deve estar inicializado
+#[inline]
+unsafe fn lapic_base() -> u64 {
+    crate::rmm::virt::hhdm::phys_to_virt(LAPIC_BASE_PHYS)
+}
 
 // Offsets MMIO
 const REG_ID: usize = 0x020;
@@ -204,12 +214,14 @@ fn spin_delay(iterations: u32) {
 
 #[inline]
 unsafe fn read(offset: usize) -> u32 {
-    let ptr = (LAPIC_BASE_ADDR as *const u32).add(offset / 4);
+    let base = lapic_base();
+    let ptr = (base as *const u32).add(offset / 4);
     core::ptr::read_volatile(ptr)
 }
 
 #[inline]
 unsafe fn write(offset: usize, value: u32) {
-    let ptr = (LAPIC_BASE_ADDR as *mut u32).add(offset / 4);
+    let base = lapic_base();
+    let ptr = (base as *mut u32).add(offset / 4);
     core::ptr::write_volatile(ptr, value);
 }
