@@ -206,19 +206,19 @@ unsafe fn wake_ap(apic_id: u32, logical_id: u32) -> Result<(), &'static str> {
     crate::kdebug!("(SMP/Bringup) Enviando SIPI vetor:", sipi_vector as u64);
     lapic::send_sipi(apic_id, sipi_vector);
 
-    // 4. Esperar 200µs
-    delay_us(200);
+    // 4. Esperar 1ms para o AP processar
+    delay_ms(1);
 
     // 5. Verificar se acordou
     crate::kdebug!("(SMP/Bringup) Verificando se AP respondeu...");
-    if !check_ap_ready(logical_id) {
+    if !wait_for_ap(logical_id, AP_STARTUP_TIMEOUT) {
         // 6. Enviar segundo SIPI (retry)
         crate::kdebug!("(SMP/Bringup) Reenviando SIPI...");
         lapic::send_sipi(apic_id, sipi_vector);
-        delay_ms(1);
+        delay_ms(5);
 
-        // 7. Esperar com timeout
-        if !wait_for_ap(logical_id, AP_STARTUP_TIMEOUT) {
+        // 7. Esperar com timeout maior
+        if !wait_for_ap(logical_id, AP_STARTUP_TIMEOUT * 10) {
             crate::kerror!("(SMP/Bringup) AP", apic_id as u64, "timeout!");
             return Err("AP não respondeu após SIPI");
         }
@@ -286,18 +286,36 @@ fn delay_us(us: u32) {
 ///
 /// Chamado pelo trampoline após entrar em long mode.
 #[no_mangle]
-pub extern "C" fn ap_entry(logical_id: u32) -> ! {
-    // 1. Inicializar LAPIC local
+pub extern "C" fn ap_entry(_logical_id: u32) -> ! {
+    // 1. Inicializar LAPIC local PRIMEIRO
     unsafe {
         lapic::init();
     }
 
-    crate::kdebug!("(SMP/AP)", logical_id as u64, "iniciado!");
+    // 2. Ler nosso APIC ID diretamente do hardware
+    let apic_id = lapic::current_apic_id();
 
-    // 2. Sinalizar que acordou
+    // 3. Buscar logical_id na topologia pelo APIC ID
+    let logical_id = {
+        let topo = topology::get();
+        if let Some(cpu) = topo.find_by_apic_id(apic_id) {
+            cpu.logical_id
+        } else {
+            0 // Fallback (não deveria acontecer)
+        }
+    };
+
+    crate::kdebug!(
+        "(SMP/AP)",
+        logical_id as u64,
+        "iniciado! APIC:",
+        apic_id as u64
+    );
+
+    // 4. Sinalizar que acordou
     ap_signal_ready(logical_id);
 
-    // 3. Esperar trabalho (idle loop)
+    // 5. Esperar trabalho (idle loop)
     // TODO: Integrar com scheduler
     loop {
         crate::arch::x86_64::cpu::Cpu::halt();

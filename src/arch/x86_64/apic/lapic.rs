@@ -126,6 +126,13 @@ pub fn id() -> u32 {
     unsafe { read(REG_ID) >> 24 }
 }
 
+/// Retorna o APIC ID do core atual.
+/// Alias para `id()` para clareza.
+#[inline]
+pub fn current_apic_id() -> u32 {
+    id()
+}
+
 // =============================================================================
 // IPIs para SMP Bringup
 // =============================================================================
