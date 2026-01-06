@@ -48,6 +48,8 @@ struct PinnedInfo {
     owner_id: u32,
     /// Descrição (para debug)
     #[cfg(debug_assertions)]
+    // Todo: Revisar
+    #[allow(unused)]
     description: &'static str,
 }
 
@@ -273,11 +275,12 @@ pub fn dump_pinned() {
 
     for (phys, info) in registry.iter() {
         crate::kinfo!(
-            "  0x{:012x}: {} pages, owner={}, desc={}",
-            phys,
-            info.pages,
-            info.owner_id,
-            info.description
+            "  phys:",
+            *phys as u64,
+            "pages:",
+            info.pages as u64,
+            "owner:",
+            info.owner_id as u64
         );
     }
 }

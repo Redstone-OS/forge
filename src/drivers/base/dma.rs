@@ -24,11 +24,45 @@
 //! - **IOMMU**: Preparado para proteção de DMA futura
 
 use super::device::DeviceId;
-use crate::mm::addr::PhysAddr;
-use crate::mm::pmm::FRAME_ALLOCATOR;
-use crate::mm::vmm::{map_page_with_pmm, MapFlags};
+// TODO: Migrar para RMM APIs quando disponíveis
+// A API antiga do PMM foi removida. Este módulo precisa ser refatorado
+// para usar crate::rmm::driver::dma::* quando estiver pronto.
+use crate::rmm::addr::PhysAddr;
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
+
+// Stubs temporários até migração completa
+struct MapFlags;
+impl MapFlags {
+    const WRITABLE: Self = Self;
+    const NO_EXECUTE: Self = Self;
+    const NO_CACHE: Self = Self;
+}
+
+impl core::ops::BitOr for MapFlags {
+    type Output = Self;
+    fn bitor(self, _: Self) -> Self {
+        Self
+    }
+}
+
+struct FakeFrameAllocator;
+impl FakeFrameAllocator {
+    fn allocate_frame(&self) -> Option<PhysAddr> {
+        // TODO: Usar phys::alloc
+        None
+    }
+    fn deallocate_frame(&self, _: PhysAddr) {
+        // TODO: Usar phys::free
+    }
+}
+
+fn map_page_with_pmm<T>(_: u64, _: u64, _: MapFlags, _: &mut T) -> Result<(), u64> {
+    // TODO: Implementar usando RMM mapper
+    Ok(())
+}
+
+static FRAME_ALLOCATOR: Spinlock<FakeFrameAllocator> = Spinlock::new(FakeFrameAllocator);
 
 // =============================================================================
 // CONSTANTES DO DMA POOL

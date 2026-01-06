@@ -49,7 +49,7 @@ pub fn invalidate_range(start: u64, end: u64) {
     let mut addr = start;
     while addr < end {
         invalidate_page(addr);
-        addr += crate::mm::config::PAGE_SIZE as u64;
+        addr += crate::rmm::config::PAGE_SIZE as u64;
     }
 }
 

@@ -202,7 +202,7 @@ impl DisplayDevice for IntelDevice {
             return core::ptr::null_mut();
         }
         // Mapear aperture para espaço virtual
-        let virt = unsafe { crate::mm::addr::phys_to_virt::<u8>(self.aperture_phys) };
+        let virt = crate::rmm::virt::hhdm::phys_to_virt(self.aperture_phys);
         virt as *mut u8
     }
 

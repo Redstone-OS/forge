@@ -234,10 +234,11 @@ impl PhysStats {
     pub fn dump(&self) {
         crate::kinfo!("=== Physical Memory Statistics ===");
         crate::kinfo!(
-            "  Frames: {} total, {} free ({:.1}%)",
+            "  Frames:",
             self.total_frames.load(Ordering::Relaxed),
+            "total,",
             self.free_frames.load(Ordering::Relaxed),
-            self.free_percentage()
+            "free"
         );
         crate::kinfo!(
             "  Usage: kernel={}, user={}, pinned={}",
@@ -251,9 +252,9 @@ impl PhysStats {
             self.alloc_failures.load(Ordering::Relaxed)
         );
         crate::kinfo!(
-            "  Cache: {:.1}% hit rate ({} hits, {} misses)",
-            self.cache_hit_rate() * 100.0,
+            "  Cache hits:",
             self.cache_hits.load(Ordering::Relaxed),
+            "misses:",
             self.cache_misses.load(Ordering::Relaxed)
         );
     }

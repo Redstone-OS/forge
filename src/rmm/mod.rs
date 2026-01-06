@@ -88,6 +88,7 @@ pub mod phys;
 pub mod virt;
 
 pub mod cache;
+pub mod fault;
 pub mod numa;
 pub mod reclaim;
 pub mod swap;
@@ -100,6 +101,21 @@ pub use config::*;
 pub use error::{RmmError, RmmResult};
 pub use phys::{AllocFlags, FrameOwner};
 pub use zone::{MigrateType, Zone};
+
+// Re-export de phys_to_virt para compatibilidade, remover assim que possivel
+pub mod addr_compat {
+    //! Compatibilidade com API antiga de crate::mm::addr
+
+    /// Converte endereço físico para virtual via HHDM
+    ///
+    /// # Safety
+    ///
+    /// O endereço físico deve ser válido.
+    #[inline]
+    pub unsafe fn phys_to_virt<T>(phys: u64) -> *mut T {
+        crate::rmm::virt::hhdm::phys_to_virt(phys) as *mut T
+    }
+}
 
 use crate::core::boot::BootInfo;
 

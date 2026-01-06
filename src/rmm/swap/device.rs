@@ -255,6 +255,8 @@ impl RamdiskBackend {
 /// Backend de block device (partição/arquivo)
 pub struct BlockBackend {
     /// Nome do device
+    // Todo: Revisar
+    #[allow(unused)]
     name: &'static str,
     /// Tamanho em bytes
     size: u64,

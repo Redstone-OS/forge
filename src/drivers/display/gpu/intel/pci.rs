@@ -26,6 +26,8 @@ const INTEL_VENDOR_ID: u16 = 0x8086;
 // =============================================================================
 
 /// Informação de um BAR lido
+// Todo: Revisar
+#[allow(unused)]
 struct BarInfo {
     address: u64,
     size: u64,
@@ -146,7 +148,7 @@ impl Driver for IntelGpuDriver {
         }
 
         // Mapear MMIO para espaço virtual
-        let mmio_virt = unsafe { crate::mm::addr::phys_to_virt::<u64>(mmio_bar.address) };
+        let mmio_virt = crate::rmm::virt::hhdm::phys_to_virt(mmio_bar.address);
 
         let mmio = unsafe { Mmio::new(VirtAddr::new(mmio_virt as u64), mmio_bar.size as usize) };
 

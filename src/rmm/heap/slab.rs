@@ -129,6 +129,8 @@ impl SlabMeta {
     }
 
     /// Slab está vazio?
+    // Todo: Revisar
+    #[allow(unused)]
     fn is_empty(&self) -> bool {
         self.free_objects == self.total_objects
     }
@@ -144,6 +146,8 @@ impl SlabMeta {
 /// Cache de uma classe de tamanho
 struct SlabCache {
     /// Tamanho do objeto
+    // Todo: Revisar
+    #[allow(unused)]
     object_size: usize,
     /// Lista de slabs não-cheios
     partial: *mut SlabMeta,

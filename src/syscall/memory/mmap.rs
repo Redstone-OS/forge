@@ -64,9 +64,13 @@ pub const MAP_ANONYMOUS: u32 = 0x20;
 // BASE DE MAPEAMENTO
 // =============================================================================
 
+// Todo: Revisar
+#[allow(unused)]
 /// Base para mapeamentos mmap (512 MB)
 const MMAP_BASE: u64 = 0x2000_0000;
 
+// Todo: Revisar
+#[allow(unused)]
 /// Limite de mapeamentos mmap (1 GB)
 const MMAP_LIMIT: u64 = 0x4000_0000;
 

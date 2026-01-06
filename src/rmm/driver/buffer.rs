@@ -86,6 +86,8 @@ pub struct DeviceBuffer {
     /// Está mapeado para DMA?
     mapped: bool,
     /// É DMA32?
+    // Todo: Revisar
+    #[allow(unused)]
     dma32: bool,
 }
 

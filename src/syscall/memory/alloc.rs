@@ -46,6 +46,8 @@ use crate::syscall::error::{SysError, SysResult};
 // CONSTANTES
 // =============================================================================
 
+// Todo: Revisar
+#[allow(unused)]
 /// Base do heap do usuário (256 MB)
 const USER_HEAP_BASE: u64 = 0x1000_0000;
 

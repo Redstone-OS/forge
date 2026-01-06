@@ -58,6 +58,8 @@ const ORDER_COUNT: usize = BUDDY_ORDERS;
 /// Tamanho mínimo do bloco (ordem 0)
 const MIN_BLOCK_SIZE: usize = PAGE_SIZE; // 4KB
 
+// Todo: Revisar
+#[allow(unused)]
 /// Tamanho máximo do bloco (ordem 10)
 const MAX_BLOCK_SIZE: usize = PAGE_SIZE << BUDDY_MAX_ORDER; // 4MB
 
@@ -71,6 +73,8 @@ struct FreeBlock {
 }
 
 impl FreeBlock {
+    // Todo: Revisar
+    #[allow(unused)]
     fn new() -> Self {
         Self {
             next: core::ptr::null_mut(),
@@ -353,6 +357,8 @@ impl BuddyAllocator {
     }
 
     /// Verifica se bloco está splitado
+    // Todo: Revisar
+    #[allow(unused)]
     fn is_split(&self, addr: u64, order: usize) -> bool {
         let index = self.split_bitmap_index(addr, order);
         let word = index / 64;

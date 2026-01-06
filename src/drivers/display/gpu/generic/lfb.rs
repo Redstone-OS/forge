@@ -18,7 +18,7 @@ pub struct LfbController {
 impl LfbController {
     pub fn new(info: DisplayInfo, phys: PhysAddr) -> Self {
         // Mapear o framebuffer via HHDM ou mapeamento de dispositivo
-        let virt = unsafe { crate::mm::addr::phys_to_virt::<u8>(phys.as_u64()) };
+        let virt = crate::rmm::virt::hhdm::phys_to_virt(phys.as_u64());
 
         Self {
             phys_base: phys,

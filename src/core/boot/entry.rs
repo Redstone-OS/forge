@@ -37,7 +37,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // 3. Inicialização de Memória (PMM, VMM, Heap, HHDM)
     crate::kinfo!("'Inicializando Memória'");
     unsafe {
-        crate::mm::init(boot_info);
+        crate::rmm::init(boot_info);
     }
 
     // 2.5. Inicialização de Vídeo (Framebuffer)
@@ -82,8 +82,8 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
         crate::kinfo!("'Inicializando InitRAMFS'");
         // SEMPRE acessar via HHDM para evitar depender do identity map legado
         let phys = boot_info.initramfs_addr;
-        let virt = unsafe { crate::mm::addr::phys_to_virt::<u8>(phys) };
-        let addr = crate::mm::VirtAddr::new(virt as u64);
+        let virt = crate::rmm::virt::hhdm::phys_to_virt(phys);
+        let addr = crate::rmm::VirtAddr::new(virt as u64);
         crate::fs::initramfs::init(addr, boot_info.initramfs_size as usize);
     } else {
         crate::kwarn!("InitRAMFS não encontrado!");

@@ -63,10 +63,10 @@ use crate::rmm::phys::{self, AllocFlags, FrameOwner};
 #[allow(unused)]
 use crate::rmm::virt::{hhdm, mapper, MapFlags};
 use crate::rmm::zone::Zone;
-
 // Todo: Revisar
 #[allow(unused)]
 use core::alloc::{GlobalAlloc, Layout};
+// Todo: Revisar
 #[allow(unused)]
 use core::ptr::NonNull;
 
@@ -194,10 +194,11 @@ impl HeapStats {
     pub fn dump(&self) {
         crate::kinfo!("=== Heap Statistics ===");
         crate::kinfo!(
-            "  Memory: {} KB total, {} KB used ({:.1}%)",
+            "  Memory:",
             self.total_bytes / 1024,
+            "KB total,",
             self.used_bytes / 1024,
-            self.usage_percent()
+            "KB used"
         );
         crate::kinfo!(
             "  Allocs: {} active, {} total, {} frees",

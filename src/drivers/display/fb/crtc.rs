@@ -88,7 +88,7 @@ impl Crtc {
         };
 
         // Mapear framebuffer físico para virtual
-        let virt_addr = unsafe { crate::mm::addr::phys_to_virt::<u64>(info.addr) };
+        let virt_addr = crate::rmm::virt::hhdm::phys_to_virt(info.addr);
 
         self.fb_phys_addr = PhysAddr::new(info.addr);
         self.fb_virt_addr = VirtAddr::new(virt_addr as u64);

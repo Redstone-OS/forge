@@ -37,6 +37,8 @@ impl SwapEntry {
     const DEVICE_MASK: u64 = 0x7F << 1;
     const DEVICE_SHIFT: u64 = 1;
 
+    // Todo: Revisar
+    #[allow(unused)]
     /// Máscara para slot (bits 8-63)
     const SLOT_MASK: u64 = !0xFF;
     const SLOT_SHIFT: u64 = 8;

@@ -144,6 +144,8 @@ pub struct FrameManager {
     /// Número de chunks
     chunk_count: usize,
     /// Base física do primeiro frame gerenciado
+    // Todo: Revisar
+    #[allow(unused)]
     base_phys: PhysAddr,
     /// Caches per-CPU para fast path
     percpu_caches: PerCpuCaches,
