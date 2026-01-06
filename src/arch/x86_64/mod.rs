@@ -26,13 +26,11 @@ pub unsafe fn init_basics() {
     interrupts::init_idt();
     interrupts::init_pics(); // Remapear PIC para 32-47
 
-    // Inicializar PIT (Timer) - 100 Hz
-    crate::drivers::system::timer::pit::init(100);
-
-    // Inicializar syscall MSRs
+    // Inicializar PIT (Timer) - 250 Hz
+    crate::drivers::system::timer::pit::init(250);
 
     // Inicializar syscall MSRs
     syscall::init();
 
-    crate::kinfo!("(Arch) Basics initialized (GDT, IDT, Syscall)");
+    crate::kinfo!("(Arch) Instruções básicas inicializadas (GDT, IDT, Syscall)");
 }

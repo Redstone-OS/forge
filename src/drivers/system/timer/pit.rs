@@ -55,7 +55,7 @@ pub fn init(frequency_hz: u32) {
     // NÃO habilitar aqui para evitar interrupções durante a inicialização
 
     crate::kinfo!(
-        "(PIT) Inicializado: {}Hz (divisor={})",
+        "(PIT) Inicializado: frequência/divisor",
         frequency_hz,
         divisor
     );

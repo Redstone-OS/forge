@@ -154,7 +154,7 @@ pub unsafe fn init_pics() {
     outb(pic1_data, 0xff);
     outb(pic2_data, 0xff);
 
-    crate::kinfo!("(Arch) PICs remapped to 32-47 and masked.");
+    crate::kinfo!("(Arch) PICs remapeados para 32-47 e mascarados.");
 }
 
 /// Habilita uma IRQ específica no PIC (desmascara)
