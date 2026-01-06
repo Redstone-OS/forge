@@ -64,7 +64,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
 
     let offset = HHDM_OFFSET;
     let size_mb = RAM_SIZE / (1024 * 1024);
-    crate::kinfo!(
+    crate::kdebug!(
         "(RMM/HHDM) Inicializado: base=",
         offset,
         "RAM=",

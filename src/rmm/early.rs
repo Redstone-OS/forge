@@ -265,7 +265,7 @@ static EARLY_ACTIVE: AtomicBool = AtomicBool::new(false);
 ///
 /// Panic se nenhuma região de memória usável for encontrada.
 pub unsafe fn init(boot_info: &'static BootInfo) {
-    crate::kinfo!("(RMM/Early) Inicializando early allocator...");
+    crate::kdebug!("(RMM/Early) Inicializando early allocator...");
 
     // Verifica se já foi inicializado
     if EARLY_ACTIVE.load(Ordering::SeqCst) {

@@ -172,7 +172,7 @@ static FREE_FRAMES: AtomicUsize = AtomicUsize::new(0);
 
 /// Inicializa o gerenciador de frames físicos
 pub unsafe fn init(boot_info: &'static BootInfo) {
-    crate::kinfo!("(RMM/Phys) Inicializando FrameManager...");
+    crate::kdebug!("(RMM/Phys) Inicializando FrameManager...");
 
     // 1. Calcular memória total e número de frames usando o mapa de memória
     let mut total_memory: u64 = 0;
@@ -192,7 +192,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     let frame_count = total_memory as usize / PAGE_SIZE;
     let chunk_count = (frame_count + FRAMES_PER_CHUNK - 1) / FRAMES_PER_CHUNK;
 
-    crate::kinfo!(
+    crate::kdebug!(
         "(RMM/Phys) RAM:",
         total_memory / (1024 * 1024),
         "MB, Frames:",
@@ -208,7 +208,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     // Converter para ponteiro virtual via HHDM
     let frames_virt = hhdm::phys_to_virt(frames_phys.as_u64()) as *mut FrameInfo;
 
-    crate::kinfo!(
+    crate::kdebug!(
         "(RMM/Phys) FrameInfo array:",
         frames_size / 1024,
         "KB @",
@@ -237,7 +237,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     let zone_dma_end = (ZONE_DMA_END as usize / PAGE_SIZE).min(frame_count);
     let zone_dma32_end = (ZONE_DMA32_END as usize / PAGE_SIZE).min(frame_count);
 
-    crate::kinfo!(
+    crate::kdebug!(
         "(RMM/Phys) Zonas: DMA 0-",
         zone_dma_end,
         "DMA32",
@@ -268,7 +268,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     let free_frames = frame_count - reserved_frames;
     FREE_FRAMES.store(free_frames, Ordering::Release);
 
-    crate::kinfo!(
+    crate::kdebug!(
         "(RMM/Phys) Frames:",
         frame_count,
         "total,",
@@ -279,6 +279,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     );
 
     // 7. Criar FrameManager
+    crate::kdebug!("(RMM/Phys) Criando struct FrameManager...");
     let fm = FrameManager {
         frames: frames_virt,
         frame_count,
@@ -290,6 +291,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
         zone_dma_end,
         zone_dma32_end,
     };
+    crate::kdebug!("(RMM/Phys) FrameManager criado, instalando globalmente...");
 
     // 8. Instalar globalmente
     *FRAME_MANAGER.lock() = Some(fm);

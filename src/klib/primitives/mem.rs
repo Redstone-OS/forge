@@ -14,8 +14,10 @@
 ///
 /// - `dest` deve ser válido para `count` bytes de escrita
 /// - Não pode ter overlap com outras escritas concorrentes
-#[inline]
-pub unsafe fn memset(dest: *mut u8, value: u8, count: usize) {
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn memset(dest: *mut u8, value: i32, count: usize) -> *mut u8 {
+    let value = value as u8;
     let mut ptr = dest;
     let mut remaining = count;
 
@@ -44,6 +46,7 @@ pub unsafe fn memset(dest: *mut u8, value: u8, count: usize) {
         ptr = ptr.add(1);
         remaining -= 1;
     }
+    dest
 }
 
 /// Copia memória (regiões NÃO podem sobrepor).
@@ -52,8 +55,9 @@ pub unsafe fn memset(dest: *mut u8, value: u8, count: usize) {
 ///
 /// - `dest` e `src` devem ser válidos para `count` bytes
 /// - As regiões NÃO podem ter overlap (use memmove se houver)
-#[inline]
-pub unsafe fn memcpy(dest: *mut u8, src: *const u8, count: usize) {
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, count: usize) -> *mut u8 {
     let mut d = dest;
     let mut s = src;
     let mut remaining = count;
@@ -88,6 +92,7 @@ pub unsafe fn memcpy(dest: *mut u8, src: *const u8, count: usize) {
         s = s.add(1);
         remaining -= 1;
     }
+    dest
 }
 
 /// Copia memória (regiões PODEM sobrepor).
@@ -95,8 +100,9 @@ pub unsafe fn memcpy(dest: *mut u8, src: *const u8, count: usize) {
 /// # Safety
 ///
 /// - `dest` e `src` devem ser válidos para `count` bytes
-#[inline]
-pub unsafe fn memmove(dest: *mut u8, src: *const u8, count: usize) {
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, count: usize) -> *mut u8 {
     if (dest as usize) < (src as usize) || (dest as usize) >= (src as usize) + count {
         // Sem overlap ou dest antes de src - copia para frente
         memcpy(dest, src, count);
@@ -113,6 +119,7 @@ pub unsafe fn memmove(dest: *mut u8, src: *const u8, count: usize) {
             remaining -= 1;
         }
     }
+    dest
 }
 
 /// Compara memória.
@@ -125,8 +132,9 @@ pub unsafe fn memmove(dest: *mut u8, src: *const u8, count: usize) {
 /// # Safety
 ///
 /// - `a` e `b` devem ser válidos para `count` bytes
-#[inline]
-pub unsafe fn memcmp(a: *const u8, b: *const u8, count: usize) -> i32 {
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn memcmp(a: *const u8, b: *const u8, count: usize) -> i32 {
     let mut pa = a;
     let mut pb = b;
 
@@ -140,6 +148,13 @@ pub unsafe fn memcmp(a: *const u8, b: *const u8, count: usize) -> i32 {
         pb = pb.add(1);
     }
     0
+}
+
+/// Alias para memcmp usado pelo compilador em algumas situações.
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn bcmp(a: *const u8, b: *const u8, count: usize) -> i32 {
+    memcmp(a, b, count)
 }
 
 /// Procura um byte em memória.
