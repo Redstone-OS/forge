@@ -144,7 +144,7 @@ pub const LOCK_ORDER_ASCENDING: bool = true;
 // =============================================================================
 
 /// Número máximo de CPUs suportadas
-pub const MAX_CPUS: usize = 256;
+pub const MAX_CPUS: usize = 256; // TODO: Remover
 
 /// Tamanho da cache line (para alinhamento)
 pub const CACHE_LINE_SIZE: usize = 64;

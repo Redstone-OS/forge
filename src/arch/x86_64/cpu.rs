@@ -39,8 +39,8 @@ impl CpuTrait for Cpu {
 
     #[inline(always)]
     fn current_core_id() -> u32 {
-        // TODO: Ler APIC ID real
-        0
+        // Lê o APIC ID real do LAPIC
+        crate::arch::x86_64::apic::lapic::id()
     }
 
     #[inline(always)]

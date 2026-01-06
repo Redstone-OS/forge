@@ -1,62 +1,219 @@
-//! Bringup de APs (Application Processors)
+//! # SMP Bringup
 //!
-//! Responsável por acordar outros núcleos da CPU.
+//! Acordar CPUs secundárias (Application Processors - APs).
+//!
+//! ## Sequência INIT-SIPI-SIPI
+//!
+//! ```text
+//! BSP                                    AP
+//!  │                                      │
+//!  │  ┌─────────────────────────────────┐ │
+//!  │  │ 1. Preparar Trampoline Code     │ │
+//!  │  │    - Copiar para < 1MB          │ │
+//!  │  │    - Configurar stack           │ │
+//!  │  └─────────────────────────────────┘ │
+//!  │                                      │
+//!  ├──────── INIT IPI ───────────────────►│ (Reset AP)
+//!  │                                      │ Espera 10ms
+//!  ├──────── SIPI #1 ────────────────────►│ (Startup)
+//!  │                                      │ Espera 200µs
+//!  ├──────── SIPI #2 ────────────────────►│ (Retry)
+//!  │                                      │
+//!  │                                      ▼
+//!  │  ┌─────────────────────────────────┐
+//!  │  │ AP executa trampoline:          │
+//!  │  │  - 16-bit real mode             │
+//!  │  │  - Habilita protected mode      │
+//!  │  │  - Habilita long mode           │
+//!  │  │  - Salta para ap_entry()        │
+//!  │  └─────────────────────────────────┘
+//!  │                                      │
+//!  │◄────────── Sinaliza Ready ───────────┤
+//!  │                                      │
+//! ```
 
+use crate::arch::x86_64::apic::lapic;
+use crate::core::smp::topology;
 
-/// Inicializa o subsistema de SMP
+/// Endereço do trampoline (deve estar < 1MB para modo real)
+/// Usamos 0x8000 que é uma área livre na conventional memory
+pub const TRAMPOLINE_ADDR: u64 = 0x8000;
+
+/// Timeout para esperar AP acordar (em iterações)
+const AP_STARTUP_TIMEOUT: u32 = 100_000;
+
+/// Flag global para APs sinalizarem que acordaram
+/// Cada bit representa um AP (bit N = AP com logical_id N)
+static AP_READY_FLAGS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// Inicializa o subsistema de SMP bringup
 pub fn init() {
-    crate::kinfo!("(SMP) Init");
-    // TODO: Detectar CPUs e iniciar APs via wake_ap
+    crate::kinfo!("(SMP/Bringup) Inicializado");
 }
 
-/// Tenta acordar uma CPU específica.
+/// Acorda todos os APs
+///
+/// # Safety
+///
+/// - O trampoline code deve estar carregado em TRAMPOLINE_ADDR
+/// - A topologia deve estar inicializada
+pub unsafe fn bringup_all_aps() {
+    let topo = topology::get();
+    let cpu_count = topo.count();
+
+    if cpu_count <= 1 {
+        crate::kinfo!("(SMP/Bringup) Sistema single-core, pulando bringup");
+        return;
+    }
+
+    crate::kinfo!("(SMP/Bringup) Acordando", (cpu_count - 1) as u64, "APs...");
+
+    // Preparar trampoline (TODO: copiar código real para TRAMPOLINE_ADDR)
+    // prepare_trampoline();
+
+    // Acordar cada AP
+    for cpu in topo.iter_aps() {
+        match wake_ap(cpu.apic_id, cpu.logical_id) {
+            Ok(()) => {
+                crate::kdebug!("(SMP/Bringup) AP", cpu.logical_id as u64, "acordado");
+            }
+            Err(e) => {
+                crate::kerror!("(SMP/Bringup) Falha ao acordar AP", cpu.apic_id as u64);
+                crate::kerror!("  Erro:", e);
+            }
+        }
+    }
+
+    // Contar quantos APs realmente acordaram
+    let ready = AP_READY_FLAGS.load(core::sync::atomic::Ordering::Acquire);
+    let ready_count = ready.count_ones();
+    crate::kinfo!("(SMP/Bringup) ", ready_count as u64, "APs prontos");
+}
+
+/// Acorda um AP específico
 ///
 /// # Argumentos
 ///
-/// * `apic_id`: ID de hardware da CPU alvo.
-/// * `trampoline_addr`: Endereço físico onde o código de inicialização do AP está carregado.
-///   Deve ser alinhado a 4KB (Page aligned) para o vetor SIPI (Vector = Addr >> 12).
-///
-/// # Retorno
-///
-/// Retorna `Ok(())` se a sequência foi enviada. Não garante que a CPU acordou (precisa verificar flag na memória).
-pub unsafe fn wake_ap(apic_id: u32, trampoline_addr: u64) -> Result<(), &'static str> {
-    crate::kinfo!("Tentando acordar AP com APIC ID: ", apic_id as u64);
-
-    // Verificação de alinhamento do trampolim (SIPI vector é de 8 bits, endereçando páginas de 4k)
-    if trampoline_addr & 0xFFF != 0 {
-        return Err("Endereço do trampolim deve ser alinhado a 4KB");
-    }
-
-    if trampoline_addr > 0xFF000 {
-        return Err("Endereço do trampolim deve estar na memória baixa (< 1MB) para modo real");
-    }
-
-    let sipi_vector = (trampoline_addr >> 12) as u8;
-
-    // TODO: Usar funções de envio de IPI raw da arquitetura, pois send_ipi genérico usa vetor da IDT,
-    // e aqui precisamos enviar sinais INIT/STARTUP especiais que não são vetores normais.
-    // Como não expusemos isso ainda, deixaremos como TODO descritivo.
-
-    // Sequência padrão x86 INIT-SIPI-SIPI:
-
+/// - `apic_id`: APIC ID de hardware do AP
+/// - `logical_id`: ID lógico (0 a N-1)
+unsafe fn wake_ap(apic_id: u32, logical_id: u32) -> Result<(), &'static str> {
     // 1. Enviar INIT IPI
-    // crate::arch::apic::send_init_ipi(apic_id);
-    crate::kdebug!("Enviando INIT...");
+    lapic::send_init_ipi(apic_id);
 
     // 2. Esperar 10ms
-    // crate::arch::delay(10_000);
+    delay_ms(10);
 
-    // 3. Enviar SIPI (Startup IPI) com o vetor do trampolim
-    // crate::arch::apic::send_sipi(apic_id, sipi_vector);
-    crate::kdebug!("Enviando SIPI 1 (Vector ", sipi_vector as u64);
+    // 3. Enviar primeiro SIPI
+    let sipi_vector = (TRAMPOLINE_ADDR >> 12) as u8;
+    lapic::send_sipi(apic_id, sipi_vector);
 
-    // 4. Esperar 200us
-    // crate::arch::delay(200);
+    // 4. Esperar 200µs
+    delay_us(200);
 
-    // 5. Enviar segundo SIPI (resiliência)
-    // crate::arch::apic::send_sipi(apic_id, sipi_vector);
-    crate::kdebug!("Enviando SIPI 2");
+    // 5. Verificar se acordou
+    if !check_ap_ready(logical_id) {
+        // 6. Enviar segundo SIPI (retry)
+        lapic::send_sipi(apic_id, sipi_vector);
+        delay_us(200);
+
+        // 7. Esperar com timeout
+        if !wait_for_ap(logical_id, AP_STARTUP_TIMEOUT) {
+            return Err("AP não respondeu após SIPI");
+        }
+    }
+
+    // Marcar como online na topologia
+    topology::get_mut().set_online(logical_id as usize);
 
     Ok(())
+}
+
+/// Verifica se um AP está pronto
+fn check_ap_ready(logical_id: u32) -> bool {
+    let flags = AP_READY_FLAGS.load(core::sync::atomic::Ordering::Acquire);
+    (flags & (1 << logical_id)) != 0
+}
+
+/// Espera um AP ficar pronto com timeout
+fn wait_for_ap(logical_id: u32, timeout: u32) -> bool {
+    for _ in 0..timeout {
+        if check_ap_ready(logical_id) {
+            return true;
+        }
+        // Pequeno delay
+        core::hint::spin_loop();
+    }
+    false
+}
+
+/// Chamado pelo AP quando acorda e está pronto
+///
+/// # Safety
+///
+/// Deve ser chamado apenas pelo código do trampoline do AP.
+#[no_mangle]
+pub extern "C" fn ap_signal_ready(logical_id: u32) {
+    AP_READY_FLAGS.fetch_or(1 << logical_id, core::sync::atomic::Ordering::Release);
+}
+
+// =============================================================================
+// Delay Helpers
+// =============================================================================
+
+/// Delay aproximado em milissegundos (busy-wait)
+fn delay_ms(ms: u32) {
+    // Aproximação: ~1000 loops por µs em hardware moderno
+    for _ in 0..(ms * 1000) {
+        delay_us(1);
+    }
+}
+
+/// Delay aproximado em microsegundos (busy-wait)
+fn delay_us(us: u32) {
+    // Aproximação muito grosseira, mas funciona para bringup
+    for _ in 0..(us * 100) {
+        core::hint::spin_loop();
+    }
+}
+
+// =============================================================================
+// Trampoline (TODO)
+// =============================================================================
+
+/// Prepara o código trampoline para APs
+///
+/// O trampoline é código 16-bit que:
+/// 1. Habilita A20
+/// 2. Carrega GDT temporário
+/// 3. Entra em protected mode
+/// 4. Entra em long mode
+/// 5. Salta para ap_entry() em Rust
+///
+/// TODO: Implementar quando tivermos assembly do trampoline
+#[allow(dead_code)]
+unsafe fn prepare_trampoline() {
+    // Copiar código para TRAMPOLINE_ADDR
+    // Configurar stack pointer
+    // Configurar página de entrada
+}
+
+/// Ponto de entrada Rust para APs
+///
+/// Chamado pelo trampoline após entrar em long mode.
+#[no_mangle]
+pub extern "C" fn ap_entry(logical_id: u32) -> ! {
+    // 1. Configurar GDT/IDT local
+    // 2. Habilitar LAPIC
+    unsafe {
+        lapic::init();
+    }
+
+    // 3. Sinalizar que acordou
+    ap_signal_ready(logical_id);
+
+    // 4. Esperar scheduler inicializar
+    loop {
+        // TODO: Entrar no scheduler quando pronto
+        crate::arch::x86_64::cpu::Cpu::halt();
+    }
 }

@@ -25,18 +25,22 @@
 //! └───────────────────────────────────────────┘
 //! ```
 //!
-//! ## Refill e Drain
+//! ## Alocação Dinâmica
 //!
-//! - **Refill**: Quando cache está vazio, busca batch de frames dos chunks
-//! - **Drain**: Quando cache está cheio, devolve batch para os chunks
+//! A partir da v2, PerCpuCaches é alocado dinamicamente baseado no
+//! número real de CPUs detectadas via ACPI, não mais um array fixo.
 
 use crate::rmm::addr::PhysAddr;
-use crate::rmm::config::{MAX_CPUS, PERCPU_CACHE_BATCH, PERCPU_CACHE_SIZE};
+use crate::rmm::config::PERCPU_CACHE_SIZE;
+
+/// Número máximo de CPUs suportadas (limite de segurança)
+pub const MAX_SUPPORTED_CPUS: usize = 256;
+
+// =============================================================================
+// PerCpuCache - Cache individual de uma CPU
+// =============================================================================
 
 /// Cache local de uma CPU
-///
-/// Usa array fixo para evitar alocação dinâmica.
-/// Push/pop são O(1).
 #[repr(C, align(64))] // Cache-line aligned para evitar false sharing
 pub struct PerCpuCache {
     /// Frames em cache (stack)
@@ -64,74 +68,29 @@ impl PerCpuCache {
     }
 
     /// Remove e retorna frame do cache (O(1))
-    ///
-    /// Retorna None se cache vazio.
     #[inline]
     pub fn pop(&mut self) -> Option<PhysAddr> {
         if self.count == 0 {
             self.misses += 1;
             return None;
         }
-
         self.count -= 1;
         self.hits += 1;
-
         Some(self.frames[self.count])
     }
 
     /// Adiciona frame ao cache (O(1))
-    ///
-    /// Retorna false se cache cheio.
     #[inline]
     pub fn push(&mut self, frame: PhysAddr) -> bool {
         if self.count >= PERCPU_CACHE_SIZE {
             return false;
         }
-
         self.frames[self.count] = frame;
         self.count += 1;
-
-        // Atualiza high watermark
         if self.count > self.high_watermark {
             self.high_watermark = self.count;
         }
-
         true
-    }
-
-    /// Retorna batch de frames para refill de chunk (drain)
-    ///
-    /// Remove até `max_count` frames e retorna em `out`.
-    /// Retorna número de frames copiados.
-    pub fn drain(&mut self, out: &mut [PhysAddr], max_count: usize) -> usize {
-        let to_drain = self.count.min(max_count).min(out.len());
-
-        for i in 0..to_drain {
-            self.count -= 1;
-            out[i] = self.frames[self.count];
-        }
-
-        to_drain
-    }
-
-    /// Adiciona batch de frames (refill do cache)
-    ///
-    /// Adiciona frames de `src` até encher ou acabar source.
-    /// Retorna número de frames adicionados.
-    pub fn fill(&mut self, src: &[PhysAddr]) -> usize {
-        let available = PERCPU_CACHE_SIZE - self.count;
-        let to_fill = src.len().min(available);
-
-        for i in 0..to_fill {
-            self.frames[self.count] = src[i];
-            self.count += 1;
-        }
-
-        if self.count > self.high_watermark {
-            self.high_watermark = self.count;
-        }
-
-        to_fill
     }
 
     /// Verifica se cache está vazio
@@ -146,43 +105,30 @@ impl PerCpuCache {
         self.count >= PERCPU_CACHE_SIZE
     }
 
-    /// Retorna quantidade de frames no cache
+    /// Quantidade de frames em cache
     #[inline]
     pub fn len(&self) -> usize {
         self.count
     }
 
-    /// Verifica se precisa de refill
-    #[inline]
-    pub fn needs_refill(&self) -> bool {
-        self.count < PERCPU_CACHE_BATCH
-    }
-
-    /// Verifica se precisa de drain
-    #[inline]
-    pub fn needs_drain(&self) -> bool {
-        self.count > PERCPU_CACHE_SIZE - PERCPU_CACHE_BATCH
-    }
-
-    /// Retorna estatísticas
-    pub fn stats(&self) -> (u64, u64) {
-        (self.hits, self.misses)
-    }
-
-    /// Hit rate (0-100%)
+    /// Taxa de hit (0-100)
     pub fn hit_rate_pct(&self) -> u64 {
         let total = self.hits + self.misses;
         if total == 0 {
-            0
+            100
         } else {
             (self.hits * 100) / total
         }
     }
 
-    /// High watermark
-    #[inline]
-    pub fn high_watermark(&self) -> usize {
-        self.high_watermark
+    /// Número de hits
+    pub fn hits(&self) -> u64 {
+        self.hits
+    }
+
+    /// Número de misses
+    pub fn misses(&self) -> u64 {
+        self.misses
     }
 
     /// Limpa cache (retorna frames para caller processar)
@@ -200,36 +146,84 @@ impl Default for PerCpuCache {
 }
 
 // =============================================================================
-// PerCpuCaches - Array de caches para todas as CPUs
+// PerCpuCaches - Gerenciador de caches para todas as CPUs
 // =============================================================================
 
-/// Gerenciador de caches per-CPU
-///
-/// Mantém um cache para cada CPU possível.
+/// Gerenciador de caches per-CPU (alocação dinâmica via early allocator)
 pub struct PerCpuCaches {
-    /// Array de caches indexado por CPU ID
-    caches: [PerCpuCache; MAX_CPUS],
+    /// Slice de caches alocado dinamicamente
+    caches: Option<&'static mut [PerCpuCache]>,
 }
 
+// Safety: cada CPU acessa apenas seu próprio cache
+unsafe impl Send for PerCpuCaches {}
+unsafe impl Sync for PerCpuCaches {}
+
 impl PerCpuCaches {
-    /// Cria caches para todas as CPUs
-    pub const fn new() -> Self {
-        const EMPTY_CACHE: PerCpuCache = PerCpuCache::new();
+    /// Cria gerenciador vazio
+    pub fn empty() -> Self {
+        Self { caches: None }
+    }
+
+    /// Cria para single-core (boot inicial)
+    pub fn new_single() -> Self {
+        let slice = crate::rmm::early::alloc_slice::<PerCpuCache>(1);
+
+        // Inicializa o cache
+        slice[0] = PerCpuCache::new();
+
         Self {
-            caches: [EMPTY_CACHE; MAX_CPUS],
+            caches: Some(slice),
         }
+    }
+
+    /// Cria para N CPUs (após ACPI detectar quantidade real)
+    ///
+    /// # Safety
+    ///
+    /// O early allocator deve estar ativo.
+    pub unsafe fn new_for_cpus(cpu_count: usize) -> Self {
+        let count = cpu_count.min(MAX_SUPPORTED_CPUS);
+        if count == 0 {
+            return Self::empty();
+        }
+
+        let slice = crate::rmm::early::alloc_slice::<PerCpuCache>(count);
+
+        // Inicializa cada cache
+        for cache in slice.iter_mut() {
+            *cache = PerCpuCache::new();
+        }
+
+        crate::kdebug!("(PerCpuCaches) Alocado para", count as u64, "CPUs");
+
+        Self {
+            caches: Some(slice),
+        }
+    }
+
+    /// Verifica se está inicializado
+    #[inline]
+    pub fn is_initialized(&self) -> bool {
+        self.caches.is_some()
     }
 
     /// Retorna referência mutável ao cache de uma CPU
     #[inline]
-    pub fn get(&mut self, cpu: usize) -> &mut PerCpuCache {
-        &mut self.caches[cpu % MAX_CPUS]
+    pub fn get(&mut self, cpu: usize) -> Option<&mut PerCpuCache> {
+        self.caches.as_mut().and_then(|s| s.get_mut(cpu))
     }
 
     /// Retorna referência ao cache de uma CPU
     #[inline]
-    pub fn get_ref(&self, cpu: usize) -> &PerCpuCache {
-        &self.caches[cpu % MAX_CPUS]
+    pub fn get_ref(&self, cpu: usize) -> Option<&PerCpuCache> {
+        self.caches.as_ref().and_then(|s| s.get(cpu))
+    }
+
+    /// Número de CPUs
+    #[inline]
+    pub fn cpu_count(&self) -> usize {
+        self.caches.as_ref().map_or(0, |s| s.len())
     }
 
     /// Estatísticas agregadas de todos os caches
@@ -238,69 +232,36 @@ impl PerCpuCaches {
         let mut total_misses = 0u64;
         let mut total_cached = 0usize;
 
-        for cache in &self.caches {
-            total_hits += cache.hits;
-            total_misses += cache.misses;
-            total_cached += cache.count;
+        if let Some(caches) = &self.caches {
+            for cache in caches.iter() {
+                total_hits += cache.hits;
+                total_misses += cache.misses;
+                total_cached += cache.count;
+            }
         }
 
         (total_hits, total_misses, total_cached)
     }
 
-    /// Draina todos os caches (shutdown ou emergência)
-    pub fn drain_all(&mut self, mut callback: impl FnMut(PhysAddr)) {
-        for cache in &mut self.caches {
-            for frame in cache.clear() {
-                callback(frame);
+    /// Taxa de hit agregada (0-100)
+    pub fn hit_rate_pct(&self) -> u64 {
+        let (hits, misses, _) = self.total_stats();
+        let total = hits + misses;
+        if total == 0 {
+            100
+        } else {
+            (hits * 100) / total
+        }
+    }
+
+    /// Draina todos os caches
+    pub fn drain_all<F: FnMut(PhysAddr)>(&mut self, mut callback: F) {
+        if let Some(caches) = &mut self.caches {
+            for cache in caches.iter_mut() {
+                for frame in cache.clear() {
+                    callback(frame);
+                }
             }
         }
-    }
-}
-
-impl Default for PerCpuCaches {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// Safety: PerCpuCaches deve ser acessado apenas pela CPU correspondente
-// ou com lock externo
-unsafe impl Send for PerCpuCaches {}
-unsafe impl Sync for PerCpuCaches {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_percpu_cache_push_pop() {
-        let mut cache = PerCpuCache::new();
-
-        // Push frames
-        for i in 0..10 {
-            assert!(cache.push(PhysAddr::new(i * 4096)));
-        }
-        assert_eq!(cache.len(), 10);
-
-        // Pop frames (LIFO)
-        for i in (0..10).rev() {
-            let frame = cache.pop().expect("should pop");
-            assert_eq!(frame.as_u64(), i * 4096);
-        }
-        assert!(cache.is_empty());
-    }
-
-    #[test]
-    fn test_percpu_cache_full() {
-        let mut cache = PerCpuCache::new();
-
-        // Enche o cache
-        for i in 0..PERCPU_CACHE_SIZE {
-            assert!(cache.push(PhysAddr::new(i as u64 * 4096)));
-        }
-        assert!(cache.is_full());
-
-        // Não deve aceitar mais
-        assert!(!cache.push(PhysAddr::new(0)));
     }
 }

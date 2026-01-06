@@ -278,25 +278,23 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
         "livres"
     );
 
-    // 7. Criar FrameManager
-    crate::kdebug!("(RMM/Phys) Criando struct FrameManager...");
+    // 7. Criar FrameManager (inicialmente single-core)
     let fm = FrameManager {
         frames: frames_virt,
         frame_count,
         chunks,
         chunk_count,
         base_phys: PhysAddr::new(0),
-        percpu_caches: PerCpuCaches::new(),
+        percpu_caches: PerCpuCaches::new_single(),
         stats: PhysStats::new(),
         zone_dma_end,
         zone_dma32_end,
     };
-    crate::kdebug!("(RMM/Phys) FrameManager criado, instalando globalmente...");
 
     // 8. Instalar globalmente
     *FRAME_MANAGER.lock() = Some(fm);
 
-    crate::kinfo!("(RMM/Phys) FrameManager inicializado com sucesso!");
+    crate::kinfo!("(RMM/Phys) FrameManager inicializado!");
 }
 
 // =============================================================================
@@ -310,16 +308,21 @@ pub fn alloc(owner: FrameOwner, zone: Zone, flags: AllocFlags) -> Option<PhysAdd
 
     // Fast path: tentar cache per-CPU
     let cpu_id = current_cpu_id();
-    if let Some(frame) = fm.percpu_caches.get(cpu_id).pop() {
-        // Verificar se está na zona correta
-        let frame_idx = (frame.as_u64() as usize) / PAGE_SIZE;
-        if fm.is_in_zone(frame_idx, zone) {
-            fm.setup_frame(frame_idx, owner, flags);
-            fm.stats.record_alloc(true);
-            return Some(frame);
+    if let Some(cache) = fm.percpu_caches.get(cpu_id) {
+        if let Some(frame) = cache.pop() {
+            // Verificar se está na zona correta
+            let frame_idx = (frame.as_u64() as usize) / PAGE_SIZE;
+            let in_zone = fm.is_in_zone(frame_idx, zone);
+            if in_zone {
+                fm.setup_frame(frame_idx, owner, flags);
+                fm.stats.record_alloc(true);
+                return Some(frame);
+            }
+            // Devolver ao cache se zona errada
+            if let Some(cache) = fm.percpu_caches.get(cpu_id) {
+                let _ = cache.push(frame);
+            }
         }
-        // Devolver ao cache se zona errada
-        fm.percpu_caches.get(cpu_id).push(frame);
     }
 
     // Slow path: alocar de chunk
@@ -404,7 +407,13 @@ pub fn free(phys: PhysAddr, expected_owner: FrameOwner) -> RmmResult<()> {
 
     // Fast path: adicionar ao cache per-CPU
     let cpu_id = current_cpu_id();
-    if !fm.percpu_caches.get(cpu_id).push(phys) {
+    let pushed = if let Some(cache) = fm.percpu_caches.get(cpu_id) {
+        cache.push(phys)
+    } else {
+        false
+    };
+
+    if !pushed {
         // Cache cheio, marcar como livre no chunk
         let chunk_idx = frame_idx / FRAMES_PER_CHUNK;
         if chunk_idx < fm.chunk_count {
@@ -476,15 +485,21 @@ pub fn try_alloc(owner: FrameOwner, zone: Zone, flags: AllocFlags) -> Option<Phy
     let cpu_id = current_cpu_id();
 
     // Apenas fast path
-    if let Some(frame) = fm.percpu_caches.get(cpu_id).pop() {
-        let frame_idx = (frame.as_u64() as usize) / PAGE_SIZE;
-        if fm.is_in_zone(frame_idx, zone) {
-            fm.setup_frame(frame_idx, owner, flags);
-            fm.stats.record_alloc(true);
-            FREE_FRAMES.fetch_sub(1, Ordering::Relaxed);
-            return Some(frame);
+    if let Some(cache) = fm.percpu_caches.get(cpu_id) {
+        if let Some(frame) = cache.pop() {
+            let frame_idx = (frame.as_u64() as usize) / PAGE_SIZE;
+            let in_zone = fm.is_in_zone(frame_idx, zone);
+            if in_zone {
+                fm.setup_frame(frame_idx, owner, flags);
+                fm.stats.record_alloc(true);
+                FREE_FRAMES.fetch_sub(1, Ordering::Relaxed);
+                return Some(frame);
+            }
+            // Devolver ao cache se zona errada
+            if let Some(cache) = fm.percpu_caches.get(cpu_id) {
+                let _ = cache.push(frame);
+            }
         }
-        fm.percpu_caches.get(cpu_id).push(frame);
     }
 
     None

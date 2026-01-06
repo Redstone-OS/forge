@@ -54,7 +54,17 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
     crate::kinfo!("'Inicializando ACPI'");
     if boot_info.rsdp_addr != 0 {
         // Inicializa ACPI via implementação da arquitetura (x86_64)
-        crate::arch::platform::acpi::init(boot_info.rsdp_addr);
+        unsafe {
+            match crate::arch::platform::acpi::init(boot_info.rsdp_addr) {
+                Ok(acpi_info) => {
+                    // Inicializar topologia SMP com CPUs detectadas
+                    crate::core::smp::topology::init(&acpi_info.cpus);
+                }
+                Err(e) => {
+                    crate::kerror!("(ACPI) Falha:", e);
+                }
+            }
+        }
     }
 
     // 6. SMP Bringup (Acordar outros cores)
