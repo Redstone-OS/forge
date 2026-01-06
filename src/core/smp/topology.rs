@@ -245,10 +245,10 @@ pub fn current_cpu_id() -> usize {
 
 /// Retorna referência à topologia global
 pub fn get() -> &'static CpuTopology {
-    unsafe { &TOPOLOGY }
+    unsafe { &*core::ptr::addr_of!(TOPOLOGY) }
 }
 
 /// Retorna referência mutável à topologia (para set_online)
 pub unsafe fn get_mut() -> &'static mut CpuTopology {
-    &mut TOPOLOGY
+    &mut *core::ptr::addr_of_mut!(TOPOLOGY)
 }

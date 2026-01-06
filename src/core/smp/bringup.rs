@@ -83,7 +83,7 @@ pub unsafe fn bringup_all_aps() {
     prepare_trampoline();
 
     // Acordar cada AP
-    let mut success_count = 0u32;
+    let mut _success_count = 0u32;
     for cpu in topo.iter_aps() {
         crate::kdebug!("(SMP/Bringup) Acordando AP", cpu.apic_id as u64);
 
@@ -93,7 +93,7 @@ pub unsafe fn bringup_all_aps() {
         match wake_ap(cpu.apic_id, cpu.logical_id) {
             Ok(()) => {
                 crate::kdebug!("(SMP/Bringup) AP", cpu.logical_id as u64, "acordado");
-                success_count += 1;
+                _success_count += 1;
             }
             Err(e) => {
                 crate::kerror!("(SMP/Bringup) Falha ao acordar AP", cpu.apic_id as u64);

@@ -1,197 +1,89 @@
-# SMP Trampoline - Assembly Code
-#
-# Este código é executado pelos APs após receberem o SIPI.
-# Transiciona de Real Mode para Long Mode.
-#
-# Layout em 0x8000:
-#   0x8000 - 0x802F: Real Mode (16-bit)
-#   0x8030 - 0x805F: GDT (48 bytes)
-#   0x8060 - 0x80AF: Protected Mode (32-bit)
-#   0x80B0 - 0x80FF: Long Mode (64-bit)
-#   0x8100+:         TrampolineData
-
 .section .rodata
 .global ap_trampoline_start
 .global ap_trampoline_end
 
 ap_trampoline_start:
-
-# ===========================================================================
-# REAL MODE 16-bit - Offset 0x00
-# CS:IP = 0x0800:0x0000 após SIPI
-# ===========================================================================
-.code16
-
-    cli
-
-    # Debug: output 'R'
-    mov $0x52, %al
-    out %al, $0xE9
-
-    # Clear segment registers
-    xor %ax, %ax
-    mov %ax, %ds
-    mov %ax, %es
-    mov %ax, %ss
-
-    # Enable A20 line
-    in $0x92, %al
-    or $0x02, %al
-    out %al, $0x92
-
-    # Load temporary GDT
-    lgdt (0x8030)
-
-    # Enable Protected Mode
-    mov %cr0, %eax
-    or $0x01, %al
-    mov %eax, %cr0
-
-    # Far jump to Protected Mode code
-    ljmp $0x08, $0x8060
-
-# Padding until offset 0x30
-.align 16
-.org ap_trampoline_start + 0x30
-
-# ===========================================================================
-# GDT - Offset 0x30
-# ===========================================================================
-
-gdt_ptr:
-    .word gdt_end - gdt_start - 1
-    .long 0x8038
-    .word 0
-
-gdt_start:
-    # Entry 0: Null
-    .quad 0
-
-    # Entry 1 (0x08): Code 32-bit
-    .word 0xFFFF
-    .word 0x0000
-    .byte 0x00
-    .byte 0x9A
-    .byte 0xCF
-    .byte 0x00
-
-    # Entry 2 (0x10): Data 32/64-bit
-    .word 0xFFFF
-    .word 0x0000
-    .byte 0x00
-    .byte 0x92
-    .byte 0xCF
-    .byte 0x00
-
-    # Entry 3 (0x18): Code 64-bit (L=1, D=0)
-    .word 0xFFFF
-    .word 0x0000
-    .byte 0x00
-    .byte 0x9A
-    .byte 0xAF
-    .byte 0x00
-
-    # Entry 4 (0x20): Data 64-bit
-    .word 0xFFFF
-    .word 0x0000
-    .byte 0x00
-    .byte 0x92
-    .byte 0xAF
-    .byte 0x00
-
-gdt_end:
-
-.org ap_trampoline_start + 0x60
-
-# ===========================================================================
-# PROTECTED MODE 32-bit - Offset 0x60
-# ===========================================================================
-.code32
-
-pm_entry:
-    # Debug: output 'P'
-    mov $0x50, %al
-    out %al, $0xE9
-
-    # Load data segments
-    mov $0x10, %ax
-    mov %ax, %ds
-    mov %ax, %es
-    mov %ax, %ss
-
-    # Load CR3 from TrampolineData
-    mov $0x8100, %edi
-    mov (%edi), %eax
-    mov %eax, %cr3
-
-    # Enable PAE
-    mov %cr4, %eax
-    or $0x20, %eax
-    mov %eax, %cr4
-
-    # Enable Long Mode via EFER
-    mov $0xC0000080, %ecx
-    rdmsr
-    or $0x100, %eax
-    wrmsr
-
-    # Enable Paging
-    mov %cr0, %eax
-    or $0x80000000, %eax
-    mov %eax, %cr0
-
-    # Far jump to Long Mode
-    push $0x18
-    push $0x80B0
-    retf
-
-.org ap_trampoline_start + 0xB0
-
-# ===========================================================================
-# LONG MODE 64-bit - Offset 0xB0
-# ===========================================================================
-.code64
-
-lm_entry:
-    # Debug: output 'L'
-    mov $0x4C, %al
-    out %al, $0xE9
-
-    # Load data segments
-    mov $0x20, %ax
-    mov %ax, %ds
-    mov %ax, %es
-    mov %ax, %ss
-    xor %ax, %ax
-    mov %ax, %fs
-    mov %ax, %gs
-
-    # Load TrampolineData address
-    mov $0x8100, %edi
-
-    # Load stack pointer
-    mov 0x18(%rdi), %rsp
-
-    # Load ap_id
-    mov 0x20(%rdi), %esi
-
-    # Load rust_entry
-    mov 0x28(%rdi), %rax
-
-    # Set first argument = ap_id
-    mov %esi, %edi
-
-    # Debug: output 'E'
-    mov $0x45, %al
-    out %al, $0xE9
-
-    # Call Rust entry point
-    call *%rax
-
-    # Halt loop
-halt_loop:
-    cli
-    hlt
-    jmp halt_loop
-
+    # === REAL MODE 16-bit (0x00-0x27) ===
+    .byte 0xFA                      # 0x00: cli
+    .byte 0xB0, 0x52                # 0x01: mov al, 'R'
+    .byte 0xE6, 0xE9                # 0x03: out 0xE9, al
+    .byte 0x31, 0xC0                # 0x05: xor ax, ax
+    .byte 0x8E, 0xD8                # 0x07: mov ds, ax
+    .byte 0x8E, 0xC0                # 0x09: mov es, ax
+    .byte 0x8E, 0xD0                # 0x0B: mov ss, ax
+    .byte 0xE4, 0x92                # 0x0D: in al, 0x92
+    .byte 0x0C, 0x02                # 0x0F: or al, 2
+    .byte 0xE6, 0x92                # 0x11: out 0x92, al
+    .byte 0x0F, 0x01, 0x16, 0x28, 0x80  # 0x13: lgdt [0x8028]
+    .byte 0x0F, 0x20, 0xC0          # 0x18: mov eax, cr0
+    .byte 0x0C, 0x01                # 0x1B: or al, 1
+    .byte 0x0F, 0x22, 0xC0          # 0x1D: mov cr0, eax
+    .byte 0xEA, 0x58, 0x80, 0x08, 0x00  # 0x20: ljmp 0x08:0x8058
+    .byte 0x90, 0x90, 0x90          # 0x25: padding to 0x28
+    
+    # === GDT (0x28-0x57) ===
+    .byte 0x27, 0x00                # 0x28: limit = 39
+    .byte 0x30, 0x80, 0x00, 0x00    # 0x2A: base = 0x8030
+    .byte 0x00, 0x00                # 0x2E: pad
+    .quad 0                         # 0x30: null
+    .byte 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x9A, 0xCF, 0x00  # 0x38: code32 (0x08)
+    .byte 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x92, 0xCF, 0x00  # 0x40: data (0x10)
+    .byte 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x9A, 0xAF, 0x00  # 0x48: code64 (0x18)
+    .byte 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x92, 0xAF, 0x00  # 0x50: data64 (0x20)
+    
+    # === PM32 (0x58) ===
+    .byte 0xB0, 0x50                # mov al, 'P'
+    .byte 0xE6, 0xE9                # out
+    .byte 0x66, 0xB8, 0x10, 0x00    # mov ax, 0x10
+    .byte 0x8E, 0xD8                # mov ds
+    .byte 0x8E, 0xC0                # mov es
+    .byte 0x8E, 0xD0                # mov ss
+    .byte 0xBF, 0x00, 0x81, 0x00, 0x00  # mov edi, 0x8100
+    .byte 0x8B, 0x07                # mov eax, [edi]
+    .byte 0x0F, 0x22, 0xD8          # mov cr3
+    .byte 0xB0, 0x31                # mov al, '1' (cr3 done)
+    .byte 0xE6, 0xE9                # out
+    .byte 0x0F, 0x20, 0xE0          # mov eax, cr4
+    .byte 0x83, 0xC8, 0x20          # or eax, 0x20
+    .byte 0x0F, 0x22, 0xE0          # mov cr4
+    .byte 0xB0, 0x32                # mov al, '2' (PAE done)
+    .byte 0xE6, 0xE9                # out
+    .byte 0xB9, 0x80, 0x00, 0x00, 0xC0  # mov ecx, EFER
+    .byte 0x0F, 0x32                # rdmsr
+    .byte 0x0D, 0x00, 0x01, 0x00, 0x00  # or eax, 0x100
+    .byte 0x0F, 0x30                # wrmsr
+    .byte 0xB0, 0x33                # mov al, '3' (LME done)
+    .byte 0xE6, 0xE9                # out
+    .byte 0x0F, 0x20, 0xC0          # mov eax, cr0
+    .byte 0x0D, 0x00, 0x00, 0x00, 0x80  # or eax, 0x80000000
+    .byte 0x0F, 0x22, 0xC0          # mov cr0
+    .byte 0xB0, 0x34                # mov al, '4' (PG done)
+    .byte 0xE6, 0xE9                # out
+    # Far jump to LM64 - usar ljmp ptr16:32
+    # Em 32-bit: 0xEA offset32 selector16
+    .byte 0xEA                      # ljmp far
+    .byte 0xAD, 0x80, 0x00, 0x00    # offset = 0x80AD
+    .byte 0x18, 0x00                # selector = 0x18
+    # padding
+    .byte 0x90, 0x90, 0x90, 0x90
+    
+    # === LM64 (0xAD) ===
+    .byte 0xB0, 0x4C                # mov al, 'L'
+    .byte 0xE6, 0xE9                # out
+    .byte 0x66, 0xB8, 0x20, 0x00    # mov ax, 0x20
+    .byte 0x8E, 0xD8                # mov ds
+    .byte 0x8E, 0xC0                # mov es
+    .byte 0x8E, 0xD0                # mov ss
+    .byte 0x66, 0x31, 0xC0          # xor ax
+    .byte 0x8E, 0xE0                # mov fs
+    .byte 0x8E, 0xE8                # mov gs
+    .byte 0xBF, 0x00, 0x81, 0x00, 0x00  # mov edi, 0x8100
+    .byte 0x48, 0x8B, 0x67, 0x18    # mov rsp, [rdi+0x18]
+    .byte 0x8B, 0x77, 0x20          # mov esi, [rdi+0x20]
+    .byte 0x48, 0x8B, 0x47, 0x28    # mov rax, [rdi+0x28]
+    .byte 0x89, 0xF7                # mov edi, esi
+    .byte 0xB0, 0x45                # mov al, 'E'
+    .byte 0xE6, 0xE9                # out
+    .byte 0xFF, 0xD0                # call rax
+    .byte 0xFA, 0xF4, 0xEB, 0xFC    # cli; hlt; jmp
 ap_trampoline_end:
