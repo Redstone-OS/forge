@@ -182,11 +182,11 @@ pub struct HeapStats {
 
 impl HeapStats {
     /// Porcentagem de uso
-    pub fn usage_percent(&self) -> f64 {
+    pub fn usage_percent(&self) -> u64 {
         if self.total_bytes == 0 {
-            0.0
+            0
         } else {
-            (self.used_bytes as f64 / self.total_bytes as f64) * 100.0
+            (self.used_bytes as u64 * 100) / self.total_bytes as u64
         }
     }
 

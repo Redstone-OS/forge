@@ -320,10 +320,13 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     EARLY_ACTIVE.store(true, Ordering::SeqCst);
 
     crate::kinfo!(
-        "(RMM/Early) Região: 0x{:x} - 0x{:x} ({} MB disponíveis)",
+        "(RMM/Early) Região:",
         best_start,
+        "-",
         best_start + best_size,
-        best_size / 1024 / 1024
+        "(",
+        best_size / 1024 / 1024,
+        "MB disponíveis)"
     );
 }
 
@@ -416,8 +419,9 @@ pub unsafe fn deactivate() {
         drop(allocator);
 
         crate::kinfo!(
-            "(RMM/Early) Desativado. Total alocado: {} KB",
-            allocated / 1024
+            "(RMM/Early) Desativado. Total alocado:",
+            allocated / 1024,
+            "KB"
         );
 
         EARLY_ACTIVE.store(false, Ordering::SeqCst);

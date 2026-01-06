@@ -169,28 +169,28 @@ impl PhysStats {
     // Métricas Calculadas
     // -------------------------------------------------------------------------
 
-    /// Taxa de hit do cache (0.0 - 1.0)
-    pub fn cache_hit_rate(&self) -> f64 {
+    /// Taxa de hit do cache (0-100%)
+    pub fn cache_hit_rate_pct(&self) -> u64 {
         let hits = self.cache_hits.load(Ordering::Relaxed);
         let misses = self.cache_misses.load(Ordering::Relaxed);
         let total = hits + misses;
 
         if total == 0 {
-            0.0
+            0
         } else {
-            hits as f64 / total as f64
+            (hits * 100) / total
         }
     }
 
-    /// Porcentagem de memória livre
-    pub fn free_percentage(&self) -> f64 {
+    /// Porcentagem de memória livre (0-100%)
+    pub fn free_percentage(&self) -> u64 {
         let total = self.total_frames.load(Ordering::Relaxed);
         let free = self.free_frames.load(Ordering::Relaxed);
 
         if total == 0 {
-            0.0
+            0
         } else {
-            (free as f64 / total as f64) * 100.0
+            (free * 100) / total
         }
     }
 

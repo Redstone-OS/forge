@@ -87,11 +87,15 @@ pub fn dump_stats() {
     };
 
     crate::kinfo!(
-        "║ Memory: {} MB total, {} MB free, {} MB used ({}%)",
+        "║ Memory:",
         total_mb,
+        "MB total,",
         free_mb,
+        "MB free,",
         used_mb,
-        used_pct
+        "MB used (",
+        used_pct,
+        "%)"
     );
     crate::kinfo!("╠═══════════════════════════════════════════════════════════╣");
 
@@ -107,11 +111,15 @@ pub fn dump_stats() {
         let zone_mb = (zone.total * PAGE_SIZE as u64) / (1024 * 1024);
         let zone_free_mb = (zone.free * PAGE_SIZE as u64) / (1024 * 1024);
         crate::kinfo!(
-            "║   {}: {} MB total, {} MB free ({} frames)",
+            "║  ",
             zone_name,
+            ":",
             zone_mb,
+            "MB total,",
             zone_free_mb,
-            zone.free
+            "MB free (",
+            zone.free,
+            "frames)"
         );
     }
     crate::kinfo!("╠═══════════════════════════════════════════════════════════╣");
@@ -119,32 +127,40 @@ pub fn dump_stats() {
     // Ownership
     crate::kinfo!("║ OWNERSHIP:");
     crate::kinfo!(
-        "║   Kernel: {} frames ({} MB)",
+        "║   Kernel:",
         stats.kernel_frames,
-        (stats.kernel_frames * PAGE_SIZE as u64) / (1024 * 1024)
+        "frames (",
+        (stats.kernel_frames * PAGE_SIZE as u64) / (1024 * 1024),
+        "MB)"
     );
     crate::kinfo!(
-        "║   User:   {} frames ({} MB)",
+        "║   User:  ",
         stats.user_frames,
-        (stats.user_frames * PAGE_SIZE as u64) / (1024 * 1024)
+        "frames (",
+        (stats.user_frames * PAGE_SIZE as u64) / (1024 * 1024),
+        "MB)"
     );
     crate::kinfo!(
-        "║   Cache:  {} frames ({} MB)",
+        "║   Cache: ",
         stats.cache_frames,
-        (stats.cache_frames * PAGE_SIZE as u64) / (1024 * 1024)
+        "frames (",
+        (stats.cache_frames * PAGE_SIZE as u64) / (1024 * 1024),
+        "MB)"
     );
     crate::kinfo!(
-        "║   Pinned: {} frames ({} MB)",
+        "║   Pinned:",
         stats.pinned_frames,
-        (stats.pinned_frames * PAGE_SIZE as u64) / (1024 * 1024)
+        "frames (",
+        (stats.pinned_frames * PAGE_SIZE as u64) / (1024 * 1024),
+        "MB)"
     );
     crate::kinfo!("╠═══════════════════════════════════════════════════════════╣");
 
     // Allocation stats
     crate::kinfo!("║ ALLOCATION:");
-    crate::kinfo!("║   Allocs:   {}", stats.alloc_count);
-    crate::kinfo!("║   Frees:    {}", stats.free_count);
-    crate::kinfo!("║   Cache Hit Rate: {}%", stats.cache_hit_rate());
+    crate::kinfo!("║   Allocs:  ", stats.alloc_count);
+    crate::kinfo!("║   Frees:   ", stats.free_count);
+    crate::kinfo!("║   Cache Hit Rate:", stats.cache_hit_rate(), "%");
     crate::kinfo!("╚═══════════════════════════════════════════════════════════╝");
 }
 
@@ -157,9 +173,9 @@ pub fn check_and_report() -> bool {
         true
     } else {
         crate::kerror!("(RMM/Debug) Integrity check: FAILED");
-        crate::kerror!("  Errors: {}", result.error_count);
+        crate::kerror!("  Errors:", result.error_count);
         for msg in &result.messages {
-            crate::kerror!("  - {}", msg.as_str());
+            crate::kerror!("  -", msg.as_str());
         }
         false
     }
@@ -172,10 +188,14 @@ pub fn quick_status() {
     let total_mb = (stats.total_frames * PAGE_SIZE as u64) / (1024 * 1024);
 
     crate::kinfo!(
-        "(RMM) {} MB free / {} MB total, {} allocs, {} frees",
+        "(RMM)",
         free_mb,
+        "MB free /",
         total_mb,
+        "MB total,",
         stats.alloc_count,
-        stats.free_count
+        "allocs,",
+        stats.free_count,
+        "frees"
     );
 }

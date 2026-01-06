@@ -193,9 +193,11 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     let chunk_count = (frame_count + FRAMES_PER_CHUNK - 1) / FRAMES_PER_CHUNK;
 
     crate::kinfo!(
-        "(RMM/Phys) RAM: {} MB, Frames: {}, Chunks: {}",
+        "(RMM/Phys) RAM:",
         total_memory / (1024 * 1024),
+        "MB, Frames:",
         frame_count,
+        "Chunks:",
         chunk_count
     );
 
@@ -207,8 +209,9 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     let frames_virt = hhdm::phys_to_virt(frames_phys.as_u64()) as *mut FrameInfo;
 
     crate::kinfo!(
-        "(RMM/Phys) FrameInfo array: {} KB @ 0x{:x}",
+        "(RMM/Phys) FrameInfo array:",
         frames_size / 1024,
+        "KB @",
         frames_virt as u64
     );
 
@@ -235,11 +238,15 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     let zone_dma32_end = (ZONE_DMA32_END as usize / PAGE_SIZE).min(frame_count);
 
     crate::kinfo!(
-        "(RMM/Phys) Zonas: DMA 0-{}, DMA32 {}-{}, Normal {}-{}",
+        "(RMM/Phys) Zonas: DMA 0-",
         zone_dma_end,
+        "DMA32",
         zone_dma_end,
+        "-",
         zone_dma32_end,
+        "Normal",
         zone_dma32_end,
+        "-",
         frame_count
     );
 
@@ -262,10 +269,13 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     FREE_FRAMES.store(free_frames, Ordering::Release);
 
     crate::kinfo!(
-        "(RMM/Phys) Frames: {} total, {} reservados, {} livres",
+        "(RMM/Phys) Frames:",
         frame_count,
+        "total,",
         reserved_frames,
-        free_frames
+        "reservados,",
+        free_frames,
+        "livres"
     );
 
     // 7. Criar FrameManager
