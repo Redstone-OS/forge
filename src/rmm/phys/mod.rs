@@ -48,6 +48,7 @@ pub mod frame;
 pub mod percpu;
 pub mod stats;
 
+use crate::rmm::MigrateType; // Todo: Revisar
 pub use chunk::ChunkManager;
 pub use frame::{FrameFlags, FrameInfo, FrameOwner};
 pub use stats::PhysStats;
@@ -61,7 +62,6 @@ use crate::rmm::virt::hhdm;
 use crate::rmm::zone::Zone;
 use crate::sync::Spinlock;
 
-use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use self::percpu::PerCpuCaches;
@@ -140,7 +140,7 @@ pub struct FrameManager {
     /// Número total de frames
     frame_count: usize,
     /// Chunks de memória (cada chunk = 2MB = 512 frames)
-    chunks: Vec<ChunkManager>,
+    chunks: &'static mut [ChunkManager], // Todo: Revisar
     /// Número de chunks
     chunk_count: usize,
     /// Base física do primeiro frame gerenciado
@@ -201,8 +201,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
 
     // 2. Alocar array de FrameInfo via early allocator
     let frames_size = frame_count * core::mem::size_of::<FrameInfo>();
-    let frames_phys = early::alloc(frames_size, core::mem::align_of::<FrameInfo>())
-        .expect("Failed to allocate FrameInfo array!");
+    let frames_phys = early::alloc(frames_size, core::mem::align_of::<FrameInfo>());
 
     // Converter para ponteiro virtual via HHDM
     let frames_virt = hhdm::phys_to_virt(frames_phys.as_u64()) as *mut FrameInfo;
@@ -220,11 +219,15 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     }
 
     // 4. Criar chunks
-    let mut chunks = Vec::with_capacity(chunk_count);
+    let chunks = early::alloc_slice::<ChunkManager>(chunk_count);
     for i in 0..chunk_count {
         let base = PhysAddr::new((i * CHUNK_SIZE) as u64);
-        let migrate_type = crate::rmm::zone::MigrateType::Movable;
-        chunks.push(ChunkManager::new(base, migrate_type));
+        unsafe {
+            core::ptr::write(
+                &mut chunks[i],
+                ChunkManager::new(base, MigrateType::Movable),
+            );
+        }
     }
 
     // 5. Calcular limites das zonas
