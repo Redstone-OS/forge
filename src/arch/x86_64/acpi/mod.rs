@@ -128,19 +128,25 @@ unsafe fn find_table(
     signature: &[u8; 4],
 ) -> Result<u64, &'static str> {
     let sdt_virt = hhdm::phys_to_virt(sdt_addr);
+    crate::kdebug!("(ACPI) SDT virt @", sdt_virt);
     let header = &*(sdt_virt as *const SdtHeader);
+    crate::kdebug!("(ACPI) SDT length:", header.length as u64);
 
     // Calcular número de entradas
     let entry_size = if is_xsdt { 8 } else { 4 };
     let entries_start = sdt_virt + core::mem::size_of::<SdtHeader>() as u64;
     let entries_len = (header.length as usize - core::mem::size_of::<SdtHeader>()) / entry_size;
+    crate::kdebug!("(ACPI) SDT entries:", entries_len as u64);
+    crate::kdebug!("(ACPI) entries_start:", entries_start);
 
     for i in 0..entries_len {
+        crate::kdebug!("(ACPI) Reading entry", i as u64);
         let entry_addr = if is_xsdt {
             *((entries_start + (i * 8) as u64) as *const u64)
         } else {
             *((entries_start + (i * 4) as u64) as *const u32) as u64
         };
+        crate::kdebug!("(ACPI) Entry", i as u64, "@ phys", entry_addr);
 
         let entry_virt = hhdm::phys_to_virt(entry_addr);
         let entry_header = &*(entry_virt as *const SdtHeader);

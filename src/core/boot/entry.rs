@@ -52,6 +52,7 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 5. ACPI e Descoberta de Hardware
     crate::kinfo!("'Inicializando ACPI'");
+    crate::kdebug!("(ACPI) RSDP addr do bootloader:", boot_info.rsdp_addr);
     if boot_info.rsdp_addr != 0 {
         // Inicializa ACPI via implementação da arquitetura (x86_64)
         unsafe {

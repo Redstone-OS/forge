@@ -223,6 +223,8 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
 
     // 4. Criar chunks
     let chunks = early::alloc_slice::<ChunkManager>(chunk_count);
+    crate::kdebug!("(RMM/Phys) Chunks array @", chunks.as_ptr() as u64);
+
     for i in 0..chunk_count {
         let base = PhysAddr::new((i * CHUNK_SIZE) as u64);
         unsafe {
@@ -230,6 +232,24 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
                 &mut chunks[i],
                 ChunkManager::new(base, MigrateType::Movable),
             );
+        }
+    }
+
+    // 4b. Marcar "phantom frames" no último chunk como alocados
+    // Se frame_count não é múltiplo de FRAMES_PER_CHUNK, o último chunk
+    // tem frames que não existem no array FrameInfo
+    let last_valid_frame = frame_count;
+    let last_chunk_first_frame = (chunk_count - 1) * FRAMES_PER_CHUNK;
+    let phantom_start = last_valid_frame;
+    let phantom_end = chunk_count * FRAMES_PER_CHUNK;
+
+    if phantom_start < phantom_end {
+        for f in phantom_start..phantom_end {
+            let frame_in_chunk = f - last_chunk_first_frame;
+            let word_idx = frame_in_chunk / 64;
+            let bit_idx = frame_in_chunk % 64;
+            let mask = 1u64 << bit_idx;
+            chunks[chunk_count - 1].mark_allocated_unchecked(word_idx, mask);
         }
     }
 
@@ -261,7 +281,51 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
                 let frame_info = &mut *frames_virt.add(f);
                 frame_info.set_owner(FrameOwner::Kernel);
                 reserved_frames += 1;
+
+                // IMPORTANTE: Marcar também no bitmap do chunk correspondente
+                let chunk_idx = f / FRAMES_PER_CHUNK;
+                if chunk_idx < chunk_count {
+                    let frame_in_chunk = f % FRAMES_PER_CHUNK;
+                    let word_idx = frame_in_chunk / 64;
+                    let bit_idx = frame_in_chunk % 64;
+                    let mask = 1u64 << bit_idx;
+                    chunks[chunk_idx].mark_allocated_unchecked(word_idx, mask);
+                }
             }
+        }
+    }
+
+    // 7. Marcar região do EARLY ALLOCATOR como reservada (FrameInfo + Chunks arrays)
+    let (early_start, early_end) = early::used_region();
+    let early_start_frame = early_start.as_u64() as usize / PAGE_SIZE;
+    let early_end_frame = (early_end.as_u64() as usize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    crate::kdebug!(
+        "(RMM/Phys) Early region reservada:",
+        early_start.as_u64(),
+        "-",
+        early_end.as_u64(),
+        "frames",
+        early_start_frame,
+        "-",
+        early_end_frame
+    );
+
+    for f in early_start_frame..early_end_frame.min(frame_count) {
+        let frame_info = &mut *frames_virt.add(f);
+        if frame_info.owner() == FrameOwner::Free {
+            frame_info.set_owner(FrameOwner::Kernel);
+            reserved_frames += 1;
+        }
+
+        // Marcar no bitmap do chunk
+        let chunk_idx = f / FRAMES_PER_CHUNK;
+        if chunk_idx < chunk_count {
+            let frame_in_chunk = f % FRAMES_PER_CHUNK;
+            let word_idx = frame_in_chunk / 64;
+            let bit_idx = frame_in_chunk % 64;
+            let mask = 1u64 << bit_idx;
+            chunks[chunk_idx].mark_allocated_unchecked(word_idx, mask);
         }
     }
 
@@ -285,7 +349,7 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
         chunks,
         chunk_count,
         base_phys: PhysAddr::new(0),
-        percpu_caches: PerCpuCaches::new_single(),
+        percpu_caches: PerCpuCaches::empty(),
         stats: PhysStats::new(),
         zone_dma_end,
         zone_dma32_end,
@@ -555,6 +619,14 @@ impl FrameManager {
 
     /// Configura um frame após alocação
     fn setup_frame(&mut self, frame_idx: usize, owner: FrameOwner, flags: AllocFlags) {
+        // Verificação de segurança - nunca deveria acontecer se phantom frames estão marcados
+        debug_assert!(
+            frame_idx < self.frame_count,
+            "frame_idx {} out of bounds (frame_count {})",
+            frame_idx,
+            self.frame_count
+        );
+
         let frame_info = unsafe { &mut *self.frames.add(frame_idx) };
         frame_info.set_owner(owner);
         frame_info.inc_ref();

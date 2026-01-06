@@ -248,6 +248,21 @@ impl ChunkManager {
         (self.bitmap[word_idx].load(Ordering::Relaxed) & mask) != 0
     }
 
+    /// Marca um frame como alocado durante inicialização (sem lock)
+    ///
+    /// # Safety
+    ///
+    /// Usar apenas durante inicialização single-threaded.
+    pub fn mark_allocated_unchecked(&self, word_idx: usize, mask: u64) {
+        if word_idx < BITMAP_WORDS {
+            let old = self.bitmap[word_idx].fetch_or(mask, Ordering::Relaxed);
+            // Só decrementar free_count se o bit estava realmente livre
+            if (old & mask) == 0 {
+                self.free_count.fetch_sub(1, Ordering::Relaxed);
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Helpers Internos
     // -------------------------------------------------------------------------

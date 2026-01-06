@@ -180,6 +180,6 @@ pub unsafe fn init(boot_info: &'static BootInfo) {
     crate::kinfo!("(RMM) Inicialização completa!");
 
     // Dump estatísticas iniciais
-    #[cfg(debug_assertions)]
-    debug::dump_stats();
+    // #[cfg(debug_assertions)]
+    // debug::dump_stats();
 }
