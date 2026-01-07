@@ -45,9 +45,12 @@ pub fn load_binary(
     // 2. Obter CR3 do address space alvo
     let target_cr3 = aspace.lock().cr3();
 
-    // 3. Carregar cada segmento
+    // 3. Obter PID do address space para alocação correta
+    let owner_pid = aspace.lock().owner();
+
+    // 4. Carregar cada segmento
     for segment in &elf.segments {
-        load_segment(segment, data, aspace, target_cr3)?;
+        load_segment(segment, data, aspace, target_cr3, owner_pid)?;
     }
 
     crate::ktrace!(
@@ -63,6 +66,7 @@ fn load_segment(
     data: &[u8],
     aspace: &Arc<Spinlock<AddressSpace>>,
     target_cr3: u64,
+    owner_pid: u32,
 ) -> Result<(), ExecError> {
     let page_size = PAGE_SIZE as u64;
 
@@ -121,7 +125,7 @@ fn load_segment(
 
         // Alocar frame zerado para userspace
         let frame = phys::alloc(
-            FrameOwner::Process { pid: 0 },
+            FrameOwner::Process { pid: owner_pid },
             Zone::Normal,
             AllocFlags::ZERO,
         )

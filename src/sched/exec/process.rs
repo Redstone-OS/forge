@@ -102,7 +102,7 @@ pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pi
     let ustack_size = USER_STACK_SIZE as usize;
     let ustack_start = USER_STACK_TOP - ustack_size as u64;
 
-    map_user_stack(&aspace, ustack_start, ustack_size)?;
+    map_user_stack(&aspace, ustack_start, ustack_size, pid_u32)?;
     task.user_stack = VirtAddr::new(USER_STACK_TOP);
 
     crate::ktrace!("(Spawn) User stack mapped at:", ustack_start);
@@ -157,6 +157,7 @@ fn map_user_stack(
     aspace: &Arc<Spinlock<AddressSpace>>,
     ustack_start: u64,
     ustack_size: usize,
+    owner_pid: u32,
 ) -> Result<(), ExecError> {
     // 1. Registrar VMA (stack usa MemoryIntent::Stack que já configura flags corretas)
     {
@@ -180,7 +181,7 @@ fn map_user_stack(
         let vaddr = ustack_start + i * page_size;
 
         let frame = phys::alloc(
-            FrameOwner::Process { pid: 0 },
+            FrameOwner::Process { pid: owner_pid },
             Zone::Normal,
             AllocFlags::ZERO,
         )

@@ -118,3 +118,26 @@ impl Task {
         }
     }
 }
+
+impl Drop for Task {
+    fn drop(&mut self) {
+        // Liberar o AddressSpace explicitamente
+        // Quando o Arc é o último owner, o AddressSpace::drop será chamado
+        // que libera todas as páginas físicas
+        if let Some(aspace) = self.aspace.take() {
+            // Se este é o último Arc, ele será dropado agora
+            // e AddressSpace::drop liberará a memória
+            let strong_count = Arc::strong_count(&aspace);
+            if strong_count == 1 {
+                crate::kdebug!(
+                    "(Task) Liberando AddressSpace do PID:",
+                    self.tid.as_u32() as u64
+                );
+            }
+            // O Arc é dropado aqui ao sair do escopo
+            drop(aspace);
+        }
+
+        crate::kdebug!("(Task) Task dropada. TID:", self.tid.as_u32() as u64);
+    }
+}
