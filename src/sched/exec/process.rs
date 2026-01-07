@@ -121,6 +121,10 @@ pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pi
     crate::ktrace!("(Spawn) Task enfileirada OK");
 
     crate::kinfo!("(Spawn) Process spawned successfully, PID:", pid_u64);
+    crate::kdebug!(
+        "(Spawn) Iniciado na CPU:",
+        super::super::core::per_cpu::this_cpu_id() as u64
+    );
     Ok(pid)
 }
 

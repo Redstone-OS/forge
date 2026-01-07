@@ -140,24 +140,35 @@ where
 // OPERAÇÕES DE FILA
 // =============================================================================
 
-/// Adiciona task à runqueue da CPU atual
+/// Adiciona task à runqueue da CPU com menor carga
 pub fn enqueue(task: Pin<Box<Task>>) {
     let tid = task.tid.as_u32();
-    crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
 
     if tid == 0 || tid >= 0x80000000 {
         crate::kerror!("(Sched) Tentativa de enfileirar idle task! Ignorando.");
         return;
     }
 
-    let cpu_id = this_cpu_id();
-    let mut guard = CPUS[cpu_id].lock();
+    // Encontrar CPU com menor carga para balanceamento
+    let target_cpu = super::per_cpu::LoadBalancer::find_idlest_cpu().unwrap_or(0);
+
+    let mut guard = CPUS[target_cpu].lock();
 
     if let Some(ref mut cpu_data) = *guard {
         cpu_data.enqueue(task);
-        crate::ktrace!("(Sched) enqueue: OK na CPU", cpu_id as u64);
+        crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
+        crate::ktrace!("(Sched) enqueue: CPU=", target_cpu as u64);
     } else {
-        crate::kerror!("(Sched) CPU", cpu_id as u64, "não inicializada!");
+        // Fallback para CPU 0 se a CPU selecionada não estiver inicializada
+        drop(guard);
+        let mut guard0 = CPUS[0].lock();
+        if let Some(ref mut cpu_data) = *guard0 {
+            cpu_data.enqueue(task);
+            crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
+            crate::ktrace!("(Sched) enqueue: fallback CPU 0");
+        } else {
+            crate::kerror!("(Sched) Nenhuma CPU inicializada!");
+        }
     }
 }
 
