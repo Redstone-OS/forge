@@ -6,14 +6,11 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use core::pin::Pin;
 
-use crate::sched::core::CURRENT;
+use crate::sched::core::per_cpu::{this_cpu_id, CPUS};
 use crate::sched::task::{Task, TaskState};
 use crate::sync::Spinlock;
 
 /// Wait queue - fila de tarefas bloqueadas aguardando um evento.
-///
-/// Diferente da implementação anterior, armazenamos a `Task` inteira (ownership),
-/// retirando-a do agendador. Ao acordar, devolvemos para a `RunQueue`.
 pub struct WaitQueue {
     waiters: Spinlock<VecDeque<Pin<Box<Task>>>>,
 }
@@ -27,62 +24,45 @@ impl WaitQueue {
     }
 
     /// Bloqueia a thread atual e a coloca nesta fila de espera.
-    ///
-    /// O scheduler escolherá outra tarefa para rodar.
     pub fn wait(&self) {
         crate::arch::Cpu::disable_interrupts();
 
+        let cpu_id = this_cpu_id();
+
         // 1. Pegar a task atual para bloquear
-        let (task, old_ctx_ptr) = {
-            let mut current_guard = CURRENT.lock();
-            if let Some(mut task) = current_guard.take() {
-                // Marcar como bloqueada
-                unsafe { Pin::get_unchecked_mut(task.as_mut()) }.state = TaskState::Blocked;
-
-                // Obter ponteiro do contexto para o switch
-                let ctx_ptr =
-                    unsafe { &mut Pin::get_unchecked_mut(task.as_mut()).context as *mut _ };
-
-                // Devolve a task e o ponteiro
-                (task, ctx_ptr)
+        let task = {
+            let mut guard = CPUS[cpu_id].lock();
+            if let Some(ref mut cpu_data) = *guard {
+                if let Some(mut task) = cpu_data.current.take() {
+                    unsafe { Pin::get_unchecked_mut(task.as_mut()) }.state = TaskState::Blocked;
+                    task
+                } else {
+                    crate::kerror!("(WaitQueue) wait: sem task atual!");
+                    drop(guard);
+                    crate::arch::Cpu::enable_interrupts();
+                    return;
+                }
             } else {
-                crate::kerror!("(WaitQueue) wait called without current task!");
+                crate::kerror!("(WaitQueue) wait: CPU não inicializada!");
                 crate::arch::Cpu::enable_interrupts();
                 return;
             }
         };
 
-        // 2. Adicionar à fila de espera (agora detemos a ownership da task)
+        // 2. Adicionar à fila de espera
         self.waiters.lock().push_back(task);
 
-        // 3. Escolher a próxima task e trocar de contexto
-        // IMPORTANTE: precisamos pegar o lock do CURRENT de volta para o prepare_and_switch_to
-        let current_guard = CURRENT.lock();
-        if let Some(next) = crate::sched::core::pick_next() {
-            unsafe {
-                crate::sched::core::prepare_and_switch_to(next, Some(old_ctx_ptr), current_guard);
-            }
-        } else {
-            // Se não houver próxima task, retornamos para o scheduler
-            // que vai voltar para a idle task automaticamente
-            drop(current_guard);
-            // A idle task vai continuar rodando e eventualmente re-escalonar
-            // quando esta task for acordada via wake_one()
-        }
+        // 3. Chamar schedule para escolher próxima task
+        crate::sched::core::scheduler::schedule();
 
         crate::arch::Cpu::enable_interrupts();
     }
 
     /// Acorda uma thread desta fila, movendo-a para a RunQueue.
-    ///
-    /// Retorna true se acordou alguém.
     pub fn wake_one(&self) -> bool {
         let mut waiters = self.waiters.lock();
         if let Some(mut task) = waiters.pop_front() {
-            // 1. Mudar estado para Ready
             task.set_ready();
-
-            // 2. Devolver para RunQueue
             crate::sched::core::enqueue(task);
             true
         } else {
@@ -91,8 +71,6 @@ impl WaitQueue {
     }
 
     /// Acorda todas as threads desta fila.
-    ///
-    /// Retorna número de threads acordadas.
     pub fn wake_all(&self) -> usize {
         let mut waiters = self.waiters.lock();
         let mut count = 0;

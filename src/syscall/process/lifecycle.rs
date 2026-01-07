@@ -86,10 +86,7 @@ pub fn sys_spawn(
     };
 
     // Obter PID do chamador para definir como pai
-    let current_tid = {
-        let guard = crate::sched::core::CURRENT.lock();
-        guard.as_ref().map(|t| t.tid)
-    };
+    let current_tid = crate::sched::core::with_current(|task| task.tid);
 
     // Chamar função de spawn existente
     match crate::sched::exec::spawn(&path, current_tid) {
@@ -154,22 +151,14 @@ pub fn sys_yield() -> SysResult<usize> {
 
 /// Obtém o PID do processo atual
 pub fn sys_getpid() -> SysResult<usize> {
-    let task_guard = crate::sched::core::CURRENT.lock();
-    if let Some(task) = task_guard.as_ref() {
-        Ok(task.tid.as_u32() as usize)
-    } else {
-        Err(SysError::Interrupted)
-    }
+    crate::sched::core::with_current(|task| Ok(task.tid.as_u32() as usize))
+        .unwrap_or(Err(SysError::Interrupted))
 }
 
 /// Obtém o TID da thread atual
 pub fn sys_gettid() -> SysResult<usize> {
-    let task_guard = crate::sched::core::CURRENT.lock();
-    if let Some(task) = task_guard.as_ref() {
-        Ok(task.tid.as_u32() as usize)
-    } else {
-        Err(SysError::Interrupted)
-    }
+    crate::sched::core::with_current(|task| Ok(task.tid.as_u32() as usize))
+        .unwrap_or(Err(SysError::Interrupted))
 }
 
 /// Cria uma nova thread no processo atual

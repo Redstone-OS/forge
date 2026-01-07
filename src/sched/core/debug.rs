@@ -1,73 +1,66 @@
-//! Ferramentas de Debug para o Scheduler
+//! Ferramentas de Debug para o Scheduler Multi-Core
 
-use super::runqueue::RUNQUEUE;
-use super::scheduler::CURRENT;
+use super::per_cpu::{CPUS, MAX_CPUS};
 use super::sleep_queue::SLEEP_QUEUE;
 use crate::sched::task::lifecycle::ZOMBIES;
 use crate::sched::task::TaskState;
 
-/// Imprime o estado de todas as tarefas conhecidas no sistema
+/// Imprime o estado de todas as tarefas no sistema
 pub fn dump_tasks() {
-    crate::ktrace!("--- [TRACE] GERENCIADOR DE TAREFAS ---");
+    crate::ktrace!("--- [TRACE] SCHEDULER MULTI-CORE ---");
 
     let mut total_tasks = 0u64;
+    let mut total_ready = 0u64;
 
-    // 1. Task Atual (Running)
-    if let Some(guard) = CURRENT.try_lock() {
-        if let Some(ref task) = *guard {
-            let tid = task.tid.as_u32();
-            crate::ktrace!("  - Running TID:", tid as u64);
-            total_tasks += 1;
+    // 1. Dump de cada CPU
+    for cpu_id in 0..MAX_CPUS {
+        if let Some(guard) = CPUS[cpu_id].try_lock() {
+            if let Some(ref cpu_data) = *guard {
+                crate::ktrace!("  CPU:");
 
-            // Alerta se task em CURRENT não está Running (exceto idle)
-            if task.state != TaskState::Running && tid != 0 {
-                crate::kerror!(
-                    "(Debug) BUG: Task em CURRENT não está Running! PID:",
-                    tid as u64
-                );
+                // Current task
+                if let Some(ref task) = cpu_data.current {
+                    let tid = task.tid.as_u32();
+                    crate::ktrace!("    - Running TID:", tid as u64);
+                    total_tasks += 1;
+
+                    if task.state != TaskState::Running && tid != 0 {
+                        crate::kerror!("(Debug) BUG: Task não está Running!");
+                    }
+                } else {
+                    crate::ktrace!("    - Current: None");
+                }
+
+                // Runqueue local
+                let rq_len = cpu_data.runqueue_len();
+                crate::ktrace!("    - Ready:", rq_len as u64);
+                total_ready += rq_len as u64;
+                total_tasks += rq_len as u64;
+
+                // Idle task
+                if cpu_data.idle_task.is_some() {
+                    crate::ktrace!("    - Idle: OK");
+                }
             }
-        } else {
-            crate::ktrace!("  - CURRENT: None");
         }
-    } else {
-        crate::ktrace!("  - CURRENT: [Locked]");
     }
 
-    // 2. Ready Tasks
-    if let Some(rq) = RUNQUEUE.try_lock() {
-        crate::ktrace!("  - READY count:", rq.queue.len() as u64);
-        for _task in &rq.queue {
-            total_tasks += 1;
-        }
-    } else {
-        crate::ktrace!("  - RUNQUEUE: [Locked]");
-    }
-
-    // 3. Sleeping Tasks
+    // 2. Sleeping Tasks
     if let Some(sq) = SLEEP_QUEUE.try_lock() {
-        crate::ktrace!("  - SLEEPING count:", sq.len() as u64);
-        for _ in sq.iter() {
-            total_tasks += 1;
-        }
+        crate::ktrace!("  SLEEPING count:", sq.len() as u64);
+        total_tasks += sq.len() as u64;
     } else {
-        crate::ktrace!("  - SLEEP_QUEUE: [Locked]");
+        crate::ktrace!("  SLEEP_QUEUE: [Locked]");
     }
 
-    // 4. Zombie Tasks
+    // 3. Zombie Tasks
     if let Some(zombies) = ZOMBIES.try_lock() {
-        crate::ktrace!("  - ZOMBIE count:", zombies.len() as u64);
-        for _ in zombies.iter() {
-            total_tasks += 1;
-        }
+        crate::ktrace!("  ZOMBIE count:", zombies.len() as u64);
+        total_tasks += zombies.len() as u64;
     } else {
-        crate::ktrace!("  - ZOMBIES: [Locked]");
+        crate::ktrace!("  ZOMBIES: [Locked]");
     }
 
-    // Alerta se perdemos tasks (esperamos 5: idle + 4 processos)
-    // Nota: idle não conta pois está em CURRENT e não é contada separadamente
-    if total_tasks < 4 && total_tasks > 0 {
-        crate::kerror!("(Debug) ALERTA: Tasks desaparecendo! Total:", total_tasks);
-    }
-
+    crate::ktrace!("  TOTAL TASKS:", total_tasks);
     crate::ktrace!("--- FIM DO DUMP ---");
 }

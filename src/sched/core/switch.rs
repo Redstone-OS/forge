@@ -1,70 +1,47 @@
 //! Lógica de Troca de Contexto (Context Switching)
+//!
+//! Helpers para context switch. O switch principal está em scheduler.rs.
 
+use crate::sched::core::per_cpu::{this_cpu_id, CPUS};
 use crate::sched::task::context::{jump_to_context, switch, CpuContext};
 use crate::sched::task::{Task, TaskState};
-use crate::sync::SpinlockGuard;
 use alloc::boxed::Box;
 use core::pin::Pin;
 
-/// Efetua a troca de contexto de baixo nível.
+/// Efetua a troca de contexto para uma nova task.
 ///
-/// Esta função realiza a transição final de ownership e chama o assembly.
+/// Esta função é usada quando não se está dentro do schedule() principal.
 ///
-/// **Nota sobre o fluxo:** Se for uma troca entre tarefas existentes (`switch`),
-/// esta função IRÁ RETORNAR quando a tarefa atual for re-escalonada no futuro.
-/// Se for um salto para uma tarefa nova (`jump_to_context`), ela não retorna.
-///  
 /// # Safety
 /// Deve ser chamada com interrupções desabilitadas.
-///
-/// # TODO (SMP Safety - Memory Lifetime)
-/// O parâmetro `old_ctx` é um ponteiro para o CpuContext dentro de uma Task.
-/// A Task é movida para RunQueue/SleepQueue ANTES de chamar esta função.
-/// Riscos a considerar para SMP:
-/// - Outro core pode acessar/modificar a Task enquanto o switch está em progresso
-/// - O ponteiro old_ctx deve permanecer válido durante toda a operação de switch
-/// - Pin<Box<Task>> ajuda a garantir que a Task não será movida, mas não protege
-///   contra dealocação por outro core
-/// Mitigações possíveis:
-/// - Garantir exclusão mútua via lock durante todo o switch
-/// - Usar Arc<Task> com RwLock interno
-/// - Implementar mecanismo de "handoff" atômico entre cores
-pub unsafe fn prepare_and_switch_to(
-    mut next: Pin<Box<Task>>,
-    old_ctx: Option<*mut CpuContext>,
-    mut current_guard: SpinlockGuard<Option<Pin<Box<Task>>>>,
-) {
+pub unsafe fn prepare_and_switch_to(mut next: Pin<Box<Task>>, old_ctx: Option<*mut CpuContext>) {
+    let cpu_id = this_cpu_id();
+
     // Extrair dados necessários
     let is_new = next.state == TaskState::Created;
     let new_ctx_ptr = &next.context as *const _;
 
     // Marcar nova task como Running
-    core::pin::Pin::get_unchecked_mut(next.as_mut()).state = TaskState::Running;
-
-    // Log de troca
-    // crate::ktrace!("(Sched) Mudando para PID:", next.tid.as_u32() as u64);
+    Pin::get_unchecked_mut(next.as_mut()).state = TaskState::Running;
 
     // Aplicar estado de hardware (GDT, CR3)
     next.apply_hardware_state();
 
-    // Transferir ownership para o global CURRENT
-    *current_guard = Some(next);
-    drop(current_guard);
+    // Transferir ownership para CPUS[cpu_id].current
+    {
+        let mut guard = CPUS[cpu_id].lock();
+        if let Some(ref mut cpu_data) = *guard {
+            cpu_data.current = Some(next);
+        }
+    }
 
     // Efetuar o salto/troca final
     if let Some(old_ctx_ptr) = old_ctx {
-        // Troca completa (salva atual, restaura próxima)
-        // Quando esta tarefa for retomada, ela voltará exatamente aqui.
         switch(&mut *old_ctx_ptr, &*new_ctx_ptr);
-        // Task retomada - continua execução normal
     } else {
-        // Apenas restaura próxima (sem contexto anterior para salvar)
         if is_new {
-            // Task nova - salta para entry point
             jump_to_context(&*new_ctx_ptr);
         } else {
-            // Task existente sem old_ctx - isso só deveria acontecer na idle task
-            // ou na primeira execução do scheduler
             let mut dummy = CpuContext::new();
             switch(&mut dummy, &*new_ctx_ptr);
         }

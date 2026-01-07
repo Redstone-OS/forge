@@ -117,10 +117,7 @@ pub fn sys_alloc(size: usize, flags: u32) -> SysResult<usize> {
     let pages = aligned_size / PAGE_SIZE;
 
     // Obter task atual
-    let (alloc_addr, target_cr3, aspace_arc) = {
-        let mut current = crate::sched::core::CURRENT.lock();
-        let task = current.as_mut().ok_or(SysError::Interrupted)?;
-
+    let (alloc_addr, target_cr3, aspace_arc) = crate::sched::core::with_current_mut(|task| {
         let addr = task.heap_next;
         if addr + aligned_size as u64 > USER_HEAP_MAX {
             crate::kerror!("(Syscall) sys_alloc: OOM (Virtual)! addr=", addr);
@@ -133,8 +130,9 @@ pub fn sys_alloc(size: usize, flags: u32) -> SysResult<usize> {
         let cr3 = task.aspace.as_ref().map(|a| a.lock().cr3()).unwrap_or(0);
         let aspace = task.aspace.clone();
 
-        (addr, cr3, aspace)
-    };
+        Ok((addr, cr3, aspace))
+    })
+    .unwrap_or(Err(SysError::Interrupted))?;
 
     // Flags de alocação
     let alloc_flags = if flags & ALLOC_ZEROED != 0 {

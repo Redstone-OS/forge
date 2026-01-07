@@ -198,6 +198,30 @@ drivers/
 
 ---
 
+## ⚡ Redstone Scheduler System (RSS)
+
+O RSS é o sistema de escalonamento multi-core do Forge. Redesenhado from scratch para SMP, cada CPU tem suas próprias estruturas (runqueue, idle task, current).
+
+### Arquitetura Per-CPU
+
+```
+  CPU 0 (BSP)         CPU 1 (AP)        CPU 2 (AP)
+  ┌──────────────┐   ┌──────────────┐  ┌──────────────┐
+  │ current      │   │ current      │  │ current      │
+  │ runqueue     │   │ runqueue     │  │ runqueue     │
+  │ idle_task    │   │ idle_task    │  │ idle_task    │
+  └──────────────┘   └──────────────┘  └──────────────┘
+```
+
+### Características
+
+- **Per-CPU Isolation**: Cada CPU só mexe na sua própria runqueue
+- **IRQ-Safe Locks**: Todos os locks desabilitam interrupções
+- **Preemptivo**: Timer interrupt pode interromper qualquer task
+- **Load Balancing**: Balanceamento de carga entre CPUs (em desenvolvimento)
+
+---
+
 ## 🛡️ Segurança
 
 O Forge implementa um modelo **Object-Capability (OCAP)**, abandonando completamente UID/GID e o conceito de superusuário.
@@ -367,7 +391,7 @@ qemu-system-x86_64 \
 | **mm** | 🔄 Migração | Substituído pelo RMM (Redstone Memory Manager) |
 | **rmm** | 🚧 Em Desenvolvimento | RMM: FrameManager, HHDM, VMAs, SMP-safe |
 | **module** | 🔄 Estrutura | Estrutura básica |
-| **sched** | ✅ Funcional | Round-robin preemptivo |
+| **sched** | 🚧 Refatorando | Multi-core scheduler (RSS) |
 | **security** | 🔄 Estrutura | OCAP framework |
 | **sync** | ⚠️ Básico | Spinlock, Mutex, RwLock, RCU |
 | **syscall** | 🚧 Em Desenvolvimento | ~40 syscalls |

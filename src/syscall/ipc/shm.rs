@@ -122,18 +122,18 @@ pub fn sys_shm_map(shm_id: u64, suggested_addr: usize) -> SysResult<usize> {
     };
 
     // Obter CR3 do processo atual
-    let (target_cr3, aspace_arc) = {
-        let guard = crate::sched::core::CURRENT.lock();
-        if let Some(task) = guard.as_ref() {
-            if let Some(ref aspace) = task.aspace {
-                (aspace.lock().cr3(), Some(aspace.clone()))
-            } else {
-                return Err(SysError::InvalidHandle);
-            }
+    let (target_cr3, aspace_arc) = crate::sched::core::with_current(|task| {
+        if let Some(ref aspace) = task.aspace {
+            (aspace.lock().cr3(), Some(aspace.clone()))
         } else {
-            return Err(SysError::InvalidHandle);
+            (0, None)
         }
-    };
+    })
+    .unwrap_or((0, None));
+
+    if target_cr3 == 0 {
+        return Err(SysError::InvalidHandle);
+    }
 
     // Mapear região
     let registry = SHM_REGISTRY.lock();

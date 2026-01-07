@@ -31,14 +31,7 @@ const HEAP_BASE: u64 = 0x1000_0000;
 /// * `Err(OutOfMemory)` - Não foi possível expandir
 pub fn sys_brk(new_brk: usize) -> SysResult<usize> {
     // Obter task atual
-    let current_brk = {
-        let current = crate::sched::core::CURRENT.lock();
-        if let Some(task) = current.as_ref() {
-            task.heap_next
-        } else {
-            HEAP_BASE
-        }
-    };
+    let current_brk = crate::sched::core::with_current(|task| task.heap_next).unwrap_or(HEAP_BASE);
 
     if new_brk == 0 {
         // Query: retorna brk atual
@@ -54,22 +47,13 @@ pub fn sys_brk(new_brk: usize) -> SysResult<usize> {
 
     if new_brk < current_brk {
         // TODO: Contrair heap (liberar páginas)
-        // Por enquanto: apenas atualiza o ponteiro
-        let mut current = crate::sched::core::CURRENT.lock();
-        if let Some(task) = current.as_mut() {
-            task.heap_next = new_brk;
-        }
+        crate::sched::core::with_current_mut(|task| task.heap_next = new_brk);
         return Ok(new_brk as usize);
     }
 
     if new_brk > current_brk {
         // TODO: Expandir heap (mapear páginas)
-        // Por enquanto: apenas atualiza o ponteiro sem mapear
-        // Páginas serão mapeadas on-demand via page fault
-        let mut current = crate::sched::core::CURRENT.lock();
-        if let Some(task) = current.as_mut() {
-            task.heap_next = new_brk;
-        }
+        crate::sched::core::with_current_mut(|task| task.heap_next = new_brk);
         return Ok(new_brk as usize);
     }
 

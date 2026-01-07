@@ -285,6 +285,18 @@ fn delay_us(us: u32) {
 /// Ponto de entrada Rust para APs
 ///
 /// Chamado pelo trampoline após entrar em long mode.
+/// Inicializa estruturas per-CPU e entra no loop do scheduler.
+///
+/// ## Fluxo
+///
+/// ```text
+/// 1. LAPIC init
+/// 2. Obter logical_id via topologia
+/// 3. Inicializar estrutura per-CPU
+/// 4. Criar idle task para este AP
+/// 5. Sinalizar ready para BSP
+/// 6. Entrar no loop do scheduler (nunca retorna)
+/// ```
 #[no_mangle]
 pub extern "C" fn ap_entry(_logical_id: u32) -> ! {
     // 1. Inicializar LAPIC local PRIMEIRO
@@ -312,12 +324,16 @@ pub extern "C" fn ap_entry(_logical_id: u32) -> ! {
         apic_id as u64
     );
 
-    // 4. Sinalizar que acordou
+    // 4. Inicializar estrutura per-CPU para este AP
+    crate::sched::core::per_cpu::init_cpu(logical_id as usize);
+
+    // 5. Criar idle task para este AP
+    crate::sched::core::idle::init_idle_task_for_cpu(logical_id as usize);
+
+    // 6. Sinalizar que acordou (BSP está esperando)
     ap_signal_ready(logical_id);
 
-    // 5. Esperar trabalho (idle loop)
-    // TODO: Integrar com scheduler
-    loop {
-        crate::arch::x86_64::cpu::Cpu::halt();
-    }
+    // 7. Entrar no loop do scheduler (nunca retorna)
+    crate::kinfo!("(SMP/AP)", logical_id as u64, "entrando no scheduler");
+    crate::sched::core::scheduler::run();
 }

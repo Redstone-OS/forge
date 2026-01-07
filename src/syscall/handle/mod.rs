@@ -31,40 +31,32 @@ pub fn sys_handle_dup(handle_val: u32, new_rights: u32) -> SysResult<usize> {
     let handle = Handle::new((handle_val & 0xFFFF) as u16, (handle_val >> 16) as u16);
     let rights = HandleRights::from_bits_truncate(new_rights as u64);
 
-    let mut task_guard = crate::sched::core::CURRENT.lock();
-    if let Some(task) = task_guard.as_mut() {
+    crate::sched::core::with_current_mut(|task| {
         if let Some(new_handle) = task.handle_table.dup(handle, rights) {
             Ok(new_handle.as_u32() as usize)
         } else {
             Err(SysError::InvalidHandle)
         }
-    } else {
-        Err(SysError::Interrupted)
-    }
+    })
+    .unwrap_or(Err(SysError::Interrupted))
 }
 
 /// Fecha um handle
 pub fn sys_handle_close(handle_val: u32) -> SysResult<usize> {
     let handle = Handle::new((handle_val & 0xFFFF) as u16, (handle_val >> 16) as u16);
 
-    let mut task_guard = crate::sched::core::CURRENT.lock();
-    if let Some(task) = task_guard.as_mut() {
+    crate::sched::core::with_current_mut(|task| {
         if task.handle_table.close(handle) {
             Ok(0)
         } else {
-            // Se falhou, pode ser que o handle não exista ou generation errada.
-            // Para evitar spam de erro se for apenas um double close inofensivo:
-            // Ok(0)
             Err(SysError::InvalidHandle)
         }
-    } else {
-        Err(SysError::Interrupted)
-    }
+    })
+    .unwrap_or(Err(SysError::Interrupted))
 }
 
 /// Verifica se handle tem rights específicos
 pub fn sys_check_rights(handle: u32, rights: u32) -> SysResult<usize> {
-    // TODO: Implementar
     let _ = (handle, rights);
     Err(SysError::NotImplemented)
 }
