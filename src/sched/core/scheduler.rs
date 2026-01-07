@@ -151,25 +151,46 @@ pub fn enqueue(task: Pin<Box<Task>>) {
 
     // Encontrar CPU com menor carga para balanceamento
     let target_cpu = super::per_cpu::LoadBalancer::find_idlest_cpu().unwrap_or(0);
+    let current_cpu = this_cpu_id();
 
-    let mut guard = CPUS[target_cpu].lock();
+    // Enfileirar com lock e capturar resultado
+    let enqueued_cpu = {
+        let mut guard = CPUS[target_cpu].lock();
 
-    if let Some(ref mut cpu_data) = *guard {
-        cpu_data.enqueue(task);
-        crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
-        crate::ktrace!("(Sched) enqueue: CPU=", target_cpu as u64);
-    } else {
-        // Fallback para CPU 0 se a CPU selecionada não estiver inicializada
-        drop(guard);
-        let mut guard0 = CPUS[0].lock();
-        if let Some(ref mut cpu_data) = *guard0 {
+        if let Some(ref mut cpu_data) = *guard {
             cpu_data.enqueue(task);
             crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
-            crate::ktrace!("(Sched) enqueue: fallback CPU 0");
+            crate::ktrace!("(Sched) enqueue: CPU=", target_cpu as u64);
+            Some(target_cpu)
         } else {
-            crate::kerror!("(Sched) Nenhuma CPU inicializada!");
+            drop(guard);
+            // Fallback para CPU 0 se a CPU selecionada não estiver inicializada
+            let mut guard0 = CPUS[0].lock();
+            if let Some(ref mut cpu_data) = *guard0 {
+                cpu_data.enqueue(task);
+                crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
+                crate::ktrace!("(Sched) enqueue: fallback CPU 0");
+                Some(0)
+            } else {
+                crate::kerror!("(Sched) Nenhuma CPU inicializada!");
+                None
+            }
+        }
+    }; // Lock é liberado aqui ANTES de enviar IPI
+
+    // Se enfileiramos em uma CPU diferente da atual, enviar IPI para acordá-la
+    // IMPORTANTE: Lock já foi liberado para evitar deadlock
+    if let Some(cpu) = enqueued_cpu {
+        if cpu != current_cpu {
+            // Obter APIC ID da CPU destino e enviar IPI Reschedule
+            if let Some(cpu_info) = crate::core::smp::topology::get().get(cpu) {
+                crate::ktrace!("(Sched) ANTES send_reschedule");
+                crate::core::smp::ipi::send_reschedule(cpu_info.apic_id);
+                crate::ktrace!("(Sched) DEPOIS send_reschedule");
+            }
         }
     }
+    crate::ktrace!("(Sched) enqueue retornando");
 }
 
 /// Seleciona próxima task para executar (da CPU atual)

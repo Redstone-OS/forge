@@ -135,4 +135,33 @@ impl Cpu {
         // SAFETY: O caller garante que o endereço físico é válido. A instrução invalida o TLB (exceto global pages).
         core::arch::asm!("mov cr3, {}", in(reg) value, options(nomem, nostack));
     }
+
+    /// Habilita suporte a SSE/FPU na CPU atual
+    ///
+    /// Esta função deve ser chamada uma vez por CPU (BSP e cada AP).
+    /// Configura CR0 e CR4 para permitir instruções SSE/SIMD.
+    ///
+    /// # Safety
+    ///
+    /// Deve ser chamado em contexto privilegiado (ring 0).
+    pub unsafe fn enable_sse() {
+        let cr0: u64;
+        let cr4: u64;
+
+        // Ler CR0
+        core::arch::asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack));
+
+        // CR0: Limpar EM (bit 2 - desabilita emulação FPU)
+        //      Setar  MP (bit 1 - monitor coprocessor)
+        let cr0_new = (cr0 & !(1 << 2)) | (1 << 1);
+        core::arch::asm!("mov cr0, {}", in(reg) cr0_new, options(nomem, nostack));
+
+        // Ler CR4
+        core::arch::asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack));
+
+        // CR4: Setar OSFXSR (bit 9 - SSE/FXSAVE/FXRSTOR support)
+        //      Setar OSXMMEXCPT (bit 10 - SSE exception handling)
+        let cr4_new = cr4 | (1 << 9) | (1 << 10);
+        core::arch::asm!("mov cr4, {}", in(reg) cr4_new, options(nomem, nostack));
+    }
 }

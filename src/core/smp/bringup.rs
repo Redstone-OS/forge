@@ -299,15 +299,11 @@ fn delay_us(us: u32) {
 /// ```
 #[no_mangle]
 pub extern "C" fn ap_entry(_logical_id: u32) -> ! {
-    // 1. Inicializar LAPIC local PRIMEIRO
-    unsafe {
-        lapic::init();
-    }
-
-    // 2. Ler nosso APIC ID diretamente do hardware
+    // 1. Ler nosso APIC ID diretamente do hardware
+    // ANTES de carregar GDT/TSS porque precisamos saber qual CPU somos
     let apic_id = lapic::current_apic_id();
 
-    // 3. Buscar logical_id na topologia pelo APIC ID
+    // 2. Buscar logical_id na topologia pelo APIC ID
     let logical_id = {
         let topo = topology::get();
         if let Some(cpu) = topo.find_by_apic_id(apic_id) {
@@ -317,6 +313,31 @@ pub extern "C" fn ap_entry(_logical_id: u32) -> ! {
         }
     };
 
+    // 3. Carregar GDT do kernel COM TSS próprio para esta CPU
+    // O trampoline usa uma GDT temporária com seletores diferentes, precisamos
+    // carregar a GDT do kernel para que os handlers de interrupção funcionem.
+    // Cada CPU tem seu próprio TSS para evitar conflito do flag "busy".
+    unsafe {
+        crate::arch::x86_64::gdt::init_ap(logical_id as usize);
+    }
+
+    // 4. Habilitar SSE/FPU para esta CPU
+    // O trampoline não habilita SSE, então precisamos fazer aqui.
+    // Sem isso, processos que usam instruções SSE/SIMD falharão com #UD.
+    unsafe {
+        crate::arch::x86_64::cpu::Cpu::enable_sse();
+    }
+
+    // 5. Carregar a IDT (com seletores e TSS corretos agora)
+    unsafe {
+        crate::arch::x86_64::idt::IDT.load();
+    }
+
+    // 6. Inicializar LAPIC local
+    unsafe {
+        lapic::init();
+    }
+
     crate::kdebug!(
         "(SMP/AP)",
         logical_id as u64,
@@ -324,16 +345,16 @@ pub extern "C" fn ap_entry(_logical_id: u32) -> ! {
         apic_id as u64
     );
 
-    // 4. Inicializar estrutura per-CPU para este AP
+    // 6. Inicializar estrutura per-CPU para este AP
     crate::sched::core::per_cpu::init_cpu(logical_id as usize);
 
-    // 5. Criar idle task para este AP
+    // 6. Criar idle task para este AP
     crate::sched::core::idle::init_idle_task_for_cpu(logical_id as usize);
 
-    // 6. Sinalizar que acordou (BSP está esperando)
+    // 7. Sinalizar que acordou (BSP está esperando)
     ap_signal_ready(logical_id);
 
-    // 7. Entrar no loop do scheduler (nunca retorna)
+    // 8. Entrar no loop do scheduler (nunca retorna)
     crate::kinfo!("(SMP/AP)", logical_id as u64, "entrando no scheduler");
     crate::sched::core::scheduler::run();
 }

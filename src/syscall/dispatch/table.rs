@@ -35,6 +35,9 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_MAP] = Some(super::super::memory::sys_map_wrapper);
     table[SYS_UNMAP] = Some(super::super::memory::sys_unmap_wrapper);
     table[SYS_MPROTECT] = Some(super::super::memory::sys_mprotect_wrapper);
+    table[SYS_SHM_CREATE] = Some(super::super::ipc::shm::sys_shm_create_wrapper);
+    table[SYS_SHM_ATTACH] = Some(super::super::ipc::shm::sys_shm_map_wrapper);
+    table[SYS_SHM_GET_SIZE] = Some(super::super::ipc::shm::sys_shm_get_size_wrapper);
 
     // === HANDLES (0x20-0x2F) ===
     table[SYS_HANDLE_DUP] = Some(super::super::handle::sys_handle_dup_wrapper);
@@ -47,10 +50,7 @@ pub static SYSCALL_TABLE: [Option<SyscallHandler>; TABLE_SIZE] = {
     table[SYS_RECV_MSG] = Some(super::super::ipc::port::sys_recv_msg_wrapper);
     table[SYS_FUTEX_WAIT] = Some(super::super::ipc::port::sys_futex_wait_wrapper);
     table[SYS_FUTEX_WAKE] = Some(super::super::ipc::port::sys_futex_wake_wrapper);
-    table[SYS_SHM_CREATE] = Some(super::super::ipc::shm::sys_shm_create_wrapper);
-    table[SYS_SHM_MAP] = Some(super::super::ipc::shm::sys_shm_map_wrapper);
     table[SYS_PORT_CONNECT] = Some(super::super::ipc::port::sys_port_connect_wrapper);
-    table[SYS_SHM_GET_SIZE] = Some(super::super::ipc::shm::sys_shm_get_size_wrapper);
 
     // === DISPLAY (0x40-0x4F) ===
     table[SYS_FB_INFO] = Some(super::super::display::sys_display_info_wrapper);

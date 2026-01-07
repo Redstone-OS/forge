@@ -41,6 +41,7 @@ extern "C" {
     fn double_fault_wrapper();
     fn breakpoint_wrapper();
     fn timer_handler(); // Definido em interrupts.s
+    fn ipi_reschedule_wrapper(); // Handler assembly para IPI Reschedule
 }
 
 // (Helpers removidos pois já existem em sched/core/cpu.rs e scheduler.rs)
@@ -71,6 +72,13 @@ pub fn init_idt() {
     idt.set_handler(33, keyboard_interrupt_handler as *const () as u64);
     idt.set_handler(44, mouse_interrupt_handler as *const () as u64);
 
+    // IPI Handlers (LAPIC - vetores altos)
+    // 0xFC (252) = Reschedule IPI - usado para acordar CPUs em halt
+    // Usa wrapper assembly para garantir funcionamento correto em todas as CPUs
+    let ipi_handler_addr = ipi_reschedule_wrapper as *const () as u64;
+    crate::kinfo!("(IDT) IPI Reschedule Handler Addr:", ipi_handler_addr);
+    idt.set_handler(0xFC, ipi_handler_addr);
+
     unsafe {
         idt.load();
     }
@@ -92,6 +100,19 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: ExceptionStackFr
     crate::drivers::input::mouse::handle_irq();
     crate::arch::x86_64::ports::outb(0xA0, 0x20); // EOI Slave
     crate::arch::x86_64::ports::outb(0x20, 0x20); // EOI Master
+}
+
+/// Handler para IPI Reschedule (vetor 0xFC)
+///
+/// Chamado quando outra CPU envia um IPI para acordar esta CPU.
+/// O IPI tira a CPU do halt() e a faz retornar ao loop do scheduler.
+/// Apenas enviamos EOI - o schedule() vai rodar automaticamente no loop.
+extern "x86-interrupt" fn ipi_reschedule_handler(_stack_frame: ExceptionStackFrame) {
+    // Apenas enviar EOI para o LAPIC
+    // NÃO logar aqui - pode causar contenção no driver serial com múltiplas CPUs
+    unsafe {
+        crate::arch::x86_64::apic::lapic::eoi();
+    }
 }
 
 // =============================================================================

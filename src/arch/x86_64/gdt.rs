@@ -173,24 +173,41 @@ impl Tss {
     }
 }
 
+/// Número máximo de CPUs suportadas
+pub const MAX_CPUS: usize = 8;
+
 // GDT global estática
-// 7 Entradas: Null, KCode, KData, UCode, UData, TSS-Low, TSS-High
-static mut GDT: [GdtEntry; 7] = [
-    GdtEntry::null(),
-    GdtEntry::kernel_code(),
-    GdtEntry::kernel_data(),
-    GdtEntry::user_data(), // Index 3: User Data (antes de Code para SYSRET!)
-    GdtEntry::user_code(), // Index 4: User Code (SYSRET: CS = Base+16)
-    GdtEntry::null(),      // TSS low (será preenchido no init)
-    GdtEntry::null(),      // TSS high (será preenchido no init)
-];
+// Entradas: Null, KCode, KData, UData, UCode, + (TSS-Low, TSS-High) * MAX_CPUS
+// Index 5 + cpu*2 = TSS_Low da CPU, Index 6 + cpu*2 = TSS_High da CPU
+const GDT_SIZE: usize = 5 + MAX_CPUS * 2; // 5 base + 2 por CPU
 
-// TSS global estática
-static mut TSS: Tss = Tss::new();
+static mut GDT: [GdtEntry; GDT_SIZE] = {
+    const NULL: GdtEntry = GdtEntry::null();
+    [NULL; GDT_SIZE]
+};
 
-// Stack Dedicado para Double Fault (IST 1)
-// Evita Triple Fault (Reset) quando o Kernel Stack estoura ou é corrompido.
-static mut DOUBLE_FAULT_STACK: [u8; 4096] = [0; 4096];
+/// Inicializa entradas base da GDT (chamado uma vez pelo BSP)
+unsafe fn init_gdt_base() {
+    GDT[0] = GdtEntry::null();
+    GDT[1] = GdtEntry::kernel_code();
+    GDT[2] = GdtEntry::kernel_data();
+    GDT[3] = GdtEntry::user_data(); // Antes de Code para SYSRET!
+    GDT[4] = GdtEntry::user_code(); // SYSRET: CS = Base+16
+                                    // Slots 5+ são para TSS de cada CPU (preenchidos em init_tss_for_cpu)
+}
+
+// Array de TSS per-CPU
+static mut TSS_ARRAY: [Tss; MAX_CPUS] = [Tss::new(); MAX_CPUS];
+
+// Stacks de Double Fault per-CPU (IST 1)
+static mut DOUBLE_FAULT_STACKS: [[u8; 4096]; MAX_CPUS] = [[0; 4096]; MAX_CPUS];
+
+/// Retorna o seletor TSS para uma CPU específica
+pub fn tss_selector_for_cpu(cpu_id: usize) -> SegmentSelector {
+    // TSS da CPU N está no index (5 + cpu_id * 2)
+    let index = 5 + (cpu_id * 2) as u16;
+    SegmentSelector::new(index, 0)
+}
 
 /// Estrutura do Ponteiro da GDT (GDTR)
 #[repr(C, packed)]
@@ -206,44 +223,36 @@ struct GdtDescriptor {
 /// Deve ser chamado apenas uma vez durante boot (BSP).
 /// Recarrega CS, DS, ES, SS, TR.
 pub unsafe fn init() {
-    // 1. Configurar entradas do TSS na GDT
-    let tss_base = (&raw const TSS) as u64;
-    let tss_limit = (size_of::<Tss>() - 1) as u32;
+    // 1. Inicializar entradas base da GDT
+    init_gdt_base();
 
-    // Configurar IST 1 (Double Fault Stack)
-    let df_stack_top = (&raw const DOUBLE_FAULT_STACK as u64) + 4096;
-    TSS.ist1 = df_stack_top;
+    // 2. Configurar TSS para CPU 0 (BSP)
+    init_tss_for_cpu(0);
 
-    GDT[5] = GdtEntry::tss_low(tss_base, tss_limit);
-    GDT[6] = GdtEntry::tss_high(tss_base);
-
-    // 2. Carregar GDT
+    // 3. Carregar GDT
     let gdtr = GdtDescriptor {
-        limit: (size_of::<[GdtEntry; 7]>() - 1) as u16,
+        limit: (size_of::<[GdtEntry; GDT_SIZE]>() - 1) as u16,
         base: (&raw const GDT) as u64,
     };
 
     core::arch::asm!("lgdt [{}]", in(reg) &gdtr, options(readonly, nostack, preserves_flags));
 
-    // 3. Recarregar Segmentos
-    // CS deve ser recarregado com um salto distante (retq hack) ou push/retq
-    // DS, ES, SS devem ser carregados com KERNEL_DATA_SEL
-
+    // 4. Recarregar Segmentos e TR
     let kcode = KERNEL_CODE_SEL.0;
     let kdata = KERNEL_DATA_SEL.0;
-    let tss_sel = TSS_SEL.0;
+    let tss_sel = tss_selector_for_cpu(0).0;
 
     core::arch::asm!(
         "push {0:r}",           // Push CS (64-bit)
-        "lea {1}, [rip + 2f]", // Load return address (Intel syntax)
+        "lea {1}, [rip + 2f]", // Load return address
         "push {1:r}",           // Push RIP
         "retfq",                // Far return to reload CS
         "2:",
-        "mov ds, {2:x}",      // Reload DS (16-bit reg name - AX/BX/etc)
-        "mov es, {2:x}",      // Reload ES
-        "mov ss, {2:x}",      // Reload SS
-        "mov ax, {3:x}",      // Load TSS selector (16-bit reg name)
-        "ltr ax",             // Load Task Register
+        "mov ds, {2:x}",       // Reload DS
+        "mov es, {2:x}",       // Reload ES
+        "mov ss, {2:x}",       // Reload SS
+        "mov ax, {3:x}",       // Load TSS selector
+        "ltr ax",              // Load Task Register
         in(reg) kcode,
         out(reg) _,
         in(reg) kdata,
@@ -252,9 +261,77 @@ pub unsafe fn init() {
     );
 }
 
-/// Define o stack pointer do kernel (RSP0) no TSS
+/// Configura o TSS de uma CPU específica na GDT
+unsafe fn init_tss_for_cpu(cpu_id: usize) {
+    if cpu_id >= MAX_CPUS {
+        return;
+    }
+
+    let tss = &raw mut TSS_ARRAY[cpu_id];
+    let tss_base = tss as u64;
+    let tss_limit = (size_of::<Tss>() - 1) as u32;
+
+    // Configurar IST 1 (Double Fault Stack) para esta CPU
+    let df_stack_top = (&raw const DOUBLE_FAULT_STACKS[cpu_id] as u64) + 4096;
+    (*tss).ist1 = df_stack_top;
+
+    // Configurar descritores TSS na GDT (cada TSS usa 2 slots)
+    let gdt_index = 5 + cpu_id * 2;
+    GDT[gdt_index] = GdtEntry::tss_low(tss_base, tss_limit);
+    GDT[gdt_index + 1] = GdtEntry::tss_high(tss_base);
+}
+
+/// Define o stack pointer do kernel (RSP0) no TSS da CPU atual
 ///
 /// Usado pelo scheduler ao trocar de tasks.
 pub unsafe fn set_kernel_stack(stack_top: u64) {
-    TSS.rsp0 = stack_top;
+    let cpu_id = crate::sched::core::per_cpu::this_cpu_id();
+    if cpu_id < MAX_CPUS {
+        TSS_ARRAY[cpu_id].rsp0 = stack_top;
+    }
+}
+
+/// Carrega a GDT do kernel em um AP (Application Processor) com TSS próprio
+///
+/// Os APs são inicializados com uma GDT temporária do trampoline.
+/// Esta função carrega a GDT do kernel, configura o TSS desta CPU,
+/// e recarrega os seletores de segmento incluindo o TR.
+///
+/// # Safety
+///
+/// Deve ser chamado durante inicialização do AP, antes de habilitar interrupções.
+pub unsafe fn init_ap(cpu_id: usize) {
+    // 1. Configurar TSS para esta CPU na GDT
+    init_tss_for_cpu(cpu_id);
+
+    // 2. Carregar GDT do kernel
+    let gdtr = GdtDescriptor {
+        limit: (size_of::<[GdtEntry; GDT_SIZE]>() - 1) as u16,
+        base: (&raw const GDT) as u64,
+    };
+
+    core::arch::asm!("lgdt [{}]", in(reg) &gdtr, options(readonly, nostack, preserves_flags));
+
+    // 3. Recarregar segmentos e carregar TSS desta CPU
+    let kcode = KERNEL_CODE_SEL.0;
+    let kdata = KERNEL_DATA_SEL.0;
+    let tss_sel = tss_selector_for_cpu(cpu_id).0;
+
+    core::arch::asm!(
+        "push {0:r}",           // Push CS (64-bit)
+        "lea {1}, [rip + 2f]", // Load return address
+        "push {1:r}",           // Push RIP
+        "retfq",                // Far return to reload CS
+        "2:",
+        "mov ds, {2:x}",       // Reload DS
+        "mov es, {2:x}",       // Reload ES
+        "mov ss, {2:x}",       // Reload SS
+        "mov ax, {3:x}",       // Load TSS selector for this CPU
+        "ltr ax",              // Load Task Register - cada CPU tem seu próprio TSS!
+        in(reg) kcode,
+        out(reg) _,
+        in(reg) kdata,
+        in(reg) tss_sel,
+        options(nostack)
+    );
 }

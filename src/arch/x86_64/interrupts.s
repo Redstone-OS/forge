@@ -6,6 +6,7 @@
 .global double_fault_wrapper
 .global breakpoint_wrapper
 .global timer_handler
+.global ipi_reschedule_wrapper
 
 .extern divide_error_handler_inner
 .extern invalid_opcode_handler_inner
@@ -221,5 +222,36 @@ timer_handler:
     swapgs
 
 .L_timer_iret:
+    POP_SCRATCH_REGS
+    iretq
+
+# =============================================================================
+# IPI RESCHEDULE HANDLER (VECTOR 0xFC)
+# =============================================================================
+# Handler que apenas faz EOI para o LAPIC.
+# O IPI apenas acorda a CPU do halt - o schedule vai rodar no loop do scheduler.
+ipi_reschedule_wrapper:
+    # Salvar todos os registradores scratch (mesma convenção dos outros handlers)
+    PUSH_SCRATCH_REGS
+    
+    # Verificar se veio de User Mode para fazer swapgs
+    # CS está em [rsp + 72 (scratch) + 8 (RIP)] = [rsp + 80]
+    test byte ptr [rsp + 80], 3
+    jz .L_ipi_no_swap_in
+    swapgs
+.L_ipi_no_swap_in:
+
+    # Enviar EOI para o LAPIC via MMIO
+    # LAPIC base via HHDM = 0xFFFF800000000000 + 0xFEE00000 = 0xFFFF8000FEE00000
+    # REG_EOI = offset 0xB0, então endereço absoluto = 0xFFFF8000FEE000B0
+    mov rax, 0xFFFF8000FEE000B0
+    mov dword ptr [rax], 0
+
+    # Verificar se precisa de swapgs na saída
+    test byte ptr [rsp + 80], 3
+    jz .L_ipi_no_swap_out
+    swapgs
+.L_ipi_no_swap_out:
+    
     POP_SCRATCH_REGS
     iretq
