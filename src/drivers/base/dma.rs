@@ -24,10 +24,9 @@
 //! - **IOMMU**: Preparado para proteção de DMA futura
 
 use super::device::DeviceId;
-// TODO: Migrar para RMM APIs quando disponíveis
-// A API antiga do PMM foi removida. Este módulo precisa ser refatorado
-// para usar crate::rmm::driver::dma::* quando estiver pronto.
 use crate::rmm::addr::PhysAddr;
+use crate::rmm::phys::{self, AllocFlags, FrameOwner};
+use crate::rmm::zone::Zone;
 use crate::sync::Spinlock;
 use alloc::vec::Vec;
 
@@ -46,23 +45,85 @@ impl core::ops::BitOr for MapFlags {
     }
 }
 
-struct FakeFrameAllocator;
-impl FakeFrameAllocator {
+struct DmaFrameAllocator;
+impl DmaFrameAllocator {
     fn allocate_frame(&self) -> Option<PhysAddr> {
-        // TODO: Usar phys::alloc
-        None
+        // Usar phys::alloc do RMM
+        phys::alloc(FrameOwner::Kernel, Zone::Dma32, AllocFlags::NO_ZERO)
     }
-    fn deallocate_frame(&self, _: PhysAddr) {
-        // TODO: Usar phys::free
+    fn deallocate_frame(&self, addr: PhysAddr) {
+        let _ = phys::free(addr, FrameOwner::Kernel);
     }
 }
 
-fn map_page_with_pmm<T>(_: u64, _: u64, _: MapFlags, _: &mut T) -> Result<(), u64> {
-    // TODO: Implementar usando RMM mapper
+/// Mapeia uma página virtual para um frame físico no DMA Pool
+fn map_dma_page(virt: u64, phys: u64) -> Result<(), u64> {
+    use crate::rmm::virt::hhdm;
+
+    // Obter CR3 do kernel
+    let cr3: u64;
+    unsafe {
+        core::arch::asm!("mov {}, cr3", out(reg) cr3);
+    }
+
+    let pml4_phys = cr3 & !0xFFF;
+    let pml4_virt = hhdm::phys_to_virt(pml4_phys) as *mut u64;
+
+    let pml4_idx = ((virt >> 39) & 0x1FF) as usize;
+    let pdpt_idx = ((virt >> 30) & 0x1FF) as usize;
+    let pd_idx = ((virt >> 21) & 0x1FF) as usize;
+    let pt_idx = ((virt >> 12) & 0x1FF) as usize;
+
+    unsafe {
+        // PML4 -> PDPT
+        let pml4_entry = pml4_virt.add(pml4_idx);
+        if (*pml4_entry) & 1 == 0 {
+            // Precisa alocar PDPT
+            if let Some(frame) = phys::alloc(FrameOwner::Kernel, Zone::Normal, AllocFlags::ZERO) {
+                *pml4_entry = frame.as_u64() | 0x3; // Present + Writable
+            } else {
+                return Err(1);
+            }
+        }
+        let pdpt_phys = (*pml4_entry) & !0xFFF;
+        let pdpt_virt = hhdm::phys_to_virt(pdpt_phys) as *mut u64;
+
+        // PDPT -> PD
+        let pdpt_entry = pdpt_virt.add(pdpt_idx);
+        if (*pdpt_entry) & 1 == 0 {
+            if let Some(frame) = phys::alloc(FrameOwner::Kernel, Zone::Normal, AllocFlags::ZERO) {
+                *pdpt_entry = frame.as_u64() | 0x3;
+            } else {
+                return Err(2);
+            }
+        }
+        let pd_phys = (*pdpt_entry) & !0xFFF;
+        let pd_virt = hhdm::phys_to_virt(pd_phys) as *mut u64;
+
+        // PD -> PT
+        let pd_entry = pd_virt.add(pd_idx);
+        if (*pd_entry) & 1 == 0 {
+            if let Some(frame) = phys::alloc(FrameOwner::Kernel, Zone::Normal, AllocFlags::ZERO) {
+                *pd_entry = frame.as_u64() | 0x3;
+            } else {
+                return Err(3);
+            }
+        }
+        let pt_phys = (*pd_entry) & !0xFFF;
+        let pt_virt = hhdm::phys_to_virt(pt_phys) as *mut u64;
+
+        // PT -> Page (Present + Writable + No-Cache)
+        let pt_entry = pt_virt.add(pt_idx);
+        *pt_entry = phys | 0x13; // Present + Writable + Write-Through (para DMA)
+
+        // Invalidar TLB para essa página
+        core::arch::asm!("invlpg [{}]", in(reg) virt, options(nostack, preserves_flags));
+    }
+
     Ok(())
 }
 
-static FRAME_ALLOCATOR: Spinlock<FakeFrameAllocator> = Spinlock::new(FakeFrameAllocator);
+static FRAME_ALLOCATOR: Spinlock<DmaFrameAllocator> = Spinlock::new(DmaFrameAllocator);
 
 // =============================================================================
 // CONSTANTES DO DMA POOL
@@ -288,10 +349,8 @@ pub fn alloc(size: usize, owner: DeviceId, direction: DmaDirection) -> Option<Dm
     for (i, &frame) in frames.iter().enumerate() {
         let page_virt = virt_start + (i as u64 * PAGE_SIZE as u64);
 
-        // Mapeia com flags: Writable, No-Execute, No-Cache
-        let flags = MapFlags::WRITABLE | MapFlags::NO_EXECUTE | MapFlags::NO_CACHE;
-
-        if let Err(e) = map_page_with_pmm(page_virt, frame, flags, &mut pmm) {
+        // Mapeia a página usando nossa função de mapeamento DMA
+        if let Err(e) = map_dma_page(page_virt, frame) {
             crate::kerror!("(DMA) Falha ao mapear página DMA:", e);
             // Libera frames alocados
             for &f in &frames {
