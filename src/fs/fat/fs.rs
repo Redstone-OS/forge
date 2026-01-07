@@ -76,14 +76,6 @@ impl FatFs {
     // --- Helpers de Cache de Setor para evitar alocações no stack ---
 
     fn read_sector(&self, sector: u64, buf: &mut [u8; 512]) -> Result<(), FsError> {
-        // Log a cada 1000 setores para não poluir muito
-        static mut SECTOR_COUNT: u64 = 0;
-        unsafe {
-            SECTOR_COUNT += 1;
-            if SECTOR_COUNT % 1000 == 0 {
-                crate::ktrace!("(FAT) sectors lidos:", SECTOR_COUNT);
-            }
-        }
         self.device
             .read_block(sector, buf)
             .map_err(|_| FsError::IoError)
@@ -210,52 +202,47 @@ impl FatFs {
     }
 
     fn read_file_data(&self, first_cluster: u32, size: u32) -> Option<Vec<u8>> {
-        crate::ktrace!("(FAT) read_file_data: cluster=", first_cluster as u64);
-        crate::ktrace!("(FAT) read_file_data: size=", size as u64);
-
-        crate::ktrace!("(FAT) Alocando buffer...");
+        // Pre-alocar buffer para todo o arquivo
         let mut data = Vec::with_capacity(size as usize);
-        crate::ktrace!("(FAT) Buffer alocado OK");
 
-        let sectors_per_cluster = self.bpb.sectors_per_cluster as u64;
-        let mut sector_buf = [0u8; 512];
+        let cluster_size = self.bpb.cluster_size();
+        let sectors_per_cluster = self.bpb.sectors_per_cluster as usize;
+
+        // Buffer reutilizável para um cluster inteiro
+        let mut cluster_buf = alloc::vec![0u8; cluster_size];
+
         let mut remaining = size as usize;
         let mut cluster = first_cluster;
-        let mut cluster_count = 0u32;
 
-        loop {
-            cluster_count += 1;
-            if cluster_count % 100 == 0 {
-                crate::ktrace!("(FAT) clusters lidos:", cluster_count as u64);
-            }
-
+        while remaining > 0 {
+            // Ler cluster inteiro de uma vez usando read_blocks (multi-setor)
             let first_sector = self.bpb.cluster_to_sector(cluster) + self.partition_offset;
-            for i in 0..sectors_per_cluster {
-                if self.read_sector(first_sector + i, &mut sector_buf).is_err() {
-                    crate::kerror!("(FAT) read_sector falhou!");
-                    return None;
-                }
-                let to_copy = remaining.min(512);
-                data.extend_from_slice(&sector_buf[..to_copy]);
-                remaining -= to_copy;
-                if remaining == 0 {
-                    crate::ktrace!("(FAT) Leitura completa!");
-                    break;
-                }
+
+            // Usar read_blocks para leitura otimizada
+            if self
+                .device
+                .read_blocks(first_sector, sectors_per_cluster, &mut cluster_buf)
+                .is_err()
+            {
+                return None;
             }
+
+            // Copiar apenas o necessário
+            let to_copy = remaining.min(cluster_size);
+            data.extend_from_slice(&cluster_buf[..to_copy]);
+            remaining -= to_copy;
 
             if remaining == 0 {
                 break;
             }
+
+            // Próximo cluster na cadeia
             match self.next_cluster(cluster) {
                 Some(next) => cluster = next,
                 None => break,
             }
         }
-        crate::ktrace!(
-            "(FAT) read_file_data: total clusters=",
-            cluster_count as u64
-        );
+
         Some(data)
     }
 

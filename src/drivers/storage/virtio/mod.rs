@@ -379,11 +379,21 @@ impl VirtioDisk {
         let vq_dma = vq_guard.as_ref().ok_or(BlockError::NotReady)?;
         let req_dma = req_guard.as_mut().ok_or(BlockError::NotReady)?;
 
+        // Calcular quantos setores vamos ler/escrever
+        let num_sectors = (buf.len() / SECTOR_SIZE).max(1);
+        let data_size = num_sectors * SECTOR_SIZE;
+
+        // Limitar ao espaço disponível no buffer DMA (4096 - 16 header - 1 status = 4079)
+        // Usamos no máximo 7 setores (3584 bytes) para garantir espaço
+        let max_sectors = 7;
+        let num_sectors = num_sectors.min(max_sectors);
+        let data_size = num_sectors * SECTOR_SIZE;
+
         // Preparar header da requisição no buffer DMA
-        // Layout: [header: 16 bytes][data: 512 bytes][status: 1 byte]
+        // Layout: [header: 16 bytes][data: N*512 bytes][status: 1 byte]
         let header_offset = 0u64;
         let data_offset = 16u64;
-        let status_offset = 16u64 + 512u64;
+        let status_offset = 16u64 + data_size as u64;
 
         let req_ptr = (req_dma.virt + header_offset) as *mut VirtioBlkReq;
         unsafe {
@@ -400,7 +410,7 @@ impl VirtioDisk {
         let data_ptr = (req_dma.virt + data_offset) as *mut u8;
         if req_type == VIRTIO_BLK_T_OUT {
             unsafe {
-                core::ptr::copy_nonoverlapping(buf.as_ptr(), data_ptr, buf.len().min(512));
+                core::ptr::copy_nonoverlapping(buf.as_ptr(), data_ptr, data_size.min(buf.len()));
             }
         }
 
@@ -426,7 +436,7 @@ impl VirtioDisk {
         unsafe {
             let d = desc_ptr.add(((desc_base + 1) % state.queue_size) as usize);
             (*d).addr = req_dma.phys + data_offset;
-            (*d).len = 512; // Sempre um setor
+            (*d).len = data_size as u32; // Tamanho real dos dados
             (*d).flags = data_flags;
             (*d).next = (desc_base + 2) % state.queue_size;
         }
@@ -502,8 +512,9 @@ impl VirtioDisk {
 
         // Para leitura: copiar dados do DMA buffer para o buf do caller
         if req_type == VIRTIO_BLK_T_IN {
+            let copy_size = data_size.min(buf.len());
             unsafe {
-                core::ptr::copy_nonoverlapping(data_ptr, buf.as_mut_ptr(), buf.len().min(512));
+                core::ptr::copy_nonoverlapping(data_ptr, buf.as_mut_ptr(), copy_size);
             }
         }
 
@@ -572,9 +583,39 @@ impl BlockDevice for VirtioDisk {
             writable: true,
             flush: true,
             discard: false,
-            max_transfer_blocks: 1, // TODO: Aumentar quando DMA suportar buffers maiores
+            max_transfer_blocks: 7, // Até 7 setores por requisição
             ..Default::default()
         }
+    }
+
+    /// Leitura otimizada multi-setor
+    fn read_blocks(&self, lba: u64, count: usize, buf: &mut [u8]) -> Result<(), BlockError> {
+        let bs = self.block_size();
+        if buf.len() < count * bs {
+            return Err(BlockError::InvalidBuffer);
+        }
+
+        let mut offset = 0;
+        let mut sector = lba;
+        let mut remaining = count;
+
+        while remaining > 0 {
+            // Ler até 7 setores por vez
+            let batch = remaining.min(7);
+            let batch_size = batch * bs;
+
+            self.do_request(
+                VIRTIO_BLK_T_IN,
+                sector,
+                &mut buf[offset..offset + batch_size],
+            )?;
+
+            offset += batch_size;
+            sector += batch as u64;
+            remaining -= batch;
+        }
+
+        Ok(())
     }
 
     fn get_stats(&self) -> StorageStats {

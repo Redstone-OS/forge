@@ -359,6 +359,82 @@ impl BlockDevice for AtaDisk {
         Err(BlockError::NotReady)
     }
 
+    /// Leitura otimizada multi-setor (até 16 setores por comando)
+    fn read_blocks(&self, lba: u64, count: usize, buf: &mut [u8]) -> Result<(), BlockError> {
+        if buf.len() < count * 512 {
+            return Err(BlockError::InvalidBuffer);
+        }
+        if count == 0 {
+            return Ok(());
+        }
+
+        // Limitar a 16 setores por comando para segurança
+        let max_sectors = 16usize;
+        let mut offset = 0;
+        let mut current_lba = lba;
+        let mut remaining = count;
+
+        while remaining > 0 {
+            let batch = remaining.min(max_sectors);
+
+            {
+                let state = self.state.lock();
+                if !state.enabled {
+                    return Err(BlockError::NotReady);
+                }
+                if current_lba + batch as u64 > state.capacity_sectors {
+                    return Err(BlockError::InvalidLba);
+                }
+            }
+
+            self.wait_not_busy()?;
+
+            // Selecionar drive + LBA bits 24-27
+            let drive_sel = 0xE0 | ((self.drive & 1) << 4) | ((current_lba >> 24) as u8 & 0x0F);
+            port_write_u8(self.base + ATA_REG_HDDEVSEL, drive_sel);
+
+            // Delay mínimo
+            for _ in 0..4 {
+                let _ = port_read_u8(self.ctrl);
+            }
+
+            // Configurar LBA e sector count
+            port_write_u8(self.base + ATA_REG_SECCOUNT, batch as u8);
+            port_write_u8(self.base + ATA_REG_LBA0, (current_lba & 0xFF) as u8);
+            port_write_u8(self.base + ATA_REG_LBA1, ((current_lba >> 8) & 0xFF) as u8);
+            port_write_u8(self.base + ATA_REG_LBA2, ((current_lba >> 16) & 0xFF) as u8);
+
+            // Enviar comando READ PIO
+            port_write_u8(self.base + ATA_REG_COMMAND, ATA_CMD_READ_PIO);
+
+            // Ler cada setor
+            for s in 0..batch {
+                self.wait_drq()?;
+
+                // Ler 256 words (512 bytes)
+                let sector_offset = offset + s * 512;
+                let words = buf[sector_offset..].as_mut_ptr() as *mut u16;
+                for i in 0..256 {
+                    unsafe {
+                        *words.add(i) = port_read_u16(self.base + ATA_REG_DATA);
+                    }
+                }
+            }
+
+            // Atualizar stats
+            let mut state = self.state.lock();
+            state.stats.blocks_read += batch as u64;
+            state.stats.bytes_read += (batch * 512) as u64;
+            drop(state);
+
+            offset += batch * 512;
+            current_lba += batch as u64;
+            remaining -= batch;
+        }
+
+        Ok(())
+    }
+
     fn get_stats(&self) -> StorageStats {
         self.state.lock().stats
     }
