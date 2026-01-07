@@ -12,6 +12,12 @@
 //!   controle da CPU em intervalos regulares.
 use crate::arch::x86_64::idt::IDT;
 
+// Funções externas do scheduler para preempção
+extern "C" {
+    fn should_reschedule() -> bool;
+    fn clear_need_resched();
+}
+
 /// Stack Frame pushed by CPU on exception
 #[repr(C)]
 #[derive(Debug)]
@@ -96,7 +102,10 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: ExceptionStackFr
 ///
 /// Este handler é responsável por:
 /// 1. Incrementar contador de ticks do sistema (jiffies).
-/// 2. Enviar EOI para o PIC.
+/// 2. Notificar o scheduler (time-slicing).
+/// 3. Verificar tasks para acordar.
+/// 4. Preemptar se necessário.
+/// 5. Enviar EOI para o PIC.
 #[no_mangle]
 pub extern "C" fn timer_handler_inner() {
     // 1. Incrementar contador de jiffies (usado para sleep, timeouts, etc)
@@ -108,8 +117,16 @@ pub extern "C" fn timer_handler_inner() {
     // 3. Verificar se há tasks para acordar na SleepQueue
     crate::sched::core::sleep_queue::check_sleep_queue();
 
-    // 4. Enviar EOI para o PIC (Master = 0x20)
+    // 4. Enviar EOI para o PIC (Master = 0x20) - ANTES de schedule()
     crate::arch::x86_64::ports::outb(0x20, 0x20);
+
+    // 5. Verificar se preempção é necessária e chamar scheduler
+    unsafe {
+        if should_reschedule() {
+            clear_need_resched();
+            crate::sched::core::scheduler::schedule();
+        }
+    }
 }
 
 /// Inicializa e remapeia o PIC (Programmable Interrupt Controller) 8259

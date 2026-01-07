@@ -76,6 +76,14 @@ impl FatFs {
     // --- Helpers de Cache de Setor para evitar alocações no stack ---
 
     fn read_sector(&self, sector: u64, buf: &mut [u8; 512]) -> Result<(), FsError> {
+        // Log a cada 1000 setores para não poluir muito
+        static mut SECTOR_COUNT: u64 = 0;
+        unsafe {
+            SECTOR_COUNT += 1;
+            if SECTOR_COUNT % 1000 == 0 {
+                crate::ktrace!("(FAT) sectors lidos:", SECTOR_COUNT);
+            }
+        }
         self.device
             .read_block(sector, buf)
             .map_err(|_| FsError::IoError)
@@ -202,22 +210,36 @@ impl FatFs {
     }
 
     fn read_file_data(&self, first_cluster: u32, size: u32) -> Option<Vec<u8>> {
+        crate::ktrace!("(FAT) read_file_data: cluster=", first_cluster as u64);
+        crate::ktrace!("(FAT) read_file_data: size=", size as u64);
+
+        crate::ktrace!("(FAT) Alocando buffer...");
         let mut data = Vec::with_capacity(size as usize);
+        crate::ktrace!("(FAT) Buffer alocado OK");
+
         let sectors_per_cluster = self.bpb.sectors_per_cluster as u64;
         let mut sector_buf = [0u8; 512];
         let mut remaining = size as usize;
         let mut cluster = first_cluster;
+        let mut cluster_count = 0u32;
 
         loop {
+            cluster_count += 1;
+            if cluster_count % 100 == 0 {
+                crate::ktrace!("(FAT) clusters lidos:", cluster_count as u64);
+            }
+
             let first_sector = self.bpb.cluster_to_sector(cluster) + self.partition_offset;
             for i in 0..sectors_per_cluster {
                 if self.read_sector(first_sector + i, &mut sector_buf).is_err() {
+                    crate::kerror!("(FAT) read_sector falhou!");
                     return None;
                 }
                 let to_copy = remaining.min(512);
                 data.extend_from_slice(&sector_buf[..to_copy]);
                 remaining -= to_copy;
                 if remaining == 0 {
+                    crate::ktrace!("(FAT) Leitura completa!");
                     break;
                 }
             }
@@ -230,6 +252,10 @@ impl FatFs {
                 None => break,
             }
         }
+        crate::ktrace!(
+            "(FAT) read_file_data: total clusters=",
+            cluster_count as u64
+        );
         Some(data)
     }
 

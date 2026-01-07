@@ -98,6 +98,7 @@ pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pi
     crate::ktrace!("(Spawn) ELF loaded, entry:", entry_point.as_u64());
 
     // 7. Mapear User Stack
+    crate::ktrace!("(Spawn) Mapeando user stack...");
     let ustack_size = USER_STACK_SIZE as usize;
     let ustack_start = USER_STACK_TOP - ustack_size as u64;
 
@@ -114,8 +115,10 @@ pub fn spawn(path: &str, parent_id: Option<crate::sys::types::Tid>) -> Result<Pi
     task.context.rip = rip;
 
     // 9. Enfileirar Task
+    crate::ktrace!("(Spawn) Enfileirando task...");
     task.set_ready();
     crate::sched::core::enqueue(Box::pin(task));
+    crate::ktrace!("(Spawn) Task enfileirada OK");
 
     crate::kinfo!("(Spawn) Process spawned successfully, PID:", pid_u64);
     Ok(pid)

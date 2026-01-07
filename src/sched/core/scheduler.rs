@@ -142,7 +142,10 @@ where
 
 /// Adiciona task à runqueue da CPU atual
 pub fn enqueue(task: Pin<Box<Task>>) {
-    if task.tid.as_u32() == 0 || task.tid.as_u32() >= 0x80000000 {
+    let tid = task.tid.as_u32();
+    crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
+
+    if tid == 0 || tid >= 0x80000000 {
         crate::kerror!("(Sched) Tentativa de enfileirar idle task! Ignorando.");
         return;
     }
@@ -152,6 +155,7 @@ pub fn enqueue(task: Pin<Box<Task>>) {
 
     if let Some(ref mut cpu_data) = *guard {
         cpu_data.enqueue(task);
+        crate::ktrace!("(Sched) enqueue: OK na CPU", cpu_id as u64);
     } else {
         crate::kerror!("(Sched) CPU", cpu_id as u64, "não inicializada!");
     }
