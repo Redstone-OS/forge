@@ -85,15 +85,28 @@ fn load_segment(
     };
 
     // 1. Registrar VMA no Address Space
+    // Alinhar start e size a página
+    let aligned_start = VirtAddr::new(start_page);
+    let aligned_size = (num_pages * PAGE_SIZE) as usize;
+
     {
         let mut as_guard = aspace.lock();
-        match as_guard.map_region(segment.vaddr, segment.mem_size, segment.protection, intent) {
-            Ok(_) => {}
+        match as_guard.map_region(aligned_start, aligned_size, segment.protection, intent) {
+            Ok(_) => {
+                crate::ktrace!("(ELF)   VMA registered");
+            }
             Err(crate::rmm::error::RmmError::InvalidAddress) => {
                 // Sobreposição de segmentos adjacentes - OK
-                crate::ktrace!("(ELF) Segment overlap, merging");
+                crate::ktrace!("(ELF)   VMA overlap, merging");
             }
-            Err(_) => return Err(ExecError::MappingFailed),
+            Err(crate::rmm::error::RmmError::AlreadyMapped) => {
+                // Overlap com VMA já existente - pode ser segmento adjacente
+                crate::ktrace!("(ELF)   VMA overlap (already mapped)");
+            }
+            Err(e) => {
+                crate::kerror!("(ELF)   VMA failed!");
+                return Err(ExecError::MappingFailed);
+            }
         }
     }
 
@@ -112,17 +125,27 @@ fn load_segment(
             Zone::Normal,
             AllocFlags::ZERO,
         )
-        .ok_or(ExecError::OutOfMemory)?;
+        .ok_or_else(|| {
+            crate::kerror!("(ELF)   OOM at page", page_idx as u64);
+            ExecError::OutOfMemory
+        })?;
 
         // Mapear no address space alvo
-        map_page_in_target(target_cr3, vaddr, frame.as_u64(), segment.protection)?;
+        if let Err(e) = map_page_in_target(target_cr3, vaddr, frame.as_u64(), segment.protection) {
+            crate::kerror!("(ELF)   Map failed at", vaddr);
+            return Err(e);
+        }
     }
+    crate::ktrace!("(ELF)   Pages mapped");
 
     // 3. Copiar dados do segmento
     if segment.file_size > 0 {
+        crate::ktrace!("(ELF)   Copying data, size:", segment.file_size as u64);
         copy_segment_data(segment, data, target_cr3)?;
+        crate::ktrace!("(ELF)   Data copied");
     }
 
+    crate::ktrace!("(ELF)   Segment done");
     Ok(())
 }
 

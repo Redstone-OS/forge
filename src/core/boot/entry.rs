@@ -113,8 +113,12 @@ pub extern "C" fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     // 8. Inicialização do Userspace (Init Process)
 
-    // 8.5. Inicializar Idle Task
-    // A idle task fica em IDLE_TASK (fallback permanente) e NÃO em CURRENT
+    // 8.1. Inicializar Scheduler (cria CPUS[0])
+    crate::kinfo!("'Inicializando Scheduler'");
+    crate::sched::init();
+
+    // 8.5. Inicializar Idle Task (precisa de CPUS[0] já inicializada)
+    // A idle task fica em CPUS[cpu_id].idle_task
     crate::kinfo!("'Inicializando Idle Task'");
     crate::sched::core::idle::init_idle_task();
 
