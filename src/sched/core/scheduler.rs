@@ -159,8 +159,6 @@ pub fn enqueue(task: Pin<Box<Task>>) {
 
         if let Some(ref mut cpu_data) = *guard {
             cpu_data.enqueue(task);
-            crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
-            crate::ktrace!("(Sched) enqueue: CPU=", target_cpu as u64);
             Some(target_cpu)
         } else {
             drop(guard);
@@ -168,8 +166,6 @@ pub fn enqueue(task: Pin<Box<Task>>) {
             let mut guard0 = CPUS[0].lock();
             if let Some(ref mut cpu_data) = *guard0 {
                 cpu_data.enqueue(task);
-                crate::ktrace!("(Sched) enqueue: TID=", tid as u64);
-                crate::ktrace!("(Sched) enqueue: fallback CPU 0");
                 Some(0)
             } else {
                 crate::kerror!("(Sched) Nenhuma CPU inicializada!");
@@ -184,13 +180,10 @@ pub fn enqueue(task: Pin<Box<Task>>) {
         if cpu != current_cpu {
             // Obter APIC ID da CPU destino e enviar IPI Reschedule
             if let Some(cpu_info) = crate::core::smp::topology::get().get(cpu) {
-                crate::ktrace!("(Sched) ANTES send_reschedule");
                 crate::core::smp::ipi::send_reschedule(cpu_info.apic_id);
-                crate::ktrace!("(Sched) DEPOIS send_reschedule");
             }
         }
     }
-    crate::ktrace!("(Sched) enqueue retornando");
 }
 
 /// Seleciona próxima task para executar (da CPU atual)

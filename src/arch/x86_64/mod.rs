@@ -23,6 +23,11 @@ pub use cpu::Cpu;
 /// Deve ser chamado no início do boot, single-core.
 pub unsafe fn init_basics() {
     gdt::init();
+
+    // Habilitar SSE/FPU para o BSP
+    // Necessário para processos que usam instruções SIMD
+    cpu::Cpu::enable_sse();
+
     interrupts::init_idt();
     interrupts::init_pics(); // Remapear PIC para 32-47
 

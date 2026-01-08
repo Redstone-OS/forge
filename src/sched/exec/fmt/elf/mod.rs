@@ -76,8 +76,8 @@ fn load_segment(
     let end_page = (end_addr + page_size - 1) & !(page_size - 1);
     let num_pages = ((end_page - start_page) / page_size) as usize;
 
-    crate::ktrace!("(ELF) Loading segment at:", segment.vaddr.as_u64());
-    crate::ktrace!("(ELF)   pages:", num_pages as u64);
+    // crate::ktrace!("(ELF) Loading segment at:", segment.vaddr.as_u64());
+    // crate::ktrace!("(ELF)   pages:", num_pages as u64);
 
     // Determinar intent baseado nas flags
     let intent = if segment.flags & structs::PF_X != 0 {
@@ -97,7 +97,7 @@ fn load_segment(
         let mut as_guard = aspace.lock();
         match as_guard.map_region(aligned_start, aligned_size, segment.protection, intent) {
             Ok(_) => {
-                crate::ktrace!("(ELF)   VMA registered");
+                // crate::ktrace!("(ELF)   VMA registered");
             }
             Err(crate::rmm::error::RmmError::InvalidAddress) => {
                 // Sobreposição de segmentos adjacentes - OK

@@ -333,7 +333,14 @@ pub extern "C" fn ap_entry(_logical_id: u32) -> ! {
         crate::arch::x86_64::idt::IDT.load();
     }
 
-    // 6. Inicializar LAPIC local
+    // 6. Inicializar MSRs de Syscall para esta CPU
+    // CRÍTICO: Sem isso, a instrução `syscall` causa #UD (Invalid Opcode)
+    // porque EFER.SCE não está habilitado e LSTAR/STAR/FMASK não estão configurados.
+    unsafe {
+        crate::arch::x86_64::syscall::init();
+    }
+
+    // 7. Inicializar LAPIC local
     unsafe {
         lapic::init();
     }

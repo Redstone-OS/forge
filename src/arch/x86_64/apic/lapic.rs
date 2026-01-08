@@ -193,14 +193,10 @@ pub unsafe fn send_sipi(apic_id: u32, vector: u8) {
 ///
 /// - O vetor deve corresponder a um handler instalado na IDT
 pub unsafe fn send_ipi(apic_id: u32, vector: u8) {
-    crate::ktrace!("(IPI) 1-wait_icr_idle");
     wait_icr_idle();
-    crate::ktrace!("(IPI) 2-write ICR_HIGH");
     write(REG_ICR_HIGH, apic_id << 24);
-    crate::ktrace!("(IPI) 3-write ICR_LOW");
-    // Fixed delivery edge-triggered (sem LEVEL_ASSERT para edge mode)
+    // Fixed delivery edge-triggered
     write(REG_ICR_LOW, DELIVERY_FIXED | (vector as u32));
-    crate::ktrace!("(IPI) 4-done");
 }
 
 // =============================================================================
@@ -240,11 +236,8 @@ unsafe fn read(offset: usize) -> u32 {
 
 #[inline]
 unsafe fn write(offset: usize, value: u32) {
-    crate::ktrace!("(LAPIC) write offset");
     let base = lapic_base();
-    crate::ktrace!("(LAPIC) base");
     let addr = base + (offset as u64);
-    crate::ktrace!("(LAPIC) addr");
     // Assembly puro - escreve diretamente no endereço MMIO
     core::arch::asm!(
         "mov dword ptr [{0}], {1:e}",
@@ -252,5 +245,4 @@ unsafe fn write(offset: usize, value: u32) {
         in(reg) value,
         options(nostack, preserves_flags)
     );
-    crate::ktrace!("(LAPIC) done");
 }

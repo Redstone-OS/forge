@@ -182,7 +182,6 @@ impl FatFs {
             let is_last = components.peek().is_none();
 
             if let Some(entry) = self.find_entry(current_cluster, component) {
-                crate::ktrace!("(FAT) componente encontrado:", component);
                 if is_last {
                     if entry.is_directory() {
                         return None;
@@ -247,7 +246,6 @@ impl FatFs {
     }
 
     fn find_entry(&self, dir_cluster: u32, name: &str) -> Option<DirEntry> {
-        crate::ktrace!("(FAT) find_entry buscando:", name);
         if dir_cluster == 0 && self.fat_type != FatType::Fat32 {
             return self.find_in_root_dir(name);
         }
@@ -277,8 +275,6 @@ impl FatFs {
                     if let Some(entry) = DirEntry::parse(entry_data) {
                         if Self::names_equal(&entry.name, name) {
                             return Some(entry);
-                        } else {
-                            crate::ktrace!("(FAT) entrada no disco:", entry.name.as_str());
                         }
                     }
                 }
@@ -309,9 +305,6 @@ impl FatFs {
                 if let Some(entry) = DirEntry::parse(&sector_buf[j * 32..(j + 1) * 32]) {
                     if Self::names_equal(&entry.name, name) {
                         return Some(entry);
-                    } else {
-                        // Log agressivo para ver o que tem na pasta
-                        crate::kinfo!("(FAT) olhando entrada:", entry.name.as_str());
                     }
                 }
             }
