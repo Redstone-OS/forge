@@ -483,6 +483,6 @@ impl SoundDevice for IntelHdaDevice {
 
 /// Registra o driver Intel HDA no DriverManager.
 pub fn init() {
-    crate::kinfo!("(Intel HDA) Registrando driver...");
+    // crate::kinfo!("(Intel HDA) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(IntelHdaDriver));
 }

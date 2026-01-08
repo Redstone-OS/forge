@@ -470,6 +470,6 @@ impl SoundDevice for Ac97Device {
 
 /// Registra o driver AC'97 no DriverManager.
 pub fn init() {
-    crate::kinfo!("(AC97) Registrando driver...");
+    // crate::kinfo!("(AC97) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(Ac97Driver));
 }

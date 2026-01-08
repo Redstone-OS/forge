@@ -15,7 +15,7 @@ pub mod nvidia;
 
 /// Inicializa todos os drivers de GPU.
 pub fn init() {
-    crate::kinfo!("(GPU) Registrando drivers de GPU...");
+    // crate::kinfo!("(GPU) Registrando drivers de GPU...");
 
     // Ordem de prioridade: específicos primeiro, genérico por último
     intel::init();

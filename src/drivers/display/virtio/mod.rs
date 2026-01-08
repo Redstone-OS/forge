@@ -197,6 +197,6 @@ impl DisplayDevice for VirtioGpuDevice {
 
 /// Registra o driver VirtIO-GPU.
 pub fn init() {
-    crate::kinfo!("(VirtIO-GPU) Registrando driver...");
+    // crate::kinfo!("(VirtIO-GPU) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(VirtioGpuDriver));
 }

@@ -86,7 +86,7 @@ impl Driver for DmaDriver {
 
 /// Inicializa o subsistema DMA.
 pub fn init() {
-    crate::kinfo!("(DMA) Registrando driver...");
+    // crate::kinfo!("(DMA) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(DmaDriver) as Arc<dyn Driver>);
 }
 

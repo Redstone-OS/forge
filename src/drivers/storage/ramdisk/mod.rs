@@ -155,7 +155,7 @@ impl BlockDevice for RamdiskDevice {
 /// **Nota**: O Ramdisk é um dispositivo virtual, não descoberto via hardware.
 /// Por isso o driver retorna NotSupported em probe() e nós criamos o device aqui.
 pub fn init() {
-    crate::kinfo!("(Ramdisk) Registrando driver...");
+    // crate::kinfo!("(Ramdisk) Registrando driver...");
     let driver = RamdiskDriver::new(DEFAULT_SIZE_MB);
     crate::drivers::base::register_driver(Arc::new(driver));
 

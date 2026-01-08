@@ -229,7 +229,7 @@ pub fn is_initialized() -> bool {
 /// 4. Se compatível, anexa driver ao dispositivo
 pub fn register_driver(driver: Arc<dyn Driver>) {
     let driver_name = driver.name();
-    crate::kinfo!("(RDS) Registrando driver:", driver_name);
+    // crate::kinfo!("(RDS) Registrando driver:", driver_name);
 
     let mut mgr = DRIVER_MANAGER.lock();
 

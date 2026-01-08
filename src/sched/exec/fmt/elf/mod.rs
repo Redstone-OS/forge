@@ -140,16 +140,16 @@ fn load_segment(
             return Err(e);
         }
     }
-    crate::ktrace!("(ELF)   Pages mapped");
+    // crate::ktrace!("(ELF)   Pages mapped");
 
     // 3. Copiar dados do segmento
     if segment.file_size > 0 {
-        crate::ktrace!("(ELF)   Copying data, size:", segment.file_size as u64);
+        // crate::ktrace!("(ELF)   Copying data, size:", segment.file_size as u64);
         copy_segment_data(segment, data, target_cr3)?;
-        crate::ktrace!("(ELF)   Data copied");
+        // crate::ktrace!("(ELF)   Data copied");
     }
 
-    crate::ktrace!("(ELF)   Segment done");
+    // crate::ktrace!("(ELF)   Segment done");
     Ok(())
 }
 

@@ -147,6 +147,6 @@ impl BlockDevice for NvmeDisk {
 
 /// Registra o driver NVMe.
 pub fn init() {
-    crate::kinfo!("(NVMe) Registrando driver...");
+    // crate::kinfo!("(NVMe) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(NvmeDriver));
 }

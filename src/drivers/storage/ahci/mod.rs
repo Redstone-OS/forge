@@ -142,6 +142,6 @@ impl BlockDevice for AhciDisk {
 
 /// Registra o driver AHCI.
 pub fn init() {
-    crate::kinfo!("(AHCI) Registrando driver...");
+    // crate::kinfo!("(AHCI) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(AhciDriver));
 }

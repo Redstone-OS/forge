@@ -202,7 +202,7 @@ impl SoundDevice for VirtioSoundDevice {
 }
 
 pub fn init() {
-    crate::kinfo!("(VirtIO Sound) Registrando driver...");
+    // crate::kinfo!("(VirtIO Sound) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(VirtioSoundDriver));
 }
 

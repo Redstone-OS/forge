@@ -287,6 +287,6 @@ impl DisplayDevice for BochsDevice {
 
 /// Registra o driver Bochs.
 pub fn init() {
-    crate::kinfo!("(Bochs BGA) Registrando driver...");
+    // crate::kinfo!("(Bochs BGA) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(BochsDriver));
 }

@@ -689,6 +689,6 @@ fn align_up(value: usize, align: usize) -> usize {
 ///
 /// Registra o driver no RDS. O matching com dispositivos é automático.
 pub fn init() {
-    crate::kinfo!("(VirtIO-Blk) Registrando driver...");
+    // crate::kinfo!("(VirtIO-Blk) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(VirtioBlkDriver));
 }

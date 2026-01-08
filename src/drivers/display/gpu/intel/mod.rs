@@ -45,6 +45,6 @@ pub use device::IntelDevice;
 ///
 /// Registra o driver no RDS. O matching com dispositivos é automático.
 pub fn init() {
-    crate::kdebug!("(Intel GPU) Registrando driver...");
+    // crate::kdebug!("(Intel GPU) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(pci::IntelGpuDriver));
 }

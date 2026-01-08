@@ -442,6 +442,6 @@ impl BlockDevice for AtaDisk {
 
 /// Registra o driver ATA.
 pub fn init() {
-    crate::kinfo!("(ATA) Registrando driver...");
+    // crate::kinfo!("(ATA) Registrando driver...");
     crate::drivers::base::register_driver(Arc::new(AtaDriver));
 }
