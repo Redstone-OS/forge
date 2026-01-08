@@ -16,267 +16,302 @@
 //!
 //! Logs são simples e diretos - sem formatação complexa para manter
 //! o overhead mínimo. Valores numéricos são impressos em hexadecimal.
+//!
+//! ## Atomicidade
+//!
+//! Cada mensagem de log é escrita com um único lock, evitando interleaving
+//! quando múltiplas CPUs fazem log simultaneamente.
+
+use crate::drivers::comm::serial::SerialPort;
 
 // =============================================================================
-// SERIAL PRINT TRAIT
+// SERIAL PRINT TRAIT (Para uso com lock)
 // =============================================================================
 
-/// Trait para tipos que podem ser impressos via serial.
-pub trait SerialPrint {
-    fn serial_print(&self);
+/// Trait para tipos que podem ser impressos diretamente em um SerialPort.
+///
+/// Usado pelas macros de log para escrever valores com o lock mantido.
+pub trait SerialPrintTo {
+    fn serial_print_to(&self, serial: &mut SerialPort);
 }
 
 // Implementações para tipos numéricos
 
-impl SerialPrint for u8 {
+impl SerialPrintTo for u8 {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_hex(*self as u64);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_hex(*self as u64);
     }
 }
 
-impl SerialPrint for u16 {
+impl SerialPrintTo for u16 {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_hex(*self as u64);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_hex(*self as u64);
     }
 }
 
-impl SerialPrint for u32 {
+impl SerialPrintTo for u32 {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_hex(*self as u64);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_hex(*self as u64);
     }
 }
 
-impl SerialPrint for u64 {
+impl SerialPrintTo for u64 {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_hex(*self);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_hex(*self);
     }
 }
 
-impl SerialPrint for usize {
+impl SerialPrintTo for usize {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_hex(*self as u64);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_hex(*self as u64);
     }
 }
 
-impl SerialPrint for i8 {
+impl SerialPrintTo for i8 {
     #[inline]
-    fn serial_print(&self) {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         if *self < 0 {
-            crate::drivers::comm::serial::write_byte(b'-');
-            crate::drivers::comm::serial::write_hex((-*self) as u64);
+            s.write_byte(b'-');
+            s.write_hex((-*self) as u64);
         } else {
-            crate::drivers::comm::serial::write_hex(*self as u64);
+            s.write_hex(*self as u64);
         }
     }
 }
 
-impl SerialPrint for i16 {
+impl SerialPrintTo for i16 {
     #[inline]
-    fn serial_print(&self) {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         if *self < 0 {
-            crate::drivers::comm::serial::write_byte(b'-');
-            crate::drivers::comm::serial::write_hex((-*self) as u64);
+            s.write_byte(b'-');
+            s.write_hex((-*self) as u64);
         } else {
-            crate::drivers::comm::serial::write_hex(*self as u64);
+            s.write_hex(*self as u64);
         }
     }
 }
 
-impl SerialPrint for i32 {
+impl SerialPrintTo for i32 {
     #[inline]
-    fn serial_print(&self) {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         if *self < 0 {
-            crate::drivers::comm::serial::write_byte(b'-');
-            crate::drivers::comm::serial::write_hex((-*self) as u64);
+            s.write_byte(b'-');
+            s.write_hex((-*self) as u64);
         } else {
-            crate::drivers::comm::serial::write_hex(*self as u64);
+            s.write_hex(*self as u64);
         }
     }
 }
 
-impl SerialPrint for i64 {
+impl SerialPrintTo for i64 {
     #[inline]
-    fn serial_print(&self) {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         if *self < 0 {
-            crate::drivers::comm::serial::write_byte(b'-');
-            crate::drivers::comm::serial::write_hex((-*self) as u64);
+            s.write_byte(b'-');
+            s.write_hex((-*self) as u64);
         } else {
-            crate::drivers::comm::serial::write_hex(*self as u64);
+            s.write_hex(*self as u64);
         }
     }
 }
 
-impl SerialPrint for isize {
+impl SerialPrintTo for isize {
     #[inline]
-    fn serial_print(&self) {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         if *self < 0 {
-            crate::drivers::comm::serial::write_byte(b'-');
-            crate::drivers::comm::serial::write_hex((-*self) as u64);
+            s.write_byte(b'-');
+            s.write_hex((-*self) as u64);
         } else {
-            crate::drivers::comm::serial::write_hex(*self as u64);
+            s.write_hex(*self as u64);
         }
     }
 }
 
-impl SerialPrint for bool {
+impl SerialPrintTo for bool {
     #[inline]
-    fn serial_print(&self) {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         if *self {
-            crate::drivers::comm::serial::write_str("true");
+            s.write_str("true");
         } else {
-            crate::drivers::comm::serial::write_str("false");
+            s.write_str("false");
         }
     }
 }
 
-impl SerialPrint for char {
+impl SerialPrintTo for char {
     #[inline]
-    fn serial_print(&self) {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         let mut buf = [0u8; 4];
-        let s = self.encode_utf8(&mut buf);
-        crate::drivers::comm::serial::write_str(s);
+        let encoded = self.encode_utf8(&mut buf);
+        s.write_str(encoded);
     }
 }
 
-impl SerialPrint for &str {
+impl SerialPrintTo for &str {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_str(self);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_str(self);
     }
 }
 
-impl<T> SerialPrint for *const T {
+impl<T> SerialPrintTo for *const T {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_hex(*self as u64);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_hex(*self as u64);
     }
 }
 
-impl<T> SerialPrint for *mut T {
+impl<T> SerialPrintTo for *mut T {
     #[inline]
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_hex(*self as u64);
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_hex(*self as u64);
     }
 }
 
 // =============================================================================
-// MACROS DE LOG
+// MACROS DE LOG (ATÔMICAS)
 // =============================================================================
 
 /// Log de informação.
+///
+/// Cada mensagem é escrita atomicamente com um único lock.
 #[macro_export]
 macro_rules! kinfo {
     ($msg:expr) => {
-        $crate::drivers::comm::serial::write_str("[INFO]  ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[INFO]  ");
+            s.write_str($msg);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $val:expr) => {
-        $crate::drivers::comm::serial::write_str("[INFO]  ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $crate::drivers::comm::serial::write_str(" ");
-        $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[INFO]  ");
+            s.write_str($msg);
+            s.write_str(" ");
+            $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $($val:expr),+ $(,)?) => {
-        $crate::drivers::comm::serial::write_str("[INFO]  ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $(
-            $crate::drivers::comm::serial::write_str(" ");
-            $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-        )+
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[INFO]  ");
+            s.write_str($msg);
+            $(
+                s.write_str(" ");
+                $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            )+
+            s.write_str("\n");
+        });
     };
 }
 
 /// Log de aviso.
+///
+/// Cada mensagem é escrita atomicamente com um único lock.
 #[macro_export]
 macro_rules! kwarn {
     ($msg:expr) => {
-        $crate::drivers::comm::serial::write_str("[WARN]  ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[WARN]  ");
+            s.write_str($msg);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $val:expr) => {
-        $crate::drivers::comm::serial::write_str("[WARN]  ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $crate::drivers::comm::serial::write_str(" ");
-        $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[WARN]  ");
+            s.write_str($msg);
+            s.write_str(" ");
+            $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $($val:expr),+ $(,)?) => {
-        $crate::drivers::comm::serial::write_str("[WARN]  ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $(
-            $crate::drivers::comm::serial::write_str(" ");
-            $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-        )+
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[WARN]  ");
+            s.write_str($msg);
+            $(
+                s.write_str(" ");
+                $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            )+
+            s.write_str("\n");
+        });
     };
 }
 
 /// Log de erro.
+///
+/// Cada mensagem é escrita atomicamente com um único lock.
 #[macro_export]
 macro_rules! kerror {
     ($msg:expr) => {
-        $crate::drivers::comm::serial::write_str("[ERROR] ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[ERROR] ");
+            s.write_str($msg);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $val:expr) => {
-        $crate::drivers::comm::serial::write_str("[ERROR] ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $crate::drivers::comm::serial::write_str(" ");
-        $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[ERROR] ");
+            s.write_str($msg);
+            s.write_str(" ");
+            $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $($val:expr),+ $(,)?) => {
-        $crate::drivers::comm::serial::write_str("[ERROR] ");
-        $crate::drivers::comm::serial::write_str($msg);
-        $(
-            $crate::drivers::comm::serial::write_str(" ");
-            $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-        )+
-        $crate::drivers::comm::serial::write_str("\n");
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[ERROR] ");
+            s.write_str($msg);
+            $(
+                s.write_str(" ");
+                $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            )+
+            s.write_str("\n");
+        });
     };
 }
 
 /// Log de debug (apenas em debug builds).
+///
+/// Cada mensagem é escrita atomicamente com um único lock.
 #[macro_export]
 macro_rules! kdebug {
     ($msg:expr) => {
         #[cfg(debug_assertions)]
-        {
-            $crate::drivers::comm::serial::write_str("[DEBUG] ");
-            $crate::drivers::comm::serial::write_str($msg);
-            $crate::drivers::comm::serial::write_str("\n");
-        }
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[DEBUG] ");
+            s.write_str($msg);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $val:expr) => {
         #[cfg(debug_assertions)]
-        {
-            $crate::drivers::comm::serial::write_str("[DEBUG] ");
-            $crate::drivers::comm::serial::write_str($msg);
-            $crate::drivers::comm::serial::write_str(" ");
-            $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-            $crate::drivers::comm::serial::write_str("\n");
-        }
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[DEBUG] ");
+            s.write_str($msg);
+            s.write_str(" ");
+            $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $($val:expr),+ $(,)?) => {
         #[cfg(debug_assertions)]
-        {
-            $crate::drivers::comm::serial::write_str("[DEBUG] ");
-            $crate::drivers::comm::serial::write_str($msg);
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[DEBUG] ");
+            s.write_str($msg);
             $(
-                $crate::drivers::comm::serial::write_str(" ");
-                $crate::core::debug::klog::SerialPrint::serial_print(&$val);
+                s.write_str(" ");
+                $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
             )+
-            $crate::drivers::comm::serial::write_str("\n");
-        }
+            s.write_str("\n");
+        });
     };
 }

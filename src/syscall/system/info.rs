@@ -170,8 +170,7 @@ pub fn sys_poweroff() -> SysResult<usize> {
 
 /// Escreve na console (framebuffer + serial)
 ///
-/// VERSÃO MÍNIMA: Usa inline assembly direto para evitar qualquer
-/// código Rust que possa gerar instruções SSE/AVX
+/// Usa o driver serial com lock para garantir atomicidade da mensagem.
 pub fn sys_console_write(buf_ptr: usize, len: usize) -> SysResult<usize> {
     if buf_ptr == 0 || len == 0 {
         return Ok(0);
@@ -180,30 +179,14 @@ pub fn sys_console_write(buf_ptr: usize, len: usize) -> SysResult<usize> {
     // Limitar tamanho
     let safe_len = if len > 4096 { 4096 } else { len };
 
-    // Escrever diretamente na porta serial COM1 (0x3F8) usando inline assembly
-    // Isso evita chamar qualquer função Rust que possa usar SSE
-    for i in 0..safe_len {
-        let byte: u8 = unsafe { core::ptr::read_volatile((buf_ptr + i) as *const u8) };
-
-        // Esperar que TX esteja vazio (bit 5 de Line Status Register)
-        // Port 0x3FD = 0x3F8 + 5
-        unsafe {
-            core::arch::asm!(
-                "mov dx, 0x3FD", // Line Status Register
-                "2:",
-                "in al, dx",
-                "test al, 0x20", // Empty Transmitter Holding Register
-                "jz 2b",
-                "mov dx, 0x3F8", // Data Register
-                "mov al, {byte}",
-                "out dx, al",
-                byte = in(reg_byte) byte,
-                out("al") _,
-                out("dx") _,
-                options(nostack, preserves_flags),
-            );
+    // Escrever usando o driver serial com lock atômico
+    // Isso evita interleaving com outros logs do kernel/userspace
+    crate::drivers::comm::serial::with_lock(|s| {
+        for i in 0..safe_len {
+            let byte: u8 = unsafe { core::ptr::read_volatile((buf_ptr + i) as *const u8) };
+            s.write_byte(byte);
         }
-    }
+    });
 
     Ok(safe_len)
 }

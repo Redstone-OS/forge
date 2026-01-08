@@ -98,18 +98,16 @@ unsafe fn dispatch_hardcoded(num: usize, arg1: usize, arg2: usize) -> u64 {
     match num {
         0xF3 => {
             crate::ktrace!("(Syscall) SYS_CONSOLE_WRITE (hardcoded)");
-            // SYS_CONSOLE_WRITE - escrever na serial diretamente
+            // SYS_CONSOLE_WRITE - escrever na serial com lock atômico
             if arg1 != 0 && arg2 != 0 {
-                for i in 0..arg2 {
-                    let byte = core::ptr::read_volatile((arg1 + i) as *const u8);
-                    core::arch::asm!(
-                        "out dx, al",
-                        in("dx") 0x3F8u16,
-                        in("al") byte,
-                        options(nostack, preserves_flags),
-                    );
-                }
-                arg2 as u64
+                let len = if arg2 > 4096 { 4096 } else { arg2 };
+                crate::drivers::comm::serial::with_lock(|s| {
+                    for i in 0..len {
+                        let byte = core::ptr::read_volatile((arg1 + i) as *const u8);
+                        s.write_byte(byte);
+                    }
+                });
+                len as u64
             } else {
                 0
             }

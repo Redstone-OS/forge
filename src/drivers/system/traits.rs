@@ -2,7 +2,8 @@
 //!
 //! Define interfaces para componentes de sistema.
 
-use crate::core::debug::klog::SerialPrint;
+use crate::core::debug::klog::SerialPrintTo;
+use crate::drivers::comm::serial::SerialPort;
 use alloc::sync::Arc;
 
 // =============================================================================
@@ -24,16 +25,15 @@ pub enum TimerSource {
     LocalApic,
 }
 
-impl SerialPrint for TimerSource {
-    fn serial_print(&self) {
+impl SerialPrintTo for TimerSource {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         match self {
-            Self::Pit => "PIT",
-            Self::Hpet => "HPET",
-            Self::Tsc => "TSC",
-            Self::AcpiPm => "ACPI PM",
-            Self::LocalApic => "Local APIC",
+            Self::Pit => s.write_str("PIT"),
+            Self::Hpet => s.write_str("HPET"),
+            Self::Tsc => s.write_str("TSC"),
+            Self::AcpiPm => s.write_str("ACPI PM"),
+            Self::LocalApic => s.write_str("Local APIC"),
         }
-        .serial_print();
     }
 }
 
@@ -113,16 +113,15 @@ pub enum InterruptControllerType {
     MsiX,
 }
 
-impl SerialPrint for InterruptControllerType {
-    fn serial_print(&self) {
+impl SerialPrintTo for InterruptControllerType {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         match self {
-            Self::Pic => "PIC",
-            Self::LocalApic => "Local APIC",
-            Self::IoApic => "I/O APIC",
-            Self::Msi => "MSI",
-            Self::MsiX => "MSI-X",
+            Self::Pic => s.write_str("PIC"),
+            Self::LocalApic => s.write_str("Local APIC"),
+            Self::IoApic => s.write_str("I/O APIC"),
+            Self::Msi => s.write_str("MSI"),
+            Self::MsiX => s.write_str("MSI-X"),
         }
-        .serial_print();
     }
 }
 
@@ -181,16 +180,15 @@ pub enum PowerState {
     Off,
 }
 
-impl SerialPrint for PowerState {
-    fn serial_print(&self) {
+impl SerialPrintTo for PowerState {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         match self {
-            Self::Running => "Running",
-            Self::Standby => "Standby",
-            Self::SuspendToRam => "Suspend to RAM",
-            Self::Hibernate => "Hibernate",
-            Self::Off => "Off",
+            Self::Running => s.write_str("Running"),
+            Self::Standby => s.write_str("Standby"),
+            Self::SuspendToRam => s.write_str("Suspend to RAM"),
+            Self::Hibernate => s.write_str("Hibernate"),
+            Self::Off => s.write_str("Off"),
         }
-        .serial_print();
     }
 }
 
@@ -207,15 +205,14 @@ pub enum ResetMethod {
     Pci,
 }
 
-impl SerialPrint for ResetMethod {
-    fn serial_print(&self) {
+impl SerialPrintTo for ResetMethod {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         match self {
-            Self::Acpi => "ACPI",
-            Self::Keyboard => "Keyboard",
-            Self::TripleFault => "Triple Fault",
-            Self::Pci => "PCI",
+            Self::Acpi => s.write_str("ACPI"),
+            Self::Keyboard => s.write_str("Keyboard"),
+            Self::TripleFault => s.write_str("Triple Fault"),
+            Self::Pci => s.write_str("PCI"),
         }
-        .serial_print();
     }
 }
 
@@ -236,10 +233,10 @@ pub enum DmaChannel {
     Channel7 = 7,
 }
 
-impl SerialPrint for DmaChannel {
-    fn serial_print(&self) {
-        crate::drivers::comm::serial::write_str("Channel ");
-        (*self as u8).serial_print();
+impl SerialPrintTo for DmaChannel {
+    fn serial_print_to(&self, s: &mut SerialPort) {
+        s.write_str("Channel ");
+        s.write_hex(*self as u64);
     }
 }
 
@@ -254,14 +251,13 @@ pub enum DmaMode {
     Verify,
 }
 
-impl SerialPrint for DmaMode {
-    fn serial_print(&self) {
+impl SerialPrintTo for DmaMode {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         match self {
-            Self::Read => "Read",
-            Self::Write => "Write",
-            Self::Verify => "Verify",
+            Self::Read => s.write_str("Read"),
+            Self::Write => s.write_str("Write"),
+            Self::Verify => s.write_str("Verify"),
         }
-        .serial_print();
     }
 }
 
@@ -278,14 +274,13 @@ pub enum DmaError {
     ChannelBusy,
 }
 
-impl SerialPrint for DmaError {
-    fn serial_print(&self) {
+impl SerialPrintTo for DmaError {
+    fn serial_print_to(&self, s: &mut SerialPort) {
         match self {
-            Self::InvalidChannel => "Invalid Channel",
-            Self::BoundaryCross => "Boundary Cross",
-            Self::AddressTooHigh => "Address Too High",
-            Self::ChannelBusy => "Channel Busy",
+            Self::InvalidChannel => s.write_str("Invalid Channel"),
+            Self::BoundaryCross => s.write_str("Boundary Cross"),
+            Self::AddressTooHigh => s.write_str("Address Too High"),
+            Self::ChannelBusy => s.write_str("Channel Busy"),
         }
-        .serial_print();
     }
 }

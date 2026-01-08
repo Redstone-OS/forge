@@ -279,6 +279,28 @@ impl SerialPort {
             SERIAL_BUFFER_SIZE - self.tail + self.head
         }
     }
+
+    /// Escreve uma string (uso com with_lock).
+    #[inline]
+    pub fn write_str(&mut self, s: &str) {
+        for byte in s.bytes() {
+            self.write_byte_internal(byte);
+        }
+    }
+
+    /// Escreve um byte (uso com with_lock).
+    #[inline]
+    pub fn write_byte(&mut self, byte: u8) {
+        self.write_byte_internal(byte);
+    }
+
+    /// Escreve valor hexadecimal com prefixo "0x" (uso com with_lock).
+    #[inline]
+    pub fn write_hex(&mut self, value: u64) {
+        self.write_byte_internal(b'0');
+        self.write_byte_internal(b'x');
+        self.write_hex_internal(value);
+    }
 }
 
 // =============================================================================
@@ -399,4 +421,25 @@ impl Write for SerialWriter {
 /// Retorna um writer para uso com write!/writeln!.
 pub fn writer() -> SerialWriter {
     SerialWriter
+}
+
+/// Executa closure com o lock mantido durante toda a execução.
+///
+/// Isso garante que toda a saída seja atômica, evitando interleaving
+/// quando múltiplas CPUs fazem log simultaneamente.
+///
+/// ## Exemplo:
+/// ```rust
+/// serial::with_lock(|serial| {
+///     serial.write_str("[INFO] ");
+///     serial.write_str("Mensagem completa");
+///     serial.write_str("\n");
+/// });
+/// ```
+pub fn with_lock<F>(f: F)
+where
+    F: FnOnce(&mut SerialPort),
+{
+    let mut guard = SERIAL.lock();
+    f(&mut *guard);
 }

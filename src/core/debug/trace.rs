@@ -1,27 +1,45 @@
 //! # Kernel Tracing
 //!
 //! Sistema de tracing para debug de execução.
+//!
+//! ## Atomicidade
+//!
+//! Cada trace é escrito atomicamente com um único lock.
 
 /// Macro de trace (apenas em debug builds).
+///
+/// Cada mensagem é escrita atomicamente com um único lock.
 #[macro_export]
 macro_rules! ktrace {
     ($name:expr) => {
         #[cfg(debug_assertions)]
-        {
-            $crate::drivers::comm::serial::write_str("[TRACE] ");
-            $crate::drivers::comm::serial::write_str($name);
-            $crate::drivers::comm::serial::write_str("\n");
-        }
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[TRACE] ");
+            s.write_str($name);
+            s.write_str("\n");
+        });
     };
     ($msg:expr, $val:expr) => {
         #[cfg(debug_assertions)]
-        {
-            $crate::drivers::comm::serial::write_str("[TRACE] ");
-            $crate::drivers::comm::serial::write_str($msg);
-            $crate::drivers::comm::serial::write_str(" ");
-            $crate::core::debug::klog::SerialPrint::serial_print(&$val);
-            $crate::drivers::comm::serial::write_str("\n");
-        }
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[TRACE] ");
+            s.write_str($msg);
+            s.write_str(" ");
+            $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            s.write_str("\n");
+        });
+    };
+    ($msg:expr, $($val:expr),+ $(,)?) => {
+        #[cfg(debug_assertions)]
+        $crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[TRACE] ");
+            s.write_str($msg);
+            $(
+                s.write_str(" ");
+                $crate::core::debug::klog::SerialPrintTo::serial_print_to(&$val, s);
+            )+
+            s.write_str("\n");
+        });
     };
 }
 
@@ -38,9 +56,11 @@ impl TraceGuard {
     /// Cria novo trace guard.
     #[inline]
     pub fn new(name: &'static str) -> Self {
-        crate::drivers::comm::serial::write_str("[TRACE] ENTER ");
-        crate::drivers::comm::serial::write_str(name);
-        crate::drivers::comm::serial::write_str("\n");
+        crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[TRACE] ENTER ");
+            s.write_str(name);
+            s.write_str("\n");
+        });
         Self { name }
     }
 }
@@ -48,9 +68,11 @@ impl TraceGuard {
 #[cfg(debug_assertions)]
 impl Drop for TraceGuard {
     fn drop(&mut self) {
-        crate::drivers::comm::serial::write_str("[TRACE] EXIT ");
-        crate::drivers::comm::serial::write_str(self.name);
-        crate::drivers::comm::serial::write_str("\n");
+        crate::drivers::comm::serial::with_lock(|s| {
+            s.write_str("[TRACE] EXIT ");
+            s.write_str(self.name);
+            s.write_str("\n");
+        });
     }
 }
 
