@@ -50,12 +50,32 @@ impl<T> Spinlock<T> {
         let interrupts_enabled = crate::arch::Cpu::interrupts_enabled();
         crate::arch::Cpu::disable_interrupts();
 
+        // Contador para detectar contenção excessiva
+        let mut spin_count: u32 = 0;
+        const SPIN_WARN_THRESHOLD: u32 = 10_000_000; // ~1-2 segundos no QEMU
+
         // Spin até conseguir o lock
         while self
             .locked
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
+            spin_count += 1;
+
+            // Detectar contenção excessiva (possível deadlock)
+            if spin_count == SPIN_WARN_THRESHOLD {
+                // NOTA: Não podemos usar klog aqui pois causaria reentrância!
+                // Apenas escrevemos direto na porta serial de forma não-atômica
+                unsafe {
+                    let port = 0x3F8u16;
+                    // "SPIN!" em loop
+                    for c in b"!SPIN" {
+                        while (crate::arch::x86_64::ports::inb(port + 5) & 0x20) == 0 {}
+                        crate::arch::x86_64::ports::outb(port, *c);
+                    }
+                }
+            }
+
             // Hint para CPU otimizar spin loop
             core::hint::spin_loop();
         }

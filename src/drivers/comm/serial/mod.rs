@@ -193,17 +193,11 @@ impl SerialPort {
 
     /// Escreve um byte no buffer (requer lock já adquirido).
     ///
-    /// ## Fast Path:
-    /// Se buffer vazio E hardware pronto, escreve diretamente.
-    /// Isso garante que logs apareçam imediatamente no QEMU.
+    /// NOTA: Esta função apenas adiciona ao buffer, NÃO tenta escrever
+    /// no hardware diretamente. O drain é feito separadamente pela CPU0
+    /// para evitar contenção em ambiente SMP.
     fn write_byte_internal(&mut self, byte: u8) {
-        // Fast path: buffer vazio e hardware pronto
-        if self.head == self.tail && self.is_transmit_ready() {
-            outb(self.port + REG_DATA, byte);
-            return;
-        }
-
-        // Slow path: adiciona ao buffer
+        // Adiciona ao buffer circular
         let next_head = (self.head + 1) & SERIAL_BUFFER_MASK;
 
         // Se buffer cheio, descarta byte mais antigo
@@ -215,8 +209,8 @@ impl SerialPort {
         self.buffer[self.head] = byte;
         self.head = next_head;
 
-        // Tenta descarregar o que puder
-        self.drain_greedy();
+        // NÃO chama drain_greedy() aqui!
+        // O drain é feito apenas pela CPU0 via drain_if_cpu0()
     }
 
     /// Descarrega o máximo possível do buffer para o hardware.
@@ -370,14 +364,29 @@ pub fn write_log(prefix: &str, msg: &str, val: Option<u64>) {
     serial.write_byte_internal(b'\n');
 }
 
-/// Tenta descarregar o buffer (não-bloqueante).
-pub fn try_drain() {
-    SERIAL.lock().drain_greedy();
+/// Tenta descarregar o buffer APENAS se estiver na CPU0.
+///
+/// Esta função deve ser chamada periodicamente (ex: no timer tick)
+/// para descarregar o buffer serial para o hardware.
+/// Apenas CPU0 pode acessar o hardware serial para evitar contenção.
+pub fn drain_if_cpu0() {
+    // Só CPU0 pode drenar para o hardware
+    let cpu_id = crate::sched::core::per_cpu::this_cpu_id();
+    if cpu_id != 0 {
+        return;
+    }
+
+    // Tenta adquirir o lock sem bloquear
+    if let Some(mut guard) = SERIAL.try_lock() {
+        guard.drain_greedy();
+    }
+    // Se não conseguir, não há problema - tentará novamente no próximo tick
 }
 
 /// Força descarga completa do buffer (BLOQUEANTE).
 ///
-/// Use apenas em panic ou shutdown.
+/// NOTA: Esta função IGNORA a regra de CPU0 e força o drain.
+/// Use apenas em situações críticas como panic ou shutdown.
 pub fn force_flush() {
     SERIAL.lock().force_flush();
 }

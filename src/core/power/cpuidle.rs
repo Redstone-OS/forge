@@ -28,7 +28,7 @@ pub fn enter_idle_loop() -> ! {
         // 0. Flushes de manutenção (Logs, etc)
         // Isso garante que logs pendentes no buffer circular sejam transmitidos
         // enquanto a CPU está ociosa, antes de dormir.
-        crate::drivers::comm::serial::try_drain();
+        crate::drivers::comm::serial::drain_if_cpu0();
 
         // TODO: Verificar se há callbacks de RCU ou SoftIRQs pendentes antes de dormir.
 

@@ -97,8 +97,8 @@ pub extern "C" fn syscall_dispatcher(ctx: *mut ContextFrame) {
 unsafe fn dispatch_hardcoded(num: usize, arg1: usize, arg2: usize) -> u64 {
     match num {
         0xF3 => {
-            crate::ktrace!("(Syscall) SYS_CONSOLE_WRITE (hardcoded)");
             // SYS_CONSOLE_WRITE - escrever na serial com lock atômico
+            // NOTA: NÃO usar ktrace aqui! Causa reentrância no lock serial.
             if arg1 != 0 && arg2 != 0 {
                 let len = if arg2 > 4096 { 4096 } else { arg2 };
                 crate::drivers::comm::serial::with_lock(|s| {

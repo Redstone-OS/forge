@@ -33,13 +33,17 @@ pub struct LegacyFramebufferInfo {
 ///
 /// Returns: 0 em caso de sucesso.
 pub fn sys_display_info_wrapper(args: &SyscallArgs) -> SysResult<usize> {
+    crate::kdebug!("(FB_INFO) Syscall chamada");
     let out_ptr = args.arg1 as *mut LegacyFramebufferInfo;
 
     if out_ptr.is_null() {
+        crate::kerror!("(FB_INFO) Bad address!");
         return Err(SysError::BadAddress);
     }
 
+    crate::kdebug!("(FB_INFO) Adquirindo lock CRTC...");
     let crtc = DISPLAY_CRTC.lock();
+    crate::kdebug!("(FB_INFO) Lock adquirido OK");
     let info = crtc.get_info();
 
     // Converter para formato legado
